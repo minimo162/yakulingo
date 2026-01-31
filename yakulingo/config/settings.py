@@ -329,7 +329,12 @@ class AppSettings:
 
     # Local AI (llama.cpp llama-server) - M1 minimal settings
     # NOTE: Host is forced to 127.0.0.1 for security (no external exposure).
-    local_ai_model_path: str = "local_ai/models/translategemma-12b-it.i1-IQ4_XS.gguf"
+    #
+    # NOTE: 既定のモデル指定（repo/file/revision/path）は settings.template.json をSSOTとする。
+    local_ai_model_repo: str = ""
+    local_ai_model_revision: str = ""
+    local_ai_model_file: str = ""
+    local_ai_model_path: str = ""
     local_ai_server_dir: str = "local_ai/llama_cpp"
     local_ai_host: str = "127.0.0.1"
     local_ai_port_base: int = 4891
@@ -624,6 +629,24 @@ class AppSettings:
             self.text_translation_mode = "standard"
         else:
             self.text_translation_mode = mode
+
+        # Local AI model path: derive from model file when provided.
+        model_file = str(getattr(self, "local_ai_model_file", "") or "").strip()
+        if model_file:
+            model_path_raw = str(self.local_ai_model_path or "").strip()
+            model_path_name = ""
+            if model_path_raw:
+                try:
+                    model_path_name = Path(model_path_raw).name
+                except Exception:
+                    model_path_name = ""
+            if not model_path_raw or model_path_name != model_file:
+                self.local_ai_model_path = f"local_ai/models/{model_file}"
+
+        model_repo = str(getattr(self, "local_ai_model_repo", "") or "").strip()
+        model_revision = str(getattr(self, "local_ai_model_revision", "") or "").strip()
+        if model_repo and model_file and not model_revision:
+            self.local_ai_model_revision = "main"
 
         # Local AI security: always bind to localhost
         if self.local_ai_host != "127.0.0.1":

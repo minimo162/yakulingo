@@ -306,17 +306,48 @@ try {
         }
     }
 
-    # Default model (fixed):
-    # Always use a prebuilt GGUF downloaded from Hugging Face.
-    $defaultModelRepo = 'mradermacher/translategemma-12b-it-i1-GGUF'
-    $defaultModelFile = 'translategemma-12b-it.i1-IQ4_XS.gguf'
-    $defaultModelRevision = 'main'
-
-    # Model selection is fixed (manifest/env overrides are ignored).
-    $modelRepo = $defaultModelRepo
-    $modelFile = $defaultModelFile
-    $modelRevision = $defaultModelRevision
+    # Model selection:
+    # - Priority: env overrides -> config/settings.template.json -> existing manifest
+    # - This script always downloads a prebuilt GGUF from Hugging Face.
+    $modelRepo = $null
+    $modelFile = $null
+    $modelRevision = $null
     $modelKind = 'gguf'
+
+    # 1) config/settings.template.json (SSOT)
+    $settingsTemplatePath = Join-Path $root 'config\settings.template.json'
+    if (Test-Path $settingsTemplatePath) {
+        try {
+            $tmpl = Get-Content -Path $settingsTemplatePath -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($tmpl.local_ai_model_repo) { $modelRepo = [string]$tmpl.local_ai_model_repo }
+            if ($tmpl.local_ai_model_file) { $modelFile = [string]$tmpl.local_ai_model_file }
+            if ($tmpl.local_ai_model_revision) { $modelRevision = [string]$tmpl.local_ai_model_revision }
+        } catch {
+            Write-Host "[WARNING] Failed to read settings.template.json for model selection: $($_.Exception.Message)"
+        }
+    }
+
+    # 2) existing manifest (fallback)
+    if ((-not $modelRepo -or -not $modelFile) -and $existingManifest -and $existingManifest.model) {
+        try {
+            if (-not $modelRepo) { $modelRepo = [string]$existingManifest.model.repo }
+            if (-not $modelFile) { $modelFile = [string]$existingManifest.model.file }
+            if (-not $modelRevision) { $modelRevision = [string]$existingManifest.model.revision }
+        } catch {
+            # ignore
+        }
+    }
+
+    # 3) env overrides (highest priority)
+    if ($env:LOCAL_AI_MODEL_REPO) { $modelRepo = [string]$env:LOCAL_AI_MODEL_REPO }
+    if ($env:LOCAL_AI_MODEL_FILE) { $modelFile = [string]$env:LOCAL_AI_MODEL_FILE }
+    if ($env:LOCAL_AI_MODEL_REVISION) { $modelRevision = [string]$env:LOCAL_AI_MODEL_REVISION }
+
+    if ([string]::IsNullOrWhiteSpace($modelRevision)) { $modelRevision = 'main' }
+
+    if ([string]::IsNullOrWhiteSpace($modelRepo) -or [string]::IsNullOrWhiteSpace($modelFile)) {
+        throw "Local AI model is not configured. Set local_ai_model_repo/local_ai_model_file in config/settings.template.json or set LOCAL_AI_MODEL_REPO/LOCAL_AI_MODEL_FILE."
+    }
 
     $modelUrl = "https://huggingface.co/$modelRepo/resolve/$modelRevision/$modelFile"
 

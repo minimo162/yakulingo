@@ -167,7 +167,14 @@ if errorlevel 1 (
 call :ShowProgress 1 "Copying folders..."
 
 echo        Copying .venv, .uv-python, yakulingo, prompts, config, local_ai...
-set "FIXED_MODEL_GGUF=translategemma-12b-it.i1-IQ4_XS.gguf"
+set "FIXED_MODEL_GGUF="
+for /f "usebackq delims=" %%M in (`powershell -NoProfile -Command "$s=Get-Content 'config/settings.template.json' -Raw -Encoding UTF8 | ConvertFrom-Json; if ($s.local_ai_model_file) { [string]$s.local_ai_model_file }"`) do set "FIXED_MODEL_GGUF=%%M"
+if not defined FIXED_MODEL_GGUF (
+    echo        [ERROR] Failed to resolve local_ai_model_file from config\settings.template.json.
+    echo        Please set local_ai_model_file (and local_ai_model_repo) and retry.
+    pause
+    exit /b 1
+)
 
 :: Copy folders using robocopy
 :: Exit codes: 0=no change, 1=copied, 2-7=warnings, 8+=errors

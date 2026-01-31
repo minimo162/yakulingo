@@ -131,7 +131,7 @@ def _format_unsupported_arch_message(
         Recovery:
           - Use a prebuilt GGUF model (.gguf) instead of HF conversion.
           - Download the .gguf from Hugging Face and place it under local_ai/models/.
-          - Note: YakuLingo runtime uses a fixed model file name; see README.
+          - Note: YakuLingo runtime uses config/settings.template.json (local_ai_model_file/local_ai_model_path); see README.
 
         Note: Some HF models require custom code (trust_remote_code). This tool runs conversion
         without executing remote code for safety; even with trust_remote_code, an unregistered

@@ -1,31 +1,31 @@
 ﻿{
-    "generated_at":  "2026-01-29T13:19:43.3005191+09:00",
+    "generated_at":  "2026-01-31T08:39:14.1233850+09:00",
     "llama_cpp":  {
                       "repo":  "ggerganov/llama.cpp",
-                      "release_tag":  "b7867",
-                      "asset_name":  "llama-b7867-bin-win-vulkan-x64.zip",
-                      "download_url":  "https://github.com/ggml-org/llama.cpp/releases/download/b7867/llama-b7867-bin-win-vulkan-x64.zip",
-                      "server_exe_sha256":  "10938E830A5D70DF83862BAABEEFC484C35207DD5472A56BD7BFFE2BBA970719",
+                      "release_tag":  "b7895",
+                      "asset_name":  "llama-b7895-bin-win-vulkan-x64.zip",
+                      "download_url":  "https://github.com/ggml-org/llama.cpp/releases/download/b7895/llama-b7895-bin-win-vulkan-x64.zip",
+                      "server_exe_sha256":  "C706AA2E5D6DB52513050B9230071BC6A002207FD0A7A28A576E63B5C439B941",
                       "variant":  "vulkan"
                   },
     "model":  {
                   "repo":  "mradermacher/translategemma-12b-it-i1-GGUF",
                   "revision":  "main",
-                  "file":  "translategemma-12b-it.i1-IQ4_XS.gguf",
-                  "download_url":  "https://huggingface.co/mradermacher/translategemma-12b-it-i1-GGUF/resolve/main/translategemma-12b-it.i1-IQ4_XS.gguf",
+                  "file":  "translategemma-12b-it.i1-IQ3_XXS.gguf",
+                  "download_url":  "https://huggingface.co/mradermacher/translategemma-12b-it-i1-GGUF/resolve/main/translategemma-12b-it.i1-IQ3_XXS.gguf",
                   "sha256":  null,
                   "skipped":  false,
                   "source":  {
                                  "kind":  "gguf",
                                  "repo":  "mradermacher/translategemma-12b-it-i1-GGUF",
                                  "revision":  "main",
-                                 "file":  "translategemma-12b-it.i1-IQ4_XS.gguf",
-                                 "download_url":  "https://huggingface.co/mradermacher/translategemma-12b-it-i1-GGUF/resolve/main/translategemma-12b-it.i1-IQ4_XS.gguf"
+                                 "file":  "translategemma-12b-it.i1-IQ3_XXS.gguf",
+                                 "download_url":  "https://huggingface.co/mradermacher/translategemma-12b-it-i1-GGUF/resolve/main/translategemma-12b-it.i1-IQ3_XXS.gguf"
                              },
                   "output":  {
                                  "kind":  "gguf",
-                                 "path":  "local_ai/models/translategemma-12b-it.i1-IQ4_XS.gguf",
-                                 "path_resolved":  "C:\\Users\\Administrator\\Desktop\\yakulingo\\local_ai\\models\\translategemma-12b-it.i1-IQ4_XS.gguf",
+                                 "path":  "local_ai/models/translategemma-12b-it.i1-IQ3_XXS.gguf",
+                                 "path_resolved":  "C:\\Users\\Administrator\\Desktop\\yakulingo\\local_ai\\models\\translategemma-12b-it.i1-IQ3_XXS.gguf",
                                  "sha256":  null
                              }
               }

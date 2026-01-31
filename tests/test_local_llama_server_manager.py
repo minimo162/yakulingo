@@ -677,7 +677,7 @@ def test_resolve_model_path_falls_back_to_previous_default_when_default_missing(
     legacy.write_bytes(b"legacy")
 
     settings = AppSettings(
-        local_ai_model_path="local_ai/models/translategemma-12b-it.i1-IQ4_XS.gguf"
+        local_ai_model_path="local_ai/models/translategemma-12b-it.i1-IQ3_XXS.gguf"
     )
     caplog.set_level(logging.WARNING, logger="yakulingo.services.local_llama_server")
     resolved = manager._resolve_model_path(settings)

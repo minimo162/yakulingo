@@ -1441,7 +1441,7 @@ class AppSettings:
     # NOTE: window_width/window_height は廃止（表示領域から動的に計算）
 
     # Local AI (llama.cpp llama-server)
-    local_ai_model_path: str = "local_ai/models/translategemma-12b-it.i1-IQ4_XS.gguf"
+    local_ai_model_path: str = "local_ai/models/translategemma-12b-it.i1-IQ3_XXS.gguf"
     local_ai_server_dir: str = "local_ai/llama_cpp"
     local_ai_host: str = "127.0.0.1"  # security: forced to localhost
     local_ai_port_base: int = 4891
@@ -1491,7 +1491,7 @@ class AppSettings:
 
 **ローカルAIのパス解決:** `local_ai_model_path` / `local_ai_server_dir` が相対パスの場合、**アプリ配置ディレクトリ基準**で解決する（CWD依存排除）。
 
-> **Note**: ローカルAIの既定翻訳モデルは `local_ai/models/translategemma-12b-it.i1-IQ4_XS.gguf`。使用するモデルは `local_ai_model_path` で指定する。
+> **Note**: ローカルAIの既定翻訳モデルは `local_ai/models/translategemma-12b-it.i1-IQ3_XXS.gguf`。使用するモデルは `local_ai_model_path`（または `local_ai_model_file`）で指定する。
 > **Note**: 指示追従性向上のため、ローカルAIへ送信するプロンプトは `prompt + "\n\n" + prompt` の形で2回反復して送信する（https://arxiv.org/abs/2512.14982）。プロンプト長は実質2倍になるため、必要に応じて `local_ai_ctx_size` / `local_ai_max_chars_per_batch` を調整する。
 
 ### 12.2 起動方法

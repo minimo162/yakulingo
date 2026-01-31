@@ -50,11 +50,9 @@ _AUTO_DEVICE_CACHE: dict[
     tuple[str, int, int], tuple[Optional[str], Optional[str], float]
 ] = {}
 _AUTO_DEVICE_CACHE_LOCK = threading.Lock()
-_DEFAULT_MODEL_PATH = "local_ai/models/translategemma-12b-it.i1-IQ4_XS.gguf"
-_PREVIOUS_DEFAULT_MODEL_PATH = "local_ai/models/translategemma-4b-it.i1-IQ4_XS.gguf"
-_OLDER_PREVIOUS_DEFAULT_MODEL_PATH = (
-    "local_ai/models/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf"
-)
+_PREVIOUS_DEFAULT_MODEL_PATH = "local_ai/models/translategemma-12b-it.i1-IQ4_XS.gguf"
+_OLDER_PREVIOUS_DEFAULT_MODEL_PATH = "local_ai/models/translategemma-4b-it.i1-IQ4_XS.gguf"
+_OLDEST_PREVIOUS_DEFAULT_MODEL_PATH = "local_ai/models/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf"
 _LEGACY_DEFAULT_MODEL_PATH = "local_ai/models/HY-MT1.5-7B.i1-Q6_K.gguf"
 _OLDER_LEGACY_DEFAULT_MODEL_PATH = "local_ai/models/HY-MT1.5-1.8B.IQ4_XS.gguf"
 
@@ -908,34 +906,44 @@ class LocalLlamaServerManager:
 
     def _resolve_model_path(self, settings: AppSettings) -> Optional[Path]:
         raw = (settings.local_ai_model_path or "").strip()
-        if not raw:
-            return None
-        candidate = _resolve_from_app_base(raw)
-        if candidate.is_file():
-            return candidate
+        candidate: Optional[Path] = None
+        if raw:
+            candidate = _resolve_from_app_base(raw)
+            if candidate.is_file():
+                return candidate
 
-        default_model = _resolve_from_app_base(_DEFAULT_MODEL_PATH)
-        if _normalize_path_text(candidate) == _normalize_path_text(default_model):
-            previous = _resolve_from_app_base(_PREVIOUS_DEFAULT_MODEL_PATH)
-            if previous.is_file():
-                logger.warning(
-                    "Configured model file not found; falling back to previous default: %s -> %s",
-                    candidate,
-                    previous,
-                )
-                return previous
-            older_previous = _resolve_from_app_base(_OLDER_PREVIOUS_DEFAULT_MODEL_PATH)
-            if older_previous.is_file():
-                logger.warning(
-                    "Configured model file not found; falling back to older previous default: %s -> %s",
-                    candidate,
-                    older_previous,
-                )
-                return older_previous
+        previous = _resolve_from_app_base(_PREVIOUS_DEFAULT_MODEL_PATH)
+        if previous.is_file():
+            logger.warning(
+                "Configured model file not found; falling back to previous default: %s -> %s",
+                candidate or "(未設定)",
+                previous,
+            )
+            return previous
+
+        older_previous = _resolve_from_app_base(_OLDER_PREVIOUS_DEFAULT_MODEL_PATH)
+        if older_previous.is_file():
+            logger.warning(
+                "Configured model file not found; falling back to older previous default: %s -> %s",
+                candidate or "(未設定)",
+                older_previous,
+            )
+            return older_previous
+
+        oldest_previous = _resolve_from_app_base(_OLDEST_PREVIOUS_DEFAULT_MODEL_PATH)
+        if oldest_previous.is_file():
+            logger.warning(
+                "Configured model file not found; falling back to oldest previous default: %s -> %s",
+                candidate or "(未設定)",
+                oldest_previous,
+            )
+            return oldest_previous
 
         legacy = _resolve_from_app_base(_LEGACY_DEFAULT_MODEL_PATH)
         if legacy.is_file():
-            if _normalize_path_text(legacy) != _normalize_path_text(candidate):
+            if candidate is not None and _normalize_path_text(legacy) != _normalize_path_text(
+                candidate
+            ):
                 logger.warning(
                     "Configured model file not found; falling back to legacy default: %s -> %s",
                     candidate,
@@ -945,7 +953,10 @@ class LocalLlamaServerManager:
 
         older_legacy = _resolve_from_app_base(_OLDER_LEGACY_DEFAULT_MODEL_PATH)
         if older_legacy.is_file():
-            if _normalize_path_text(older_legacy) != _normalize_path_text(candidate):
+            if (
+                candidate is not None
+                and _normalize_path_text(older_legacy) != _normalize_path_text(candidate)
+            ):
                 logger.warning(
                     "Configured model file not found; falling back to older legacy default: %s -> %s",
                     candidate,

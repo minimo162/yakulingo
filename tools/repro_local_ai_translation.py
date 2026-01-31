@@ -81,7 +81,7 @@ def main() -> int:
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
 
-    from yakulingo.config.settings import AppSettings
+    from yakulingo.config.settings import AppSettings, invalidate_settings_cache
     from yakulingo.services.local_ai_client import (
         LocalAIClient,
         parse_batch_translations,
@@ -97,7 +97,8 @@ def main() -> int:
 
     ensure_no_proxy_for_localhost()
 
-    settings = AppSettings()
+    invalidate_settings_cache()
+    settings = AppSettings.load(repo_root / "config" / "settings.json", use_cache=False)
     settings.translation_backend = "local"
     settings.copilot_enabled = False
 

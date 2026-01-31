@@ -23,8 +23,9 @@ if "!STEP7_FROM_INSTALL_DEPS!"=="0" (
 )
 
 echo.
-echo [6/6] Installing Local AI runtime (llama.cpp + fixed TranslateGemma model)...
-echo [INFO] Model is fixed: mradermacher/translategemma-12b-it-i1-GGUF/translategemma-12b-it.i1-IQ4_XS.gguf
+echo [6/6] Installing Local AI runtime (llama.cpp + GGUF model)...
+echo [INFO] Model selection: config\settings.template.json (local_ai_model_repo/local_ai_model_file)
+echo [INFO] Override (optional): set LOCAL_AI_MODEL_REPO/LOCAL_AI_MODEL_FILE/LOCAL_AI_MODEL_REVISION
 echo [INFO] This step may download large files (llama.cpp + model; a few GB).
 
 echo.
@@ -53,9 +54,9 @@ if "!LOCAL_AI_CHOICE!"=="3" goto :local_ai_skip
 echo [INFO] Local AI selection: choice=!LOCAL_AI_CHOICE!
 if exist "local_ai\\manifest.json" (
     echo [INFO] Local AI manifest: exists ^(local_ai\manifest.json^)
-    echo [INFO] NOTE: model selection is fixed; manifest/env overrides are ignored.
+    echo [INFO] NOTE: model selection is controlled by config/settings.template.json (or LOCAL_AI_MODEL_* env overrides).
 ) else (
-    echo [INFO] Local AI manifest: not found ^(fixed defaults will be applied^)
+    echo [INFO] Local AI manifest: not found ^(defaults from settings.template.json will be applied^)
 )
 if "!USE_PROXY!"=="1" (
     echo [INFO] Proxy: enabled ^(USE_PROXY=1^)
@@ -91,7 +92,7 @@ if !LOCAL_AI_INSTALL_EXIT! neq 0 (
     echo [WARNING] Failed to install Local AI runtime ^(optional^) ^(exit=!LOCAL_AI_INSTALL_EXIT!^).
     echo [WARNING] YakuLingo translation requires Local AI runtime. Please retry the install.
     echo [INFO] You can retry later: powershell -NoProfile -ExecutionPolicy Bypass -File packaging\install_local_ai.ps1
-    echo [INFO] The model is fixed and cannot be changed or skipped. Verify network/proxy settings and retry.
+    echo [INFO] Verify network/proxy settings and retry. You can override the model via LOCAL_AI_MODEL_* if needed.
     echo [INFO] Or manually place files under local_ai\ ^(llama_cpp + models^).
 ) else (
     echo [DONE] Local AI runtime installation finished successfully.

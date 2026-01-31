@@ -1630,6 +1630,8 @@ class YakuLingoApp:
         self._local_ai_ready_probe_key: str | None = None
         self._local_ai_ready_probe_at: float | None = None
         self._local_ai_keepalive_task: "asyncio.Task | None" = None
+        self._local_ai_keepalive_failures: int = 0
+        self._local_ai_keepalive_next_recover_at: float | None = None
         # Result panel auto-scroll debounce (avoid scheduling a task for every stream chunk)
         self._result_panel_scroll_task: "asyncio.Task | None" = None
         self._result_panel_scroll_handle: "asyncio.Handle | None" = None
@@ -1886,6 +1888,44 @@ class YakuLingoApp:
     async def _local_ai_keepalive_loop(self, *, interval_sec: float) -> None:
         try:
             while not self._shutdown_requested:
+                now = time.monotonic()
+
+                # Attempt recovery first if we are in a failure backoff window.
+                next_recover_at = self._local_ai_keepalive_next_recover_at
+                if (
+                    next_recover_at is not None
+                    and now >= float(next_recover_at)
+                    and not self._shutdown_requested
+                    and not self.state.is_translating()
+                    and self.state.local_ai_state
+                    not in (LocalAIState.STARTING, LocalAIState.WARMING_UP)
+                ):
+                    logger.info(
+                        "LocalAI keepalive: attempting auto-recover (failures=%d)",
+                        self._local_ai_keepalive_failures,
+                    )
+                    ok = False
+                    try:
+                        ok = await self._ensure_local_ai_ready_async()
+                    except Exception as e:
+                        logger.debug("LocalAI keepalive auto-recover failed: %s", e)
+                        ok = False
+
+                    if ok:
+                        self._local_ai_keepalive_failures = 0
+                        self._local_ai_keepalive_next_recover_at = None
+                    else:
+                        self._local_ai_keepalive_failures = (
+                            max(1, int(self._local_ai_keepalive_failures)) + 1
+                        )
+                        backoff = (5.0, 15.0, 60.0)
+                        delay = backoff[
+                            min(self._local_ai_keepalive_failures - 1, len(backoff) - 1)
+                        ]
+                        self._local_ai_keepalive_next_recover_at = (
+                            time.monotonic() + float(delay)
+                        )
+
                 if (
                     self.state.local_ai_state == LocalAIState.READY
                     and not self.state.is_translating()
@@ -1919,6 +1959,8 @@ class YakuLingoApp:
                             if ok:
                                 self._local_ai_ready_probe_key = key
                                 self._local_ai_ready_probe_at = now
+                                self._local_ai_keepalive_failures = 0
+                                self._local_ai_keepalive_next_recover_at = None
                                 logger.debug("LocalAI keepalive: ok (key=%s)", key)
                             else:
                                 logger.warning(
@@ -1926,7 +1968,33 @@ class YakuLingoApp:
                                     host,
                                     port,
                                 )
-                await asyncio.sleep(float(interval_sec))
+                                self._local_ai_keepalive_failures = (
+                                    max(0, int(self._local_ai_keepalive_failures)) + 1
+                                )
+                                backoff = (5.0, 15.0, 60.0)
+                                delay = backoff[
+                                    min(
+                                        self._local_ai_keepalive_failures - 1,
+                                        len(backoff) - 1,
+                                    )
+                                ]
+                                self._local_ai_keepalive_next_recover_at = (
+                                    time.monotonic() + float(delay)
+                                )
+
+                # Sleep strategy:
+                # - Normal: interval_sec
+                # - After failures: wake up earlier to run recovery at the backoff deadline.
+                sleep_s = float(interval_sec)
+                next_recover_at = self._local_ai_keepalive_next_recover_at
+                if next_recover_at is not None and self._local_ai_keepalive_failures > 0:
+                    now = time.monotonic()
+                    until = float(next_recover_at) - now
+                    if until > 0:
+                        sleep_s = min(sleep_s, max(0.2, until))
+                    else:
+                        sleep_s = 0.2
+                await asyncio.sleep(sleep_s)
         except asyncio.CancelledError:
             pass
         finally:

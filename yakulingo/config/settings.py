@@ -339,6 +339,9 @@ class AppSettings:
     local_ai_host: str = "127.0.0.1"
     local_ai_port_base: int = 4891
     local_ai_port_max: int = 4900
+    # llama-server slots (parallel request capacity). 1 is safest for low-memory PCs.
+    # NOTE: llama-server's default is auto (-1), which may allocate a large KV cache.
+    local_ai_parallel: int = 1
     local_ai_ctx_size: int = 2048
     local_ai_threads: int = 0  # 0=auto
     local_ai_threads_batch: Optional[int] = 0  # None=unset, 0=auto
@@ -679,6 +682,35 @@ class AppSettings:
                 suggested,
             )
             self.local_ai_port_max = suggested
+
+        # Local AI parallel slots (llama-server --parallel / -np)
+        raw_parallel = getattr(self, "local_ai_parallel", 1)
+        if raw_parallel is None:
+            self.local_ai_parallel = 1
+        elif isinstance(raw_parallel, bool):
+            logger.warning("local_ai_parallel invalid (bool), resetting to 1")
+            self.local_ai_parallel = 1
+        else:
+            try:
+                parallel = int(raw_parallel)
+            except (TypeError, ValueError):
+                logger.warning(
+                    "local_ai_parallel invalid (%s), resetting to 1",
+                    raw_parallel,
+                )
+                self.local_ai_parallel = 1
+            else:
+                # llama-server: -1 = auto, >= 1 = fixed slots
+                if parallel == -1:
+                    self.local_ai_parallel = -1
+                elif parallel < 1:
+                    logger.warning(
+                        "local_ai_parallel must be -1 or >=1 (%d), resetting to 1",
+                        parallel,
+                    )
+                    self.local_ai_parallel = 1
+                else:
+                    self.local_ai_parallel = parallel
 
         # Local AI misc numeric constraints
         if self.local_ai_threads < 0:

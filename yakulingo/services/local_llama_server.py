@@ -1231,6 +1231,28 @@ class LocalLlamaServerManager:
         )
         if not ready:
             rc = proc.poll()
+            if rc is None:
+                try:
+                    proc.terminate()
+                    proc.wait(timeout=2.0)
+                except Exception:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+                rc = proc.poll()
+
+            # Avoid leaking a dead/unhealthy server process on startup failure.
+            self._process = None
+            try:
+                if self._process_log_fp:
+                    try:
+                        self._process_log_fp.flush()
+                    except Exception:
+                        pass
+                    self._process_log_fp.close()
+            finally:
+                self._process_log_fp = None
             if rc is not None:
                 raise LocalAIServerStartError(
                     f"llama-server の起動に失敗しました（終了コード={rc}）。詳細は {log_path} を確認してください。"
@@ -1370,6 +1392,15 @@ class LocalLlamaServerManager:
         ):
             flag = "--ctx-size" if has_long("--ctx-size") else "-c"
             args += [flag, str(int(settings.local_ai_ctx_size))]
+
+        parallel = getattr(settings, "local_ai_parallel", None)
+        if help_text and parallel is not None and (has_long("--parallel") or has_short("-np")):
+            try:
+                parallel_value = int(parallel)
+            except (TypeError, ValueError):
+                parallel_value = 1
+            flag = "--parallel" if has_long("--parallel") else "-np"
+            args += [flag, str(parallel_value)]
 
         threads_setting = settings.local_ai_threads
         threads = int(threads_setting) if threads_setting is not None else 0

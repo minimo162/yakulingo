@@ -17,6 +17,7 @@ def test_local_ai_defaults_match_template() -> None:
         "local_ai_model_file",
         "local_ai_model_path",
         "local_ai_ctx_size",
+        "local_ai_parallel",
         "local_ai_threads_batch",
         "local_ai_no_warmup",
         "local_ai_temperature",

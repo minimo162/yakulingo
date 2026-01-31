@@ -364,6 +364,8 @@ class AppSettings:
     local_ai_cache_type_k: Optional[str] = "q8_0"
     local_ai_cache_type_v: Optional[str] = "q8_0"
     local_ai_cache_reuse: int = 64
+    local_ai_keepalive_enabled: bool = True
+    local_ai_keepalive_interval_sec: float = 120.0
 
     # Local AI 送信分割（入力テキスト長での上限）
     # - local_ai_max_chars_per_batch: 複数テキストをまとめて送る経路（主にテキスト翻訳/バッチ翻訳）で使用
@@ -683,6 +685,33 @@ class AppSettings:
                 suggested,
             )
             self.local_ai_port_max = suggested
+
+        raw_keepalive_enabled = getattr(self, "local_ai_keepalive_enabled", True)
+        if not isinstance(raw_keepalive_enabled, bool):
+            logger.warning(
+                "local_ai_keepalive_enabled invalid (%s), resetting to True",
+                type(raw_keepalive_enabled).__name__,
+            )
+            self.local_ai_keepalive_enabled = True
+        else:
+            self.local_ai_keepalive_enabled = raw_keepalive_enabled
+
+        raw_keepalive_interval = getattr(self, "local_ai_keepalive_interval_sec", 120.0)
+        try:
+            interval_s = float(raw_keepalive_interval)
+        except (TypeError, ValueError):
+            logger.warning(
+                "local_ai_keepalive_interval_sec invalid (%s), resetting to 120.0",
+                raw_keepalive_interval,
+            )
+            interval_s = 120.0
+        if interval_s < 10.0 or interval_s > 3600.0:
+            logger.warning(
+                "local_ai_keepalive_interval_sec out of range (%.3f), resetting to 120.0",
+                interval_s,
+            )
+            interval_s = 120.0
+        self.local_ai_keepalive_interval_sec = interval_s
 
         # Local AI parallel slots (llama-server --parallel / -np)
         raw_parallel = getattr(self, "local_ai_parallel", 1)

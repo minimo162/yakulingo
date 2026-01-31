@@ -122,12 +122,14 @@ echo.
 echo   [1] Yes - Use proxy (corporate network)
 echo   [2] No  - Direct connection
 echo   [3] No  - Direct connection (skip SSL verification)
+echo   [4] Yes - Use proxy (skip SSL verification)
 echo.
-set /p PROXY_CHOICE="Enter choice (1, 2, or 3) [2]: "
+set /p PROXY_CHOICE="Enter choice (1, 2, 3, or 4) [2]: "
 if defined PROXY_CHOICE set "PROXY_CHOICE=!PROXY_CHOICE:~0,1!"
 if not defined PROXY_CHOICE set "PROXY_CHOICE=2"
 
 if "!PROXY_CHOICE!"=="1" goto :step7_use_proxy
+if "!PROXY_CHOICE!"=="4" goto :step7_use_proxy_insecure
 if "!PROXY_CHOICE!"=="3" goto :step7_no_proxy_insecure
 goto :step7_no_proxy
 
@@ -151,6 +153,35 @@ if not defined PROXY_PASS (
 )
 set "USE_PROXY=1"
 set "SKIP_SSL=0"
+exit /b 0
+
+:step7_use_proxy_insecure
+echo.
+echo Enter proxy server address (press Enter for default):
+set /p PROXY_INPUT="Proxy server [!PROXY_SERVER!]: "
+if defined PROXY_INPUT set "PROXY_SERVER=!PROXY_INPUT!"
+echo.
+echo [INFO] Proxy server: !PROXY_SERVER!
+echo.
+
+call :prompt_proxy_credentials
+if not defined PROXY_USER (
+    echo [ERROR] Proxy credentials are required when using proxy.
+    exit /b 1
+)
+if not defined PROXY_PASS (
+    echo [ERROR] Proxy credentials are required when using proxy.
+    exit /b 1
+)
+set "USE_PROXY=1"
+set "SKIP_SSL=1"
+set PYTHONHTTPSVERIFY=0
+set REQUESTS_CA_BUNDLE=
+set CURL_CA_BUNDLE=
+set SSL_CERT_FILE=
+echo.
+echo [INFO] Using proxy (SSL verification disabled).
+echo.
 exit /b 0
 
 :step7_no_proxy_insecure

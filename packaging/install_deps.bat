@@ -37,13 +37,15 @@ echo.
 echo   [1] Yes - Use proxy (corporate network)
 echo   [2] No  - Direct connection
 echo   [3] No  - Direct connection (skip SSL verification)
+echo   [4] Yes - Use proxy (skip SSL verification)
 echo.
-set /p PROXY_CHOICE="Enter choice (1, 2, or 3): "
+set /p PROXY_CHOICE="Enter choice (1, 2, 3, or 4): "
 
 :: Debug: show what was entered
 echo [DEBUG] PROXY_CHOICE=[!PROXY_CHOICE!]
 
 if "!PROXY_CHOICE!"=="1" goto :use_proxy
+if "!PROXY_CHOICE!"=="4" goto :use_proxy_insecure
 if "!PROXY_CHOICE!"=="3" goto :no_proxy_insecure
 goto :no_proxy
 
@@ -63,6 +65,33 @@ if not defined PROXY_USER (
     pause
     exit /b 1
 )
+goto :proxy_done
+
+:use_proxy_insecure
+:: Use proxy with insecure SSL
+set USE_PROXY=1
+set SKIP_SSL=1
+:: Disable SSL verification for Python requests/urllib
+set PYTHONHTTPSVERIFY=0
+set REQUESTS_CA_BUNDLE=
+set CURL_CA_BUNDLE=
+set SSL_CERT_FILE=
+echo.
+echo Enter proxy server address (press Enter for default):
+set /p PROXY_INPUT="Proxy server [!PROXY_SERVER!]: "
+if defined PROXY_INPUT set PROXY_SERVER=!PROXY_INPUT!
+echo.
+echo [INFO] Proxy server: !PROXY_SERVER!
+echo.
+call :prompt_proxy_credentials
+if not defined PROXY_USER (
+    echo [ERROR] Proxy credentials are required when using proxy.
+    pause
+    exit /b 1
+)
+echo.
+echo [INFO] Using proxy (SSL verification disabled).
+echo.
 goto :proxy_done
 
 :no_proxy_insecure

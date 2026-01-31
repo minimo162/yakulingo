@@ -441,6 +441,89 @@ class PromptBuilder:
         ] = {}
         self._load_templates()
 
+    def _get_prompts_dir(self) -> Path:
+        if self.prompts_dir:
+            return self.prompts_dir
+        return Path(__file__).resolve().parents[2] / "prompts"
+
+    def _read_prompt_file(self, filename: str) -> str:
+        path = self._get_prompts_dir() / filename
+        return path.read_text(encoding="utf-8")
+
+    def build_back_translation_prompt(
+        self,
+        input_text: str,
+        *,
+        output_language: str,
+        reference_files: Optional[Sequence[Path]] = None,
+    ) -> str:
+        """Build a back-translation prompt (pass2)."""
+        reference_section = self.build_reference_section(reference_files)
+        template_file = (
+            "text_back_translate_to_jp.txt"
+            if output_language == "jp"
+            else "text_back_translate_to_en.txt"
+        )
+        template = self._read_prompt_file(template_file)
+        return self._apply_placeholders(
+            template=template,
+            reference_section=reference_section,
+            input_text=input_text,
+            output_language=output_language,
+            translation_style="concise",
+        )
+
+    def build_translation_revision_prompt(
+        self,
+        *,
+        source_text: str,
+        translation_text: str,
+        back_translation_text: str,
+        output_language: str,
+        reference_files: Optional[Sequence[Path]] = None,
+    ) -> str:
+        """Build a translation-revision prompt using source/translation/back-translation (pass3)."""
+        reference_section = self.build_reference_section(reference_files)
+        template_file = (
+            "text_translate_revision_to_jp.txt"
+            if output_language == "jp"
+            else "text_translate_revision_to_en.txt"
+        )
+        template = self._read_prompt_file(template_file)
+        combined = "\n".join(
+            [
+                "===SOURCE_TEXT===",
+                source_text or "",
+                "===END_SOURCE_TEXT===",
+                "",
+                "===TRANSLATION_TEXT===",
+                translation_text or "",
+                "===END_TRANSLATION_TEXT===",
+                "",
+                "===BACK_TRANSLATION_TEXT===",
+                back_translation_text or "",
+                "===END_BACK_TRANSLATION_TEXT===",
+            ]
+        ).strip()
+        return self._apply_placeholders(
+            template=template,
+            reference_section=reference_section,
+            input_text=combined,
+            output_language=output_language,
+            translation_style="concise",
+        )
+
+    def build_extra_concise_prompt(
+        self,
+        input_text: str,
+        *,
+        output_language: str,
+    ) -> str:
+        """Build an extra concise rewrite prompt (used for concise mode pass4)."""
+        return self.build_concise_rewrite_prompt(
+            input_text, output_language=output_language, pass_index=3
+        )
+
     @staticmethod
     def normalize_input_text(input_text: str, output_language: str) -> str:
         if not input_text:

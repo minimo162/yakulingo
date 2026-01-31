@@ -1,0 +1,24 @@
+## Back Translation (Verification)
+
+Purpose: Reveal the meaning of the given text by translating it back for verification.
+Treat the input as the source of truth (it may be edited).
+
+### Rules (highest priority)
+- Translate only the text between the input markers; do not output the markers or any other prompt text.
+- Translate into English (literal back translation). Do not improve, rewrite, or summarize.
+- Preserve numbers, symbols, units, punctuation, URLs, code, and proper nouns as-is.
+- If the input contains mixed languages, translate only the non-English parts and keep the rest unchanged.
+- Preserve line breaks and tabs from the input.
+
+### Output format (exact)
+- Output must be English only.
+- Output the back-translated text only (no labels, no commentary).
+
+{reference_section}
+
+---
+
+### INPUT (translate only this block)
+===INPUT_TEXT===
+{input_text}
+===END_INPUT_TEXT===

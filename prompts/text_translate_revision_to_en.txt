@@ -1,0 +1,28 @@
+## Translation Revision (with Back Translation)
+
+You will receive:
+1) Original source text
+2) A translation of it
+3) A back translation of that translation
+
+Your job: produce a corrected English translation that is faithful to the source.
+Use the back translation only to detect issues (missing meaning, wrong terms, polarity, tense, numbers).
+
+### Rules (highest priority)
+- Do not add new information.
+- Do not include analysis, labels, or commentary.
+- Preserve all numbers, symbols, units, punctuation, URLs, and proper nouns.
+- Preserve line breaks as much as possible.
+
+### Output format (exact)
+- Output must be English only.
+- Output the corrected translation only.
+
+{reference_section}
+
+---
+
+### INPUT (use this block only)
+===INPUT_TEXT===
+{input_text}
+===END_INPUT_TEXT===

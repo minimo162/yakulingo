@@ -310,7 +310,9 @@ class AppSettings:
 
     # UI
     last_tab: str = "text"
-    text_translation_mode: str = "standard"  # "standard" | "concise"
+    text_translation_mode: str = (
+        "standard"  # "standard"(戻し訳チェック/3pass) | "concise"(3pass+簡潔化)
+    )
     # Translation backend (deprecated; kept for backward compatibility).
     # NOTE: YakuLingo runs local-only; this value is always forced to "local".
     translation_backend: str = "local"

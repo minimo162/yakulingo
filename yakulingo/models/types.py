@@ -172,7 +172,7 @@ class TextTranslationPass:
     """One pass in a multi-pass text translation pipeline."""
 
     index: int  # 1-based pass index
-    mode: str  # "translation" or "rewrite"
+    mode: str  # "translation" | "back_translation" | "revision" | "rewrite"
     text: str  # Output text for this pass
 
 

@@ -6390,7 +6390,9 @@ class TranslationService:
             return first
 
         pass2_text = second.options[0].text
-        passes.append(TextTranslationPass(index=2, mode="translation", text=pass2_text))
+        passes.append(
+            TextTranslationPass(index=2, mode="back_translation", text=pass2_text)
+        )
         pass_buffers[2] = pass2_text or pass_buffers[2]
         emit_combined_preview()
 
@@ -6439,7 +6441,7 @@ class TranslationService:
             return first
 
         pass3_text = third.options[0].text
-        passes.append(TextTranslationPass(index=3, mode="translation", text=pass3_text))
+        passes.append(TextTranslationPass(index=3, mode="revision", text=pass3_text))
         pass_buffers[3] = pass3_text or pass_buffers[3]
         emit_combined_preview()
 
@@ -6588,7 +6590,7 @@ class TranslationService:
 
             pass2_text = second.options[0].text
             passes.append(
-                TextTranslationPass(index=2, mode="translation", text=pass2_text)
+                TextTranslationPass(index=2, mode="back_translation", text=pass2_text)
             )
             pass_buffers[2] = pass2_text or pass_buffers[2]
             emit_combined_preview()
@@ -6631,7 +6633,7 @@ class TranslationService:
 
             pass3_text = third.options[0].text
             passes.append(
-                TextTranslationPass(index=3, mode="translation", text=pass3_text)
+                TextTranslationPass(index=3, mode="revision", text=pass3_text)
             )
             pass_buffers[3] = pass3_text or pass_buffers[3]
             emit_combined_preview()

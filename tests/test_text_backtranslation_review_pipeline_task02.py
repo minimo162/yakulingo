@@ -65,6 +65,11 @@ def test_backtranslation_review_pipeline_jp_to_en_runs_three_passes_and_uses_rev
 
     assert result.options[0].text == "EN3"
     assert [p.index for p in result.passes] == [1, 2, 3]
+    assert [p.mode for p in result.passes] == [
+        "translation",
+        "back_translation",
+        "revision",
+    ]
     assert result.passes[0].text == "EN1"
     assert result.passes[1].text == "JP2"
     assert result.passes[2].text == "EN3"
@@ -127,6 +132,11 @@ def test_backtranslation_review_pipeline_en_to_jp_runs_three_passes_and_uses_rev
 
     assert result.options[0].text == "JP3"
     assert [p.index for p in result.passes] == [1, 2, 3]
+    assert [p.mode for p in result.passes] == [
+        "translation",
+        "back_translation",
+        "revision",
+    ]
     assert result.passes[0].text == "JP1"
     assert result.passes[1].text == "EN2"
     assert result.passes[2].text == "JP3"

@@ -1281,7 +1281,7 @@ ALWAYS_CLOSE_TO_RESIDENT = True  # Keep service alive when native UI window is c
 # Run warmup as early as possible so the first user translation is fast.
 # Warmup runs best-effort in the background and is cancelled when a translation starts.
 LOCAL_AI_WARMUP_DELAY_SEC = 0.0
-LOCAL_AI_WARMUP_TIMEOUT_SEC = 6  # Still lightweight; improves cold-start reliability
+LOCAL_AI_WARMUP_TIMEOUT_SEC = 10  # Still lightweight; improves cold-start reliability
 
 
 def _is_watchdog_enabled() -> bool:
@@ -8623,12 +8623,40 @@ class YakuLingoApp:
         try:
             logger.info("[TIMING] LocalAI warmup started")
             t0 = time.monotonic()
-            await asyncio.to_thread(
-                client.warmup,
-                runtime=runtime,
-                timeout=int(LOCAL_AI_WARMUP_TIMEOUT_SEC),
-                max_tokens=1,
-            )
+            warmup_prompts: list[str] = []
+            try:
+                translation_service = self.translation_service
+                if translation_service is not None:
+                    prompt_builder = translation_service.prompt_builder
+                    warmup_prompts = [
+                        prompt_builder.build_simple_prompt("warmup", output_language="en"),
+                        prompt_builder.build_simple_prompt("warmup", output_language="jp"),
+                    ]
+            except Exception:
+                warmup_prompts = []
+
+            if not warmup_prompts:
+                await asyncio.to_thread(
+                    client.warmup,
+                    runtime=runtime,
+                    timeout=int(LOCAL_AI_WARMUP_TIMEOUT_SEC),
+                    max_tokens=1,
+                )
+            else:
+                for warmup_prompt in warmup_prompts:
+                    if (
+                        self.state.local_ai_state != LocalAIState.READY
+                        or self.state.is_translating()
+                        or self._shutdown_requested
+                    ):
+                        break
+                    await asyncio.to_thread(
+                        client.warmup,
+                        runtime=runtime,
+                        timeout=int(LOCAL_AI_WARMUP_TIMEOUT_SEC),
+                        max_tokens=1,
+                        prompt=warmup_prompt,
+                    )
             logger.info(
                 "[TIMING] LocalAI warmup finished: %.2fs",
                 time.monotonic() - t0,

@@ -802,6 +802,7 @@ def test_build_server_args_adds_gpu_flags_when_available(
             "-fa, --flash-attn",
             "-ctk, --cache-type-k",
             "-ctv, --cache-type-v",
+            "--cache-reuse",
             "--no-warmup",
         ]
     )
@@ -844,6 +845,8 @@ def test_build_server_args_adds_gpu_flags_when_available(
     assert args[args.index("--cache-type-k") + 1] == "q8_0"
     assert "--cache-type-v" in args
     assert args[args.index("--cache-type-v") + 1] == "q8_0"
+    assert "--cache-reuse" in args
+    assert args[args.index("--cache-reuse") + 1] == "64"
     assert "--no-warmup" in args
 
 
@@ -868,6 +871,7 @@ def test_build_server_args_supports_string_ngl_and_skips_flash_attn_auto(
             "-fa, --flash-attn",
             "-ctk, --cache-type-k",
             "-ctv, --cache-type-v",
+            "--cache-reuse",
             "--no-warmup",
         ]
     )
@@ -1158,6 +1162,7 @@ def test_build_server_args_skips_gpu_flags_for_non_vulkan_variant(
             "-fa, --flash-attn",
             "-ctk, --cache-type-k",
             "-ctv, --cache-type-v",
+            "--cache-reuse",
             "--no-warmup",
         ]
     )
@@ -1199,6 +1204,8 @@ def test_build_server_args_skips_gpu_flags_for_non_vulkan_variant(
     assert args[args.index("--cache-type-k") + 1] == "q8_0"
     assert "--cache-type-v" in args
     assert args[args.index("--cache-type-v") + 1] == "q8_0"
+    assert "--cache-reuse" in args
+    assert args[args.index("--cache-reuse") + 1] == "64"
     assert "--no-warmup" in args
 
 

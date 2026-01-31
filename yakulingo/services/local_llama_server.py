@@ -1582,6 +1582,15 @@ class LocalLlamaServerManager:
             if flag:
                 args += [flag, str(cache_type_v)]
 
+        cache_reuse = getattr(settings, "local_ai_cache_reuse", None)
+        if help_text and cache_reuse is not None and has_long("--cache-reuse"):
+            try:
+                reuse_value = int(cache_reuse)
+            except (TypeError, ValueError):
+                reuse_value = 0
+            if reuse_value > 0:
+                args += ["--cache-reuse", str(reuse_value)]
+
         if help_text and settings.local_ai_no_warmup and has_long("--no-warmup"):
             args += ["--no-warmup"]
 

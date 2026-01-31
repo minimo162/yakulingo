@@ -363,6 +363,7 @@ class AppSettings:
     local_ai_vk_disable_f16: bool = False
     local_ai_cache_type_k: Optional[str] = "q8_0"
     local_ai_cache_type_v: Optional[str] = "q8_0"
+    local_ai_cache_reuse: int = 64
 
     # Local AI 送信分割（入力テキスト長での上限）
     # - local_ai_max_chars_per_batch: 複数テキストをまとめて送る経路（主にテキスト翻訳/バッチ翻訳）で使用
@@ -984,6 +985,31 @@ class AppSettings:
                     type(self.local_ai_cache_type_v).__name__,
                 )
                 self.local_ai_cache_type_v = None
+
+        raw_cache_reuse = getattr(self, "local_ai_cache_reuse", None)
+        if raw_cache_reuse is None:
+            self.local_ai_cache_reuse = 0
+        elif isinstance(raw_cache_reuse, bool):
+            logger.warning("local_ai_cache_reuse invalid (bool), resetting to 0")
+            self.local_ai_cache_reuse = 0
+        else:
+            try:
+                value = int(raw_cache_reuse)
+            except (TypeError, ValueError):
+                logger.warning(
+                    "local_ai_cache_reuse invalid (%s), resetting to 0",
+                    raw_cache_reuse,
+                )
+                self.local_ai_cache_reuse = 0
+            else:
+                if value < 0:
+                    logger.warning(
+                        "local_ai_cache_reuse out of range (%d), resetting to 0",
+                        value,
+                    )
+                    self.local_ai_cache_reuse = 0
+                else:
+                    self.local_ai_cache_reuse = value
 
         # Local AI batch size constraints
         if self.local_ai_max_chars_per_batch < 100:

@@ -1106,18 +1106,21 @@ class LocalAIClient:
         *,
         timeout: Optional[int] = None,
         max_tokens: int = 1,
+        prompt: str | None = None,
     ) -> None:
         # Prefer the /v1/completions path used by raw prompts (the main translation path),
         # so the first real translation after startup benefits from the warmup.
-        prompt = (
-            f"{_RAW_PROMPT_MARKER}"
-            "ping\n"
-            "<end_of_turn>\n"
-            "<start_of_turn>model\n"
-        )
+        warmup_prompt = prompt
+        if warmup_prompt is None:
+            warmup_prompt = (
+                f"{_RAW_PROMPT_MARKER}"
+                "ping\n"
+                "<end_of_turn>\n"
+                "<start_of_turn>model\n"
+            )
         runtime = runtime or self.ensure_ready()
         payload = self._build_completions_payload(
-            runtime, prompt, stream=False, include_sampling_params=True
+            runtime, warmup_prompt, stream=False, include_sampling_params=True
         )
         payload["max_tokens"] = max(1, int(max_tokens))
         payload["temperature"] = 0.0
@@ -1139,7 +1142,7 @@ class LocalAIClient:
         logger.debug(
             "[TIMING] LocalAI warmup: %.2fs (prompt_chars=%d)",
             t_req,
-            _sent_prompt_len(prompt, repeat=False),
+            _sent_prompt_len(warmup_prompt, repeat=False),
         )
 
     def translate_single(

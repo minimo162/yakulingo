@@ -8702,13 +8702,31 @@ class YakuLingoApp:
 
     async def _ensure_local_ai_ready_async(self) -> bool:
         """Ensure local llama-server is ready (non-streaming, localhost only)."""
+        t0 = time.monotonic()
+
+        def _log(result: bool, path: str) -> None:
+            elapsed = time.monotonic() - t0
+            local_ai_state = getattr(
+                self.state.local_ai_state, "value", self.state.local_ai_state
+            )
+            message = (
+                "[TIMING] LocalAI ensure_ready_async: %.3fs "
+                "(result=%s path=%s state=%s)"
+            )
+            if elapsed >= 0.30 or not result or path not in ("cached_ttl", "probe_ok"):
+                logger.info(message, elapsed, result, path, local_ai_state)
+            else:
+                logger.debug(message, elapsed, result, path, local_ai_state)
+
         existing = self._local_ai_ensure_task
         if existing and not existing.done() and asyncio.current_task() is not existing:
             try:
                 await existing
             except Exception:
                 pass
-            return self.state.local_ai_state == LocalAIState.READY
+            result = self.state.local_ai_state == LocalAIState.READY
+            _log(result, "await_existing")
+            return result
 
         if self.state.local_ai_state == LocalAIState.READY:
             host = (self.state.local_ai_host or "").strip()
@@ -8728,6 +8746,7 @@ class YakuLingoApp:
                     and isinstance(last_at, (int, float))
                     and (now - float(last_at)) <= ttl_s
                 ):
+                    _log(True, "cached_ttl")
                     return True
 
                 ok = False
@@ -8743,6 +8762,7 @@ class YakuLingoApp:
                 if ok:
                     self._local_ai_ready_probe_key = key
                     self._local_ai_ready_probe_at = now
+                    _log(True, "probe_ok")
                     return True
 
         self.state.local_ai_state = LocalAIState.STARTING
@@ -8782,6 +8802,7 @@ class YakuLingoApp:
                 with client:
                     if self._header_status:
                         self._header_status.refresh()
+            _log(False, "not_installed")
             return False
         except LocalAIError as e:
             if preload_task is not None:
@@ -8793,6 +8814,7 @@ class YakuLingoApp:
                 with client:
                     if self._header_status:
                         self._header_status.refresh()
+            _log(False, "local_ai_error")
             return False
         except Exception as e:
             if preload_task is not None:
@@ -8804,6 +8826,7 @@ class YakuLingoApp:
                 with client:
                     if self._header_status:
                         self._header_status.refresh()
+            _log(False, "exception")
             return False
 
         self.state.local_ai_host = runtime.host
@@ -8821,6 +8844,7 @@ class YakuLingoApp:
                     self._header_status.refresh()
                 self._refresh_translate_button_state()
         self._start_local_ai_warmup(runtime)
+        _log(True, "startup")
         return True
 
     async def _ensure_connection_async(self) -> bool:

@@ -264,7 +264,6 @@ No manual direction selection is required for text translation. File translation
 ### Common Features
 - **Elapsed time badge**: Shows translation duration
 - **Style比較**: 標準/簡潔/最簡潔を常に同時表示（切り替えなし）
-- **Back-translate button**: Verify translations by translating back to original language
 - **Reference file attachment**: Attach glossary, style guide, or reference materials
 - **Loading screen**: Shows spinner immediately on startup for faster perceived load time
 
@@ -376,7 +375,6 @@ The application uses Material Design 3 / Expressive design tokens and state laye
 
 | クラス | 用途 |
 |--------|------|
-| `.back-translate-btn` | 戻し訳ボタン |
 | `.explain-more-btn` | 詳細説明ボタン |
 | `.settings-btn` | 設定ボタン |
 | `.glossary-toggle-btn` | 用語集トグル（Chip-style） |
@@ -708,7 +706,7 @@ def _open_window_patched(..., window_args, settings_dict, start_args):
 - `use_bundled_glossary`: 同梱の glossary.csv を使用するか（デフォルト: true）
   - `false`: 同梱用語集は添付しない
   - `true`: 同梱用語集をファイルとして添付（デフォルト、用語集が増えても対応可能）
-  - **適用範囲**: 全翻訳パス（テキスト翻訳、ファイル翻訳、戻し訳、フォローアップ翻訳）
+  - **適用範囲**: 全翻訳パス（テキスト翻訳、ファイル翻訳、フォローアップ翻訳）
 
 **プロンプト文字数の目安（Copilot無料版 8,000文字制限）**:
 
@@ -2420,7 +2418,7 @@ Based on recent commits:
   - **Expected improvement**: cleanup時間 2.04秒 → 約1.0-1.5秒
 - **Glossary Processing Optimization (2024-12)**:
   - **File attachment mode (default)**: 用語集をファイルとして添付（デフォルト、用語集が増えても対応可能）
-  - **Scope**: 全翻訳パスに適用（テキスト翻訳、ファイル翻訳、戻し訳、フォローアップ翻訳）
+  - **Scope**: 全翻訳パスに適用（テキスト翻訳、ファイル翻訳、フォローアップ翻訳）
 - **Copilot Send Process Optimization (2024-12)**:
   - **Complete key cycle**: keydown + keypress + keyup の完全なキーサイクルをJSでディスパッチ（keydownのみでは送信されない）
   - **Root cause**: CopilotのReact UIはkeydownでpreventDefault()を呼ぶが、送信処理は完全なキーサイクルが必要
@@ -2877,7 +2875,6 @@ Based on recent commits:
 - **Bilingual Output**: All file processors generate bilingual output with original + translated content
 - **Glossary CSV Export**: Automatic extraction of source/translation pairs
 - **Reference File Feature**: Support for CSV, TXT, PDF, Word, Excel, PowerPoint, Markdown, JSON
-- **Back-Translate Feature**: Verify translations by translating back to original language
 - **Auto-Update System**: GitHub Releases-based updates with Windows proxy support
 - **Native Launcher**: Rust-based `YakuLingo.exe` for Windows distribution
 - **Test Coverage**: 33 test files

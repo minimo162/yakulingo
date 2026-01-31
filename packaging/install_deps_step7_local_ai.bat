@@ -5,12 +5,22 @@ setlocal EnableExtensions EnableDelayedExpansion
 :: - Must never terminate the parent installer window
 :: - Always return via exit /b
 
+:: When double-clicked, cmd.exe runs this script with /c and the window may close too fast on errors.
+:: Wrap in a new cmd /k session for better debuggability (standalone only).
+if /i "%~1"=="" (
+    if not defined YAKULINGO_STEP7_WRAPPED (
+        set "YAKULINGO_STEP7_WRAPPED=1"
+        start "" cmd /k "\"%~f0\" --standalone"
+        exit /b 0
+    )
+)
+
 cd /d "%~dp0\.."
 
 if not defined USE_PROXY set "USE_PROXY=0"
 if not defined SKIP_SSL set "SKIP_SSL=0"
 if not defined PROXY_SERVER set "PROXY_SERVER=136.131.63.233:8082"
-if not defined LOCAL_AI_INSTALL_LOG set "LOCAL_AI_INSTALL_LOG=%TEMP%\YakuLingo_local_ai_install.log"
+if not defined LOCAL_AI_INSTALL_LOG set "LOCAL_AI_INSTALL_LOG=local_ai\YakuLingo_local_ai_install.log"
 
 > "%LOCAL_AI_INSTALL_LOG%" (
     echo ============================================================

@@ -19,6 +19,7 @@ _RE_HANGUL = re.compile(r"[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]")
 _RE_LATIN_ALPHA = re.compile(r"[A-Za-z]")
 
 _DEFAULT_MAX_CHARS = 2000
+_DEFAULT_MODEL_ID = "google/translategemma-27b-it"
 
 
 def _detect_direction(text: str) -> tuple[str, str]:
@@ -41,6 +42,27 @@ def _max_chars() -> int:
         return _DEFAULT_MAX_CHARS
 
 
+def _model_id() -> str:
+    return (os.environ.get("YAKULINGO_SPACES_MODEL_ID") or _DEFAULT_MODEL_ID).strip()
+
+
+def _quant() -> str:
+    return (os.environ.get("YAKULINGO_SPACES_QUANT") or "4bit").strip()
+
+
+def _error_hint(message: str) -> str:
+    lowered = message.lower()
+    if "gpu が利用できません" in message:
+        return "Space の Hardware を ZeroGPU に設定してください（またはデバッグ用途で `YAKULINGO_SPACES_ALLOW_CPU=1`）。"
+    if "401" in lowered or "unauthorized" in lowered or "gated" in lowered:
+        return "モデルが gated の可能性があります。Spaces の Secret に `HF_TOKEN` を設定してください。"
+    if "bitsandbytes" in lowered:
+        return "bitsandbytes の導入に失敗している可能性があります。依存関係（`requirements.txt`）を確認してください。"
+    if "cuda" in lowered:
+        return "CUDA 周りで失敗している可能性があります。ZeroGPU の割当と依存関係を確認してください。"
+    return ""
+
+
 def _translate(text: str) -> tuple[str, str, str]:
     cleaned = (text or "").strip()
     if not cleaned:
@@ -59,10 +81,18 @@ def _translate(text: str) -> tuple[str, str, str]:
     try:
         translated = translator.translate(cleaned, output_language=output_language)  # type: ignore[arg-type]
     except Exception as e:
-        return "", label, f"エラー: {e}"
+        hint = _error_hint(str(e))
+        detail = f"エラー: {e}"
+        if hint:
+            detail = f"{detail}\n\n**ヒント**: {hint}"
+        status = (
+            f"{label} / model=`{_model_id()}` / quant=`{_quant()}` / device={translator.runtime_device()}"
+            f"\n\n{detail}"
+        )
+        return "", label, status
 
     elapsed_s = time.monotonic() - start
-    status = f"{label} / device={translator.runtime_device()} / {elapsed_s:.2f}s"
+    status = f"{label} / model=`{_model_id()}` / quant=`{_quant()}` / device={translator.runtime_device()} / {elapsed_s:.2f}s"
     return translated, label, status
 
 
@@ -79,8 +109,11 @@ _EN_EXAMPLE = "This is a demo. Please translate this sentence into Japanese."
 
 with gr.Blocks(title="YakuLingo (訳リンゴ) – HF Spaces Demo") as demo:
     gr.Markdown("# YakuLingo (訳リンゴ) – Hugging Face Spaces デモ")
+    gr.Markdown("日本語/英語を入力すると自動判定して翻訳します（ZeroGPU 想定）。")
     gr.Markdown(
-        "日本語/英語を入力すると自動判定して翻訳します（ZeroGPU 想定: GPU が無い場合は CPU で動きます）。"
+        f"**Model**: `{_model_id()}`  \n"
+        f"**Quant**: `{_quant()}`  \n"
+        "（必要に応じて Spaces の Secret に `HF_TOKEN` を設定してください）"
     )
 
     input_text = gr.Textbox(

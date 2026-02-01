@@ -124,7 +124,6 @@ YakuLingo/
 │   ├── file_translate_to_jp.txt   # File translation (EN→JP)
 │   ├── text_translate_to_en_compare.txt  # Text translation (JP→EN, minimal-only)
 │   ├── text_translate_to_jp.txt   # Text translation (EN→JP, translation-only)
-│   ├── text_back_translate.txt    # (legacy/unused) Back-translation template
 │   ├── adjust_custom.txt          # (Reserved) Custom request template
 │   ├── text_alternatives.txt      # Follow-up: alternative expressions
 │   ├── text_review_en.txt         # Follow-up: review English (英文をチェック)
@@ -1311,7 +1310,7 @@ PYTHON_PIDS=$(pgrep -f "{app_dir}/.venv" 2>/dev/null)
 | `file_translate_to_jp.txt` | ファイル翻訳（EN→JP、translation-only） |
 | `text_translate_to_en_compare.txt` | テキスト翻訳（JP→EN、minimal-only） |
 | `text_translate_to_jp.txt` | テキスト翻訳（EN→JP、translation-only） |
-| `text_back_translate.txt` | （legacy/未使用）戻し訳テンプレート（現在は通常のテキスト翻訳テンプレートを使用） |
+| `text_back_translate.txt` | （削除済み）戻し訳テンプレート（戻し訳機能の廃止に伴い削除） |
 | `text_*.txt` | フォローアップ翻訳（alternatives, review, summarize等） |
 
 **プレースホルダー:**

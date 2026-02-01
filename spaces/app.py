@@ -52,7 +52,7 @@ def _quant() -> str:
 
 def _error_hint(message: str) -> str:
     lowered = message.lower()
-    if "gpu が利用できません" in message:
+    if "gpu が利用できません" in lowered:
         return "Space の Hardware を ZeroGPU に設定してください（またはデバッグ用途で `YAKULINGO_SPACES_ALLOW_CPU=1`）。"
     if "401" in lowered or "unauthorized" in lowered or "gated" in lowered:
         return "モデルが gated の可能性があります。Spaces の Secret に `HF_TOKEN` を設定してください。"

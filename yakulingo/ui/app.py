@@ -8533,7 +8533,7 @@ class YakuLingoApp:
         delay_s = float(LOCAL_AI_WARMUP_DELAY_SEC)
         try:
             task = _create_logged_task(
-                self._warmup_local_ai_async(runtime, delay_s=delay_s),
+                self._warmup_local_ai_with_state_async(runtime, delay_s=delay_s),
                 name="local_ai_warmup",
             )
         except RuntimeError:
@@ -8546,6 +8546,48 @@ class YakuLingoApp:
             key,
         )
 
+    async def _warmup_local_ai_with_state_async(
+        self,
+        runtime: "LocalAIServerRuntime",
+        *,
+        delay_s: float,
+    ) -> None:
+        """Run LocalAI warmup and update LocalAIState when finished."""
+        key = self._build_local_ai_warmup_key(runtime)
+        try:
+            if not self._shutdown_requested:
+                self.state.local_ai_state = LocalAIState.WARMING_UP
+                client = self._get_active_client()
+                if client:
+                    with client:
+                        if self._header_status:
+                            self._header_status.refresh()
+                        self._refresh_translate_button_state()
+            await self._warmup_local_ai_async(runtime, delay_s=delay_s)
+        finally:
+            current_task = asyncio.current_task()
+            if (
+                current_task is not None
+                and self._local_ai_warmup_task is current_task
+                and self._local_ai_warmup_key == key
+            ):
+                self._local_ai_warmup_task = None
+                self._local_ai_warmup_key = None
+            if self._shutdown_requested:
+                return
+            if (self.state.local_ai_host or "").strip() and int(
+                self.state.local_ai_port or 0
+            ) > 0:
+                self.state.local_ai_state = LocalAIState.READY
+                self._local_ai_ready_probe_key = key
+                self._local_ai_ready_probe_at = time.monotonic()
+                client = self._get_active_client()
+                if client:
+                    with client:
+                        if self._header_status:
+                            self._header_status.refresh()
+                        self._refresh_translate_button_state()
+
     async def _warmup_local_ai_async(
         self,
         runtime: "LocalAIServerRuntime",
@@ -8557,7 +8599,10 @@ class YakuLingoApp:
         try:
             if delay_s > 0:
                 await asyncio.sleep(delay_s)
-            if self.state.local_ai_state != LocalAIState.READY:
+            if self.state.local_ai_state not in (
+                LocalAIState.READY,
+                LocalAIState.WARMING_UP,
+            ):
                 logger.info("[TIMING] LocalAI warmup cancelled: not ready")
                 return
             if self.state.is_translating():
@@ -8627,6 +8672,15 @@ class YakuLingoApp:
                 await existing
             except Exception:
                 pass
+            return self.state.local_ai_state == LocalAIState.READY
+
+        if self.state.local_ai_state == LocalAIState.WARMING_UP:
+            warmup_task = self._local_ai_warmup_task
+            if warmup_task is not None and not warmup_task.done():
+                try:
+                    await warmup_task
+                except Exception:
+                    pass
             return self.state.local_ai_state == LocalAIState.READY
 
         if self.state.local_ai_state == LocalAIState.READY:
@@ -8730,7 +8784,6 @@ class YakuLingoApp:
         self.state.local_ai_model = runtime.model_id or runtime.model_path.name
         self.state.local_ai_server_variant = runtime.server_variant
         self.state.local_ai_error = ""
-        self.state.local_ai_state = LocalAIState.READY
         self._local_ai_ready_probe_key = f"{runtime.host}:{runtime.port}:{runtime.model_id or runtime.model_path.name}"
         self._local_ai_ready_probe_at = time.monotonic()
         client = self._get_active_client()
@@ -8739,8 +8792,17 @@ class YakuLingoApp:
                 if self._header_status:
                     self._header_status.refresh()
                 self._refresh_translate_button_state()
-        self._start_local_ai_warmup(runtime)
-        return True
+        self.state.local_ai_state = LocalAIState.WARMING_UP
+        warmup_task = self._local_ai_warmup_task
+        if warmup_task is None or warmup_task.done():
+            self._start_local_ai_warmup(runtime)
+            warmup_task = self._local_ai_warmup_task
+        if warmup_task is not None:
+            try:
+                await warmup_task
+            except Exception:
+                pass
+        return self.state.local_ai_state == LocalAIState.READY
 
     async def _ensure_connection_async(self) -> bool:
         """Ensure translation backend is ready (local AI only)."""

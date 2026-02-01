@@ -1,2 +1,4 @@
 gradio>=4.0.0
-
+transformers>=4.0.0
+torch
+sentencepiece

@@ -18,3 +18,4 @@ python spaces/app.py
 - モデル選定メモ: `docs/HF_SPACES_MODEL.md`
 - gated の場合は Spaces の Secret に `HF_TOKEN` を設定してください。
 - 既定は `YAKULINGO_SPACES_QUANT=4bit` を想定しています。
+- ZeroGPU の Python は `3.12.12` を推奨します（本リポジトリは Python 3.11+ 前提のため）。

@@ -19,10 +19,11 @@
   - 既定は「エラーで案内」（CPU フォールバックは現実的に遅くなり得るため）
   - デバッグ用途で CPU 許可のフラグを用意する（`YAKULINGO_SPACES_ALLOW_CPU=1`）
 
-## 実装方針（後続タスクで実装）
+## 実装方針（実装済み）
 - モデルは HF Hub から初回ダウンロードしてキャッシュする（`HF_HOME` を推奨）
 - 方向ごとにプロンプトを組み立て（JP→EN / EN→JP）、出力は「翻訳文のみ」を要求する
 - 出力の後処理（余計な前置き/コードフェンス/ラベル）を実装する
+- ZeroGPU（動的GPU割当）前提で、翻訳処理は `@spaces.GPU` の内側で実行する（`size` / `duration` は環境変数で指定）
 - 入力ガード:
   - 文字数上限（既定: 2,000 文字）を設ける
   - 超過時は UI で短縮を促す
@@ -36,6 +37,9 @@
 - `YAKULINGO_SPACES_ZEROGPU_DURATION`（既定: `120`）
 - `YAKULINGO_SPACES_ALLOW_CPU=1`（デバッグ用途。非推奨）
 - `HF_TOKEN`（モデルが gated の場合）
+
+## 推奨（ZeroGPU）
+- Python は `3.12.12` を推奨（本リポジトリは Python 3.11+ 前提のため）
 
 ## ライセンス / 利用条件
 - Hugging Face のモデルカードを SSOT とする（Spaces 公開前に必ず確認）

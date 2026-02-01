@@ -22,6 +22,41 @@
   - NOTE: 現状、llama.cpp の Linux 事前ビルドは Vulkan 版が中心のため、環境によっては GPU が見えず
     `ggml_vulkan: No devices found` で起動できない場合があります。その場合は `YAKULINGO_SPACES_N_GPU_LAYERS=0` を設定してください。
 
+## TranslateGemma のプロンプト（重要）
+TranslateGemma は、一般的な「文字列のチャットプロンプト」ではなく、**専用の chat template**（messages構造）を前提に設計されています。
+
+本デモで扱うのはテキスト翻訳のみなので、`type="text"` を利用します。
+
+### messages 構造（テキスト翻訳）
+- roles: `user` / `assistant` のみ
+- `user.content` は **要素が1つの list**
+- list の要素は以下を含む:
+  - `type`: `"text"`
+  - `source_lang_code`: 例 `ja` / `en`（ISO 639-1）
+  - `target_lang_code`: 例 `en` / `ja`（ISO 639-1）
+  - `text`: **翻訳したいテキストのみ**（指示文は入れない）
+
+例:
+```python
+messages = [
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "source_lang_code": "ja",
+        "target_lang_code": "en",
+        "text": "こんにちは",
+      }
+    ],
+  }
+]
+```
+
+### 本デモの言語コード方針
+- 日本語→英語: `source_lang_code="ja"`, `target_lang_code="en"`
+- 英語→日本語: `source_lang_code="en"`, `target_lang_code="ja"`
+
 ## 実装方針（実装済み）
 - GGUF は HF Hub から初回ダウンロードしてキャッシュする（`HF_HOME` を推奨）
 - `huggingface_hub.hf_hub_download` で `.gguf` を取得する

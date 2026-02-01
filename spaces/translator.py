@@ -30,6 +30,10 @@ _DEFAULT_LLAMA_SERVER_PORT = 8090
 _DEFAULT_LLAMA_SERVER_STARTUP_TIMEOUT_S = 120
 _DEFAULT_HTTP_TIMEOUT_S = 60
 _AUTO_N_GPU_LAYERS = 999
+_RE_LLAMA_CLI_AVAILABLE_DEVICES_HEADER = re.compile(
+    r"^\s*Available devices:\s*$", flags=re.IGNORECASE
+)
+_RE_LLAMA_CLI_DEVICE_LINE = re.compile(r"^\s*(?P<name>[A-Za-z]+\d+)\s*:", re.IGNORECASE)
 
 
 def _env_int(name: str, default: int) -> int:
@@ -416,6 +420,101 @@ def _infer_device_from_asset(asset_name: str) -> str | None:
     return None
 
 
+def _find_llama_cli_exe(server_exe_path: Path) -> Path | None:
+    candidates = [
+        server_exe_path.with_name("llama-cli.exe"),
+        server_exe_path.with_name("llama-cli"),
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _parse_llama_cli_devices(text: str) -> list[str]:
+    lines = (text or "").splitlines()
+    devices: list[str] = []
+    seen: set[str] = set()
+    in_section = False
+    section_found = False
+
+    for line in lines:
+        if not in_section:
+            if _RE_LLAMA_CLI_AVAILABLE_DEVICES_HEADER.match(line):
+                in_section = True
+                section_found = True
+            continue
+
+        match = _RE_LLAMA_CLI_DEVICE_LINE.match(line)
+        if not match:
+            continue
+        name = match.group("name").strip()
+        if not name:
+            continue
+        key = name.lower()
+        if key in seen:
+            continue
+        devices.append(name)
+        seen.add(key)
+
+    if section_found:
+        return devices
+
+    for line in lines:
+        match = _RE_LLAMA_CLI_DEVICE_LINE.match(line)
+        if not match:
+            continue
+        name = match.group("name").strip()
+        if not name:
+            continue
+        key = name.lower()
+        if key in seen:
+            continue
+        devices.append(name)
+        seen.add(key)
+
+    return devices
+
+
+def _select_default_llama_device(asset_name: str, devices: list[str]) -> str | None:
+    if not devices:
+        return None
+    lowered_asset = (asset_name or "").strip().lower()
+    if "vulkan" in lowered_asset:
+        for dev in devices:
+            if dev.lower().startswith("vulkan"):
+                return dev
+        return None
+    if "cuda" in lowered_asset:
+        for dev in devices:
+            if dev.lower().startswith("cuda"):
+                return dev
+        return None
+    return devices[0]
+
+
+def _resolve_llama_device_auto(server_exe_path: Path, asset_name: str) -> str | None:
+    llama_cli_path = _find_llama_cli_exe(server_exe_path)
+    if llama_cli_path is None:
+        return None
+    try:
+        completed = subprocess.run(
+            [str(llama_cli_path), "--list-devices"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=2.0,
+            check=False,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except Exception:
+        return None
+    output = completed.stdout or ""
+    devices = _parse_llama_cli_devices(output)
+    return _select_default_llama_device(asset_name, devices)
+
+
 def _build_llama_server_args(
     *,
     exe_path: Path,
@@ -447,8 +546,14 @@ def _build_llama_server_args(
     if _help_has_long(help_text, "--device"):
         if use_cuda:
             device = (os.environ.get("YAKULINGO_SPACES_LLAMA_DEVICE") or "").strip()
+            if not device or device.lower() == "auto":
+                device = _resolve_llama_device_auto(exe_path, asset_name) or ""
             if not device:
-                device = _infer_device_from_asset(asset_name) or "vulkan"
+                raise RuntimeError(
+                    "llama.cpp の GPU デバイスが見つかりません（--list-devices が空）。"
+                    "Vulkan 版バイナリの場合、ZeroGPU 環境では Vulkan デバイスが見つからないことがあります。"
+                    "CPU で動かす場合は `YAKULINGO_SPACES_N_GPU_LAYERS=0` を設定してください。"
+                )
             args += ["--device", device]
         else:
             args += ["--device", "none"]

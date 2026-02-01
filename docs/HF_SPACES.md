@@ -85,6 +85,8 @@ Space の Variables/Secrets に以下を設定します。
 - `YAKULINGO_SPACES_LLAMA_CPP_REPO`（既定: `ggerganov/llama.cpp`）
 - `YAKULINGO_SPACES_LLAMA_CPP_ASSET_SUFFIX`（既定: `bin-ubuntu-vulkan-x64.tar.gz`）
   - GitHub Releases の assets から、この suffix で終わるファイルを自動選択します（例: `llama-b7898-bin-ubuntu-vulkan-x64.tar.gz`）。
+  - 注意: Vulkan 版は環境によっては `ggml_vulkan: No devices found` となり、GPU オフロードできないことがあります。
+    その場合は `YAKULINGO_SPACES_N_GPU_LAYERS=0`（CPU のみ）で起動してください。
 - `YAKULINGO_SPACES_LLAMA_CPP_URL`（任意）
   - 上記の自動選択がうまくいかない場合に、llama.cpp のアーカイブ URL を直接指定します（優先）。
 - `YAKULINGO_SPACES_LLAMA_DEVICE`（任意）

@@ -18,6 +18,8 @@
 - GPU が使えない場合:
   - 既定は「エラーで案内」（CPU 実行は遅くなり得るため）
   - デバッグ用途で CPU 許可フラグを用意する（`YAKULINGO_SPACES_ALLOW_CPU=1`）
+  - NOTE: 現状、llama.cpp の Linux 事前ビルドは Vulkan 版が中心のため、環境によっては GPU が見えず
+    `ggml_vulkan: No devices found` で起動できない場合があります。その場合は `YAKULINGO_SPACES_N_GPU_LAYERS=0` を設定してください。
 
 ## 実装方針（実装済み）
 - GGUF は HF Hub から初回ダウンロードしてキャッシュする（`HF_HOME` を推奨）

@@ -869,10 +869,6 @@ def _render_pass_context_cards(
         mode = (p.mode or "").strip().lower()
         if mode == "translation":
             return f"{p.index}回目（翻訳）"
-        if mode == "back_translation":
-            return f"{p.index}回目（戻し訳）"
-        if mode == "revision":
-            return f"{p.index}回目（修正翻訳）"
         if mode == "rewrite":
             return f"{p.index}回目（書き換え）"
         return f"{p.index}回目"

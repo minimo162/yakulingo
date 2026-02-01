@@ -730,7 +730,7 @@ class GGUFTranslator:
             return ""
 
         max_new_tokens = max(1, int(self._config.max_new_tokens))
-        prompt = _build_prompt(cleaned, output_language=output_language)
+        prompt = _build_gguf_prompt(cleaned, output_language=output_language)
         runtime = self._get_runtime()
 
         try:
@@ -892,7 +892,7 @@ class LlamaCppPythonTranslator:
                 "・医ョ繝舌ャ繧ｰ逕ｨ騾斐〒 CPU 繧定ｨｱ蜿ｯ縺吶ｋ蝣ｴ蜷医・ YAKULINGO_SPACES_ALLOW_CPU=1・峨・"
             )
 
-        prompt = _build_prompt(cleaned, output_language=output_language)
+        prompt = _build_gguf_prompt(cleaned, output_language=output_language)
         max_new_tokens = max(1, int(self._config.max_new_tokens))
         temperature = float(self._config.temperature)
 
@@ -1263,6 +1263,11 @@ def _build_prompt(text: str, *, output_language: OutputLanguage) -> str:
         "Output the translation only.\n\n"
         f"{text}\n"
     )
+
+
+def _build_gguf_prompt(text: str, *, output_language: OutputLanguage) -> str:
+    prompt = _build_prompt(text, output_language=output_language).strip()
+    return f"<bos><start_of_turn>user\n{prompt}<end_of_turn>\n<start_of_turn>model\n"
 
 
 def _extract_llama_text(result: object) -> str:

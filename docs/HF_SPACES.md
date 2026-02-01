@@ -84,6 +84,13 @@ ZeroGPU で **CUDA を使いたい場合**は、llama.cpp（Linux 事前ビル�
 - `YAKULINGO_SPACES_HF_REVISION`（任意）
 - `YAKULINGO_SPACES_HF_LOAD_IN_4BIT`（既定: `1`。bitsandbytes が必要。失敗する場合は `0`）
 
+### 任意（CUDA 推奨: llama-cpp-python バックエンド / GGUF）
+GGUF を **Python（llama-cpp-python）から直接ロード**し、CUDA でオフロードします（`llama-server` 外部プロセス不要）。
+HF Spaces では `requirements.txt` に CUDA 向けの事前ビルド wheel を指定してください（ソースビルド回避）。
+
+- `YAKULINGO_SPACES_BACKEND=llama-cpp-python`（または `gguf-python`）
+- `YAKULINGO_SPACES_GGUF_REPO_ID` / `YAKULINGO_SPACES_GGUF_FILENAME`
+
 ### 任意（llama.cpp 設定）
 - `YAKULINGO_SPACES_N_GPU_LAYERS`（既定: `-1`）
   - `-1`: 可能な限り GPU にオフロード（内部的には `999` 相当として扱います）

@@ -16,7 +16,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 OutputLanguage = Literal["en", "ja"]
-Backend = Literal["gguf", "transformers"]
+Backend = Literal["gguf", "gguf_python", "transformers"]
 
 _RE_CODE_FENCE_LINE = re.compile(r"^\s*```.*$", re.MULTILINE)
 _RE_LEADING_LABEL = re.compile(
@@ -687,6 +687,9 @@ class GGUFTranslator:
     def backend_label(self) -> str:
         return "gguf"
 
+    def engine_label(self) -> str:
+        return "llama-server"
+
     def quant_label(self) -> str:
         match = re.search(r"-(Q[^.]+)\.gguf$", self._config.gguf_filename, re.IGNORECASE)
         return match.group(1) if match else "unknown"
@@ -821,6 +824,122 @@ class GGUFTranslator:
             )
             self._runtime = runtime
             return runtime
+
+
+class LlamaCppPythonTranslator:
+    def __init__(self, config: TranslationConfig | None = None) -> None:
+        self._config = config or default_config()
+        self._lock = threading.Lock()
+        self._llama: object | None = None
+        self._device: str | None = None
+
+    def backend_label(self) -> str:
+        return "gguf"
+
+    def engine_label(self) -> str:
+        return "llama-cpp-python"
+
+    def quant_label(self) -> str:
+        match = re.search(r"-(Q[^.]+)\.gguf$", self._config.gguf_filename, re.IGNORECASE)
+        return match.group(1) if match else "unknown"
+
+    def runtime_device(self) -> str:
+        if self._device:
+            return self._device
+        if _cuda_visible() and self._config.n_gpu_layers != 0:
+            return "cuda"
+        return "cpu"
+
+    def translate(self, text: str, *, output_language: OutputLanguage) -> str:
+        cleaned = (text or "").strip()
+        if not cleaned:
+            return ""
+
+        if not _cuda_visible() and not self._config.allow_cpu:
+            raise RuntimeError(
+                "GPU 縺悟茜逕ｨ縺ｧ縺阪∪縺帙ｓ・・eroGPU 縺悟牡繧雁ｽ薙※繧峨ｌ縺ｦ縺・↑縺・庄閭ｽ諤ｧ縺後≠繧翫∪縺呻ｼ峨・"
+                "Space 縺ｮ Hardware 繧・ZeroGPU 縺ｫ險ｭ螳壹＠縺ｦ縺上□縺輔＞縲・"
+                "・医ョ繝舌ャ繧ｰ逕ｨ騾斐〒 CPU 繧定ｨｱ蜿ｯ縺吶ｋ蝣ｴ蜷医・ YAKULINGO_SPACES_ALLOW_CPU=1・峨・"
+            )
+
+        prompt = _build_prompt(cleaned, output_language=output_language)
+        max_new_tokens = max(1, int(self._config.max_new_tokens))
+        temperature = float(self._config.temperature)
+
+        llama = self._get_llama()
+        try:
+            create_completion = getattr(llama, "create_completion", None)
+            if not callable(create_completion):
+                raise RuntimeError("llama-cpp-python の API が想定と異なります（create_completion がありません）")
+
+            data = create_completion(  # type: ignore[call-arg]
+                prompt=prompt,
+                max_tokens=max_new_tokens,
+                temperature=temperature,
+                top_p=1.0,
+                stop=["<end_of_turn>"],
+                stream=False,
+            )
+            generated = _extract_llama_text(data)
+        except Exception as e:
+            raise RuntimeError(
+                f"鄙ｻ險ｳ縺ｫ螟ｱ謨励＠縺ｾ縺励◆・・ackend=gguf/llama-cpp-python, device={self.runtime_device()}・・ {e}"
+            ) from e
+
+        return _clean_translation_output(generated)
+
+    def _get_llama(self) -> object:
+        if self._llama is not None:
+            return self._llama
+
+        with self._lock:
+            if self._llama is not None:
+                return self._llama
+
+            hf_token = _hf_token()
+            try:
+                from huggingface_hub import (  # type: ignore[import-not-found]
+                    hf_hub_download,
+                )
+            except ModuleNotFoundError as e:
+                raise RuntimeError(
+                    "huggingface-hub 縺瑚ｦ九▽縺九ｊ縺ｾ縺帙ｓ・・paces 縺ｮ萓晏ｭ倬未菫ゅｒ遒ｺ隱阪＠縺ｦ縺上□縺輔＞・峨・"
+                ) from e
+
+            try:
+                import llama_cpp  # type: ignore[import-not-found]
+            except ModuleNotFoundError as e:
+                raise RuntimeError(
+                    "llama-cpp-python 縺瑚ｦ九▽縺九ｊ縺ｾ縺帙ｓ・・paces 縺ｮ requirements.txt 縺ｫ CUDA 瀵・譛ｬ繝薙Ν繝峨・ wheel 繧定ｿｽ蜉縺励※縺上□縺輔＞・峨・"
+                    "・亥屓驕ｿ: --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124・峨・"
+                ) from e
+
+            gguf_path = hf_hub_download(
+                repo_id=self._config.gguf_repo_id,
+                filename=self._config.gguf_filename,
+                token=hf_token,
+            )
+
+            ctx = max(256, int(self._config.n_ctx))
+            ngl = int(self._config.n_gpu_layers)
+            if ngl < 0:
+                ngl = _AUTO_N_GPU_LAYERS
+            if not _cuda_visible():
+                ngl = 0
+
+            Llama = getattr(llama_cpp, "Llama", None)
+            if not callable(Llama):
+                raise RuntimeError("llama-cpp-python の Llama クラスが見つかりません")
+
+            llama = Llama(  # type: ignore[call-arg]
+                model_path=str(gguf_path),
+                n_ctx=ctx,
+                n_gpu_layers=ngl,
+                verbose=False,
+            )
+            self._llama = llama
+            self._device = "cuda" if _cuda_visible() and ngl != 0 else "cpu"
+            return llama
 
 
 class TransformersTranslator:
@@ -1012,6 +1131,7 @@ def _clean_translation_output(text: str) -> str:
 
 
 _default_translator = GGUFTranslator()
+_gguf_python_translator = LlamaCppPythonTranslator()
 _transformers_translator = TransformersTranslator()
 
 
@@ -1019,6 +1139,8 @@ def _select_backend() -> Backend:
     raw = (os.environ.get("YAKULINGO_SPACES_BACKEND") or "auto").strip().lower()
     if raw in ("gguf", "llama", "llama-server", "llama_server"):
         return "gguf"
+    if raw in ("gguf-python", "gguf_python", "llama-cpp-python", "llama_cpp_python", "llama_cpp"):
+        return "gguf_python"
     if raw in ("transformers", "torch", "hf"):
         return "transformers"
     if os.name != "nt" and _cuda_visible():
@@ -1026,9 +1148,13 @@ def _select_backend() -> Backend:
     return "gguf"
 
 
-def get_translator() -> GGUFTranslator | TransformersTranslator:
+def get_translator() -> GGUFTranslator | LlamaCppPythonTranslator | TransformersTranslator:
     backend = _select_backend()
-    return _transformers_translator if backend == "transformers" else _default_translator
+    if backend == "transformers":
+        return _transformers_translator
+    if backend == "gguf_python":
+        return _gguf_python_translator
+    return _default_translator
 
 
 def _hf_token() -> str | None:

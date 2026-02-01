@@ -170,6 +170,16 @@ def _translator_backend_label(translator: object) -> str:
     return "unknown"
 
 
+def _translator_engine_label(translator: object) -> str:
+    value = getattr(translator, "engine_label", None)
+    if callable(value):
+        try:
+            return str(value())
+        except Exception:
+            return "unknown"
+    return "unknown"
+
+
 def _translator_quant_label(translator: object) -> str:
     value = getattr(translator, "quant_label", None)
     if callable(value):
@@ -187,7 +197,9 @@ def _backend_status_lines(translator: object) -> str:
         load_in_4bit = (os.environ.get("YAKULINGO_SPACES_HF_LOAD_IN_4BIT") or "").strip()
         load_in_4bit = load_in_4bit if load_in_4bit else "1"
         return f"- hf_model: `{model_id}`\n- hf_load_in_4bit: `{load_in_4bit}`"
-    return f"- gguf_repo: `{_gguf_repo_id()}`\n- gguf_file: `{_gguf_filename()}`"
+    engine = _translator_engine_label(translator)
+    engine_line = f"\n- gguf_engine: `{engine}`" if engine != "unknown" else ""
+    return f"- gguf_repo: `{_gguf_repo_id()}`\n- gguf_file: `{_gguf_filename()}`{engine_line}"
 
 
 def _result_meta_markdown(
@@ -198,6 +210,9 @@ def _result_meta_markdown(
     if elapsed_s is not None:
         parts.append(f"`{elapsed_s:.2f}s`")
     parts.append(f"`backend={_translator_backend_label(translator)}`")
+    engine = _translator_engine_label(translator)
+    if engine != "unknown":
+        parts.append(f"`engine={engine}`")
     parts.append(f"`{_translator_quant_label(translator)}`")
     return " ".join(parts)
 
@@ -254,9 +269,10 @@ def _error_hint(message: str) -> str:
         or "llama-cpp-python" in lowered
     ):
         return (
-            "llama.cpp（llama-server）の取得/展開/起動に失敗している可能性があります。"
-            "Space のログを確認し、必要なら `YAKULINGO_SPACES_LLAMA_CPP_*`（URL/ASSET_SUFFIX など）"
+            "llama.cpp（llama-server / llama-cpp-python）周りで失敗している可能性があります。"
+            "Space のログを確認し、llama-server を使う場合は `YAKULINGO_SPACES_LLAMA_CPP_*`（URL/ASSET_SUFFIX など）"
             "や `HF_HOME`（キャッシュ）を見直してください。"
+            "llama-cpp-python を使う場合は `requirements.txt` の `--extra-index-url`（CUDA wheel）設定も確認してください。"
         )
     if "bitsandbytes" in lowered or "transformers" in lowered or "torch" in lowered:
         return (

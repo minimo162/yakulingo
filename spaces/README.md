@@ -12,6 +12,7 @@ python spaces/app.py
 ```
 
 ## 備考
+- CUDA（GGUF を Python で直接ロードする）: `YAKULINGO_SPACES_BACKEND=llama-cpp-python`（または `gguf-python`）
 - 翻訳バックエンドは GGUF（llama.cpp / llama-server（事前ビルド済みバイナリ））で実装しています。
 - ZeroGPU で CUDA を使いたい場合は `YAKULINGO_SPACES_BACKEND=transformers`（PyTorch/Transformers）を利用してください。
 - Hugging Face Spaces では `sdk=gradio` で `app_file=spaces/app.py` を指定する想定です。

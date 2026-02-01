@@ -26,6 +26,12 @@ torch; platform_system == "Linux"
 sentencepiece; platform_system == "Linux"
 accelerate; platform_system == "Linux"
 bitsandbytes; platform_system == "Linux"
+huggingface-hub; platform_system == "Linux"
+
+# llama-cpp-python (CUDA prebuilt wheels; Linux only)
+# NOTE: This avoids building llama-cpp-python from source on HF Spaces.
+--extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124
+llama-cpp-python==0.3.16; platform_system == "Linux"
 
 # Platform-specific (install manually if needed)
 # xlwings>=0.32.0  # Windows/macOS only, requires Excel

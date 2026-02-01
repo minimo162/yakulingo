@@ -5,6 +5,7 @@
 
 - デモ UI: `spaces/app.py`（Gradio）
 - 翻訳バックエンド: `spaces/translator.py`（Transformers / `google/translategemma-27b-it`）
+- ZeroGPU（動的GPU割当）前提で、翻訳処理は `@spaces.GPU` で実行します（GPU が必要な処理の実行時に GPU を要求し、完了後に解放）。
 
 ## できること / できないこと
 ### できること
@@ -19,6 +20,8 @@
 1. Hugging Face で Spaces を作成
 2. SDK: **Gradio** を選択
 3. Hardware: **ZeroGPU** を選択（利用可能な場合）
+
+> NOTE: ZeroGPU のホスティングは、個人アカウントは PRO、組織は Team/Enterprise 等が必要です（ZeroGPU が選べない場合は契約/権限を確認してください）。
 
 ### 2) この GitHub リポジトリを接続
 1. Space 設定から GitHub 連携でこのリポジトリを指定（既定ブランチ: `main`）
@@ -51,6 +54,14 @@ Space の Variables/Secrets に以下を設定します。
 - `YAKULINGO_SPACES_QUANT`（既定: `4bit`）
   - 例: `4bit` / `8bit` / `none`
 
+### 任意（ZeroGPU: GPU size / duration）
+- `YAKULINGO_SPACES_ZEROGPU_SIZE`（既定: `large`）
+  - `large`: Half NVIDIA H200（70GB）
+  - `xlarge`: Full NVIDIA H200（141GB、クォータ消費 2×）
+- `YAKULINGO_SPACES_ZEROGPU_DURATION`（既定: `120`）
+  - `@spaces.GPU(duration=...)` の設定値（秒）
+  - ZeroGPU の既定は 60 秒のため、重い初回ロード等でタイムアウトする場合は調整してください
+
 ### 任意（入力制限・生成設定）
 - `YAKULINGO_SPACES_MAX_CHARS`（既定: 2000）
 - `YAKULINGO_SPACES_MAX_NEW_TOKENS`（既定: 256）
@@ -70,6 +81,15 @@ python -m venv .venv
 pip install -r spaces/requirements.txt
 python spaces/app.py
 ```
+
+## ZeroGPU 公式仕様メモ（抜粋）
+- ZeroGPU は **Gradio SDK 専用**（本デモは Gradio 前提）
+- 対応バージョン（例）:
+  - Gradio 4+
+  - Python 3.10.13 / 3.12.12
+  - PyTorch 2.1.0〜latest（広範）
+- `torch.compile` は ZeroGPU では非対応（本デモは未使用）
+- GPU 利用は日次クォータ制（閲覧者のアカウント種別で優先度/上限が変わる）
 
 ## ZeroGPU の注意点（よくある詰まり）
 - 初回起動はモデルダウンロードで時間がかかります（数分かかる場合あり）

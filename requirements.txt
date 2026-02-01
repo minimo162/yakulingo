@@ -16,8 +16,14 @@ pdfminer.six>=20231228
 
 # Web UI
 nicegui>=3.3.1
-pywebview>=5.0.0
+pywebview>=5.0.0; sys_platform == "win32" or sys_platform == "darwin"
 pystray>=0.19.5; sys_platform == "win32"
+
+# Hugging Face Spaces demo (Linux only)
+gradio>=4.0.0; platform_system == "Linux"
+transformers>=4.0.0; platform_system == "Linux"
+torch; platform_system == "Linux"
+sentencepiece; platform_system == "Linux"
 
 # Platform-specific (install manually if needed)
 # xlwings>=0.32.0  # Windows/macOS only, requires Excel

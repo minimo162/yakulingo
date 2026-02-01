@@ -24,6 +24,8 @@ gradio>=4.0.0; platform_system == "Linux"
 transformers>=4.0.0; platform_system == "Linux"
 torch; platform_system == "Linux"
 sentencepiece; platform_system == "Linux"
+accelerate; platform_system == "Linux"
+bitsandbytes; platform_system == "Linux"
 
 # Platform-specific (install manually if needed)
 # xlwings>=0.32.0  # Windows/macOS only, requires Excel

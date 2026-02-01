@@ -17,7 +17,7 @@
   - 代替: 8-bit / 非量子化（環境が許す場合）
 - GPU が使えない場合:
   - 既定は「エラーで案内」（CPU フォールバックは現実的に遅くなり得るため）
-  - デバッグ用途で CPU 許可のフラグを用意する（後続タスクで実装）
+  - デバッグ用途で CPU 許可のフラグを用意する（`YAKULINGO_SPACES_ALLOW_CPU=1`）
 
 ## 実装方針（後続タスクで実装）
 - モデルは HF Hub から初回ダウンロードしてキャッシュする（`HF_HOME` を推奨）
@@ -32,6 +32,8 @@
 - `HF_HUB_DISABLE_TELEMETRY=1`
 - `YAKULINGO_SPACES_MODEL_ID`（既定: `google/translategemma-27b-it`）
 - `YAKULINGO_SPACES_QUANT`（既定: `4bit`）
+- `YAKULINGO_SPACES_ZEROGPU_SIZE`（既定: `large`）
+- `YAKULINGO_SPACES_ZEROGPU_DURATION`（既定: `120`）
 - `YAKULINGO_SPACES_ALLOW_CPU=1`（デバッグ用途。非推奨）
 - `HF_TOKEN`（モデルが gated の場合）
 

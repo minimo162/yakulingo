@@ -2,12 +2,23 @@ from __future__ import annotations
 
 import os
 import re
+import sys
+import time
+from pathlib import Path
 
 import gradio as gr
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+from spaces.translator import get_translator  # noqa: E402
 
 _RE_JP_KANA = re.compile(r"[\u3040-\u309F\u30A0-\u30FF\uFF65-\uFF9F]")
 _RE_HANGUL = re.compile(r"[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]")
 _RE_LATIN_ALPHA = re.compile(r"[A-Za-z]")
+
+_DEFAULT_MAX_CHARS = 2000
 
 
 def _detect_direction(text: str) -> tuple[str, str]:
@@ -21,46 +32,38 @@ def _detect_direction(text: str) -> tuple[str, str]:
     return "en", "（既定）日本語 → 英語"
 
 
-def _translate_stub(text: str) -> tuple[str, str]:
-    text = (text or "").strip()
-    if not text:
-        return "", ""
-    _, label = _detect_direction(text)
-    return f"（デモ準備中: {label}）\n\n{text}", label
-
-
-with gr.Blocks(title="YakuLingo (訳リンゴ) – HF Spaces Demo") as demo:
-    gr.Markdown("# YakuLingo (訳リンゴ) – Hugging Face Spaces デモ")
-    gr.Markdown(
-        "※ これは Spaces 用のデモUI骨格です。翻訳バックエンドは後続タスクで実装します。"
-    )
-
-    with gr.Row():
-        input_text = gr.Textbox(
-            label="入力テキスト",
-            lines=10,
-            placeholder="日本語または英語を入力してください",
+def _max_chars() -> int:
+    try:
+        return int(
+            os.environ.get("YAKULINGO_SPACES_MAX_CHARS", str(_DEFAULT_MAX_CHARS))
         )
-        output_text = gr.Textbox(label="出力", lines=10)
+    except ValueError:
+        return _DEFAULT_MAX_CHARS
 
-    direction = gr.Textbox(label="判定（暫定）", interactive=False)
 
-    with gr.Row():
-        translate_btn = gr.Button("翻訳（スタブ）", variant="primary")
-        clear_btn = gr.Button("クリア")
+def _translate(text: str) -> tuple[str, str, str]:
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return "", "", ""
 
-    translate_btn.click(
-        _translate_stub, inputs=[input_text], outputs=[output_text, direction]
-    )
-    clear_btn.click(lambda: ("", "", ""), outputs=[input_text, output_text, direction])
+    output_language, label = _detect_direction(cleaned)
+    if len(cleaned) > _max_chars():
+        return (
+            "",
+            label,
+            f"入力が長すぎます（{len(cleaned)}文字）。{_max_chars()}文字以内に短縮してください。",
+        )
 
-    gr.Examples(
-        examples=[
-            ["お世話になっております。こちらの資料をご確認ください。"],
-            ["This is a demo. Please translate this sentence into Japanese."],
-        ],
-        inputs=[input_text],
-    )
+    translator = get_translator()
+    start = time.monotonic()
+    try:
+        translated = translator.translate(cleaned, output_language=output_language)  # type: ignore[arg-type]
+    except Exception as e:
+        return "", label, f"エラー: {e}"
+
+    elapsed_s = time.monotonic() - start
+    status = f"{label} / device={translator.runtime_device()} / {elapsed_s:.2f}s"
+    return translated, label, status
 
 
 def _server_port() -> int:
@@ -68,6 +71,44 @@ def _server_port() -> int:
         return int(os.environ.get("PORT", "7860"))
     except ValueError:
         return 7860
+
+
+_JP_EXAMPLE = "お世話になっております。こちらの資料をご確認ください。"
+_EN_EXAMPLE = "This is a demo. Please translate this sentence into Japanese."
+
+
+with gr.Blocks(title="YakuLingo (訳リンゴ) – HF Spaces Demo") as demo:
+    gr.Markdown("# YakuLingo (訳リンゴ) – Hugging Face Spaces デモ")
+    gr.Markdown(
+        "日本語/英語を入力すると自動判定して翻訳します（ZeroGPU 想定: GPU が無い場合は CPU で動きます）。"
+    )
+
+    input_text = gr.Textbox(
+        label="入力テキスト",
+        lines=10,
+        placeholder="日本語または英語を入力してください",
+    )
+
+    with gr.Row():
+        translate_btn = gr.Button("翻訳", variant="primary")
+        clear_btn = gr.Button("クリア")
+        ja_example_btn = gr.Button("日本語例文")
+        en_example_btn = gr.Button("英語例文")
+
+    output_text = gr.Textbox(label="翻訳結果", lines=10)
+    direction = gr.Textbox(label="判定", interactive=False)
+    status = gr.Markdown()
+
+    translate_btn.click(
+        _translate, inputs=[input_text], outputs=[output_text, direction, status]
+    )
+    clear_btn.click(
+        lambda: ("", "", "", ""), outputs=[input_text, output_text, direction, status]
+    )
+    ja_example_btn.click(lambda: _JP_EXAMPLE, outputs=[input_text])
+    en_example_btn.click(lambda: _EN_EXAMPLE, outputs=[input_text])
+
+    gr.Examples(examples=[[_JP_EXAMPLE], [_EN_EXAMPLE]], inputs=[input_text])
 
 
 if __name__ == "__main__":

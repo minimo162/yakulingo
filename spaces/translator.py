@@ -12,6 +12,7 @@ _RE_CODE_FENCE_LINE = re.compile(r"^\s*```.*$", re.MULTILINE)
 _RE_LEADING_LABEL = re.compile(
     r"^\s*(?:Translation|Translated|訳|訳文|翻訳)\s*[:：]\s*", re.IGNORECASE
 )
+_RE_GEMMA_TURN = re.compile(r"<(?:start|end)_of_turn>\s*", re.IGNORECASE)
 
 
 def _env_int(name: str, default: int) -> int:
@@ -31,41 +32,64 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return raw in ("1", "true", "yes", "y", "on")
 
 
+def _env_float(name: str, default: float) -> float:
+    raw = (os.environ.get(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
+def _cuda_visible() -> bool:
+    value = (os.environ.get("CUDA_VISIBLE_DEVICES") or "").strip()
+    if not value or value in ("-1", "none"):
+        return False
+    return True
+
+
 @dataclass(frozen=True)
 class TranslationConfig:
-    model_id: str
+    gguf_repo_id: str
+    gguf_filename: str
     max_new_tokens: int
-    quant: str
+    n_ctx: int
+    n_gpu_layers: int
+    temperature: float
     allow_cpu: bool
 
 
 def default_config() -> TranslationConfig:
     return TranslationConfig(
-        model_id=os.environ.get(
-            "YAKULINGO_SPACES_MODEL_ID", "google/translategemma-27b-it"
+        gguf_repo_id=os.environ.get(
+            "YAKULINGO_SPACES_GGUF_REPO_ID",
+            "mradermacher/translategemma-27b-it-i1-GGUF",
+        ),
+        gguf_filename=os.environ.get(
+            "YAKULINGO_SPACES_GGUF_FILENAME", "translategemma-27b-it.i1-Q4_K_M.gguf"
         ),
         max_new_tokens=_env_int("YAKULINGO_SPACES_MAX_NEW_TOKENS", 256),
-        quant=(os.environ.get("YAKULINGO_SPACES_QUANT") or "4bit").strip().lower(),
+        n_ctx=_env_int("YAKULINGO_SPACES_N_CTX", 4096),
+        n_gpu_layers=_env_int("YAKULINGO_SPACES_N_GPU_LAYERS", -1),
+        temperature=_env_float("YAKULINGO_SPACES_TEMPERATURE", 0.0),
         allow_cpu=_env_bool("YAKULINGO_SPACES_ALLOW_CPU", False),
     )
 
 
-class TransformersTranslator:
+class GGUFTranslator:
     def __init__(self, config: TranslationConfig | None = None) -> None:
         self._config = config or default_config()
         self._lock = threading.Lock()
-        self._pipeline: object | None = None
+        self._llm: object | None = None
         self._device: str | None = None
 
     def runtime_device(self) -> str:
         if self._device:
             return self._device
-        try:
-            import torch  # type: ignore[import-not-found]
-
-            return "cuda" if torch.cuda.is_available() else "cpu"
-        except ModuleNotFoundError:
-            return "unknown"
+        if _cuda_visible() and self._config.n_gpu_layers != 0:
+            return "cuda"
+        return "cpu"
 
     def translate(self, text: str, *, output_language: OutputLanguage) -> str:
         cleaned = (text or "").strip()
@@ -74,47 +98,46 @@ class TransformersTranslator:
 
         max_new_tokens = max(1, int(self._config.max_new_tokens))
         prompt = _build_prompt(cleaned, output_language=output_language)
-        pipeline_obj = self._get_pipeline()
+        llm = self._get_llm()
 
         try:
-            result = pipeline_obj(
-                prompt, max_new_tokens=max_new_tokens, do_sample=False
-            )  # type: ignore[operator]
+            result = llm(  # type: ignore[operator]
+                prompt,
+                max_tokens=max_new_tokens,
+                temperature=float(self._config.temperature),
+                top_p=1.0,
+                stop=["<end_of_turn>"],
+            )
         except Exception as e:
             raise RuntimeError(
-                f"翻訳に失敗しました（backend=transformers, device={self.runtime_device()}）: {e}"
+                f"翻訳に失敗しました（backend=gguf/llama.cpp, device={self.runtime_device()}）: {e}"
             ) from e
 
-        generated = _extract_generated_text(result)
-        if generated.startswith(prompt):
-            generated = generated[len(prompt) :]
+        generated = _extract_llama_text(result)
         return _clean_translation_output(generated)
 
-    def _get_pipeline(self) -> object:
-        if self._pipeline is not None:
-            return self._pipeline
+    def _get_llm(self) -> object:
+        if self._llm is not None:
+            return self._llm
 
         with self._lock:
-            if self._pipeline is not None:
-                return self._pipeline
+            if self._llm is not None:
+                return self._llm
 
-            model_id = self._config.model_id
+            hf_token = _hf_token()
 
             try:
-                import torch  # type: ignore[import-not-found]
-                from transformers import (  # type: ignore[import-not-found]
-                    AutoModelForCausalLM,
-                    AutoTokenizer,
-                    BitsAndBytesConfig,
-                    pipeline,
+                from huggingface_hub import (  # type: ignore[import-not-found]
+                    hf_hub_download,
                 )
+                from llama_cpp import Llama  # type: ignore[import-not-found]
             except ModuleNotFoundError as e:
                 raise RuntimeError(
                     "Spaces 用の依存関係が不足しています。"
                     "（例: pip install -r spaces/requirements.txt）"
                 ) from e
 
-            use_cuda = bool(torch.cuda.is_available())
+            use_cuda = _cuda_visible()
             if not use_cuda and not self._config.allow_cpu:
                 raise RuntimeError(
                     "GPU が利用できません（ZeroGPU が割り当てられていない可能性があります）。"
@@ -122,40 +145,26 @@ class TransformersTranslator:
                     "（デバッグ用途で CPU を許可する場合は YAKULINGO_SPACES_ALLOW_CPU=1）"
                 )
 
-            quant = (self._config.quant or "").strip().lower()
-            torch_dtype = torch.float16 if use_cuda else None
-
-            quantization_config = None
-            if use_cuda:
-                if quant in ("4bit", "4-bit", "4"):
-                    quantization_config = BitsAndBytesConfig(
-                        load_in_4bit=True,
-                        bnb_4bit_quant_type="nf4",
-                        bnb_4bit_use_double_quant=True,
-                        bnb_4bit_compute_dtype=torch.float16,
-                    )
-                elif quant in ("8bit", "8-bit", "8"):
-                    quantization_config = BitsAndBytesConfig(load_in_8bit=True)
-                elif quant in ("none", "", "fp16", "bf16"):
-                    quantization_config = None
-                else:
-                    raise RuntimeError(
-                        f"YAKULINGO_SPACES_QUANT が不正です: {self._config.quant!r}（例: 4bit / 8bit / none）"
-                    )
-
-            tokenizer = AutoTokenizer.from_pretrained(model_id)
-            model = AutoModelForCausalLM.from_pretrained(
-                model_id,
-                device_map="auto" if use_cuda else None,
-                torch_dtype=torch_dtype,
-                quantization_config=quantization_config,
+            gguf_path = hf_hub_download(
+                repo_id=self._config.gguf_repo_id,
+                filename=self._config.gguf_filename,
+                token=hf_token,
             )
 
-            pipeline_obj = pipeline("text-generation", model=model, tokenizer=tokenizer)
+            n_gpu_layers = int(self._config.n_gpu_layers)
+            if not use_cuda:
+                n_gpu_layers = 0
 
-            self._device = "cuda" if use_cuda else "cpu"
-            self._pipeline = pipeline_obj
-            return pipeline_obj
+            llm = Llama(
+                model_path=gguf_path,
+                n_ctx=max(256, int(self._config.n_ctx)),
+                n_gpu_layers=n_gpu_layers,
+                verbose=False,
+            )
+
+            self._device = "cuda" if use_cuda and n_gpu_layers != 0 else "cpu"
+            self._llm = llm
+            return llm
 
 
 def _build_prompt(text: str, *, output_language: OutputLanguage) -> str:
@@ -172,16 +181,14 @@ def _build_prompt(text: str, *, output_language: OutputLanguage) -> str:
     )
 
 
-def _extract_generated_text(result: object) -> str:
-    if isinstance(result, list) and result:
-        first = result[0]
-        if isinstance(first, dict):
-            for key in ("generated_text", "text", "translation_text"):
-                value = first.get(key)
-                if value:
-                    return str(value)
-            return ""
-        return str(first)
+def _extract_llama_text(result: object) -> str:
+    if isinstance(result, dict):
+        choices = result.get("choices")
+        if isinstance(choices, list) and choices:
+            first = choices[0]
+            if isinstance(first, dict):
+                value = first.get("text") or ""
+                return str(value)
     return str(result or "")
 
 
@@ -189,13 +196,24 @@ def _clean_translation_output(text: str) -> str:
     cleaned = (text or "").strip()
     if not cleaned:
         return ""
+    cleaned = _RE_GEMMA_TURN.sub("", cleaned).strip()
     cleaned = _RE_CODE_FENCE_LINE.sub("", cleaned).strip()
     cleaned = _RE_LEADING_LABEL.sub("", cleaned).strip()
     return cleaned
 
 
-_default_translator = TransformersTranslator()
+_default_translator = GGUFTranslator()
 
 
-def get_translator() -> TransformersTranslator:
+def get_translator() -> GGUFTranslator:
     return _default_translator
+
+
+def _hf_token() -> str | None:
+    token = (
+        os.environ.get("HF_TOKEN")
+        or os.environ.get("HUGGINGFACEHUB_API_TOKEN")
+        or os.environ.get("HUGGINGFACE_HUB_TOKEN")
+        or ""
+    ).strip()
+    return token or None

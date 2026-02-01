@@ -24,9 +24,104 @@ _RE_HANGUL = re.compile(r"[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]")
 _RE_LATIN_ALPHA = re.compile(r"[A-Za-z]")
 
 _DEFAULT_MAX_CHARS = 2000
-_DEFAULT_MODEL_ID = "google/translategemma-27b-it"
+_DEFAULT_GGUF_REPO_ID = "mradermacher/translategemma-27b-it-i1-GGUF"
+_DEFAULT_GGUF_FILENAME = "translategemma-27b-it.i1-Q4_K_M.gguf"
 _DEFAULT_ZEROGPU_SIZE = "large"
 _DEFAULT_ZEROGPU_DURATION_S = 120
+
+_CSS = """
+:root {
+  /* M3-ish design tokens (subset) */
+  --md-sys-color-primary: #4355B9;
+  --md-sys-color-on-primary: #FFFFFF;
+  --md-sys-color-primary-container: #DEE0FF;
+  --md-sys-color-on-primary-container: #00105C;
+
+  --md-sys-color-secondary-container: #E6E7EB;
+  --md-sys-color-on-secondary-container: #1F2328;
+
+  --md-sys-color-surface: #FCFCFD;
+  --md-sys-color-surface-container: #EEF0F5;
+  --md-sys-color-on-surface: #1D1D1F;
+  --md-sys-color-on-surface-variant: #5A5A63;
+  --md-sys-color-outline: #7E7E87;
+  --md-sys-color-outline-variant: #D0D2DA;
+}
+
+.gradio-container {
+  background: var(--md-sys-color-surface);
+  color: var(--md-sys-color-on-surface);
+  max-width: 1100px;
+}
+
+/* Card container */
+.yak-card {
+  background: var(--md-sys-color-surface-container);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 28px;
+  padding: 18px 18px 14px 18px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+}
+
+.yak-title h1 {
+  margin: 0.25rem 0 0.25rem 0;
+}
+
+.yak-subtitle {
+  color: var(--md-sys-color-on-surface-variant);
+  margin-top: 0.25rem;
+}
+
+/* Buttons */
+#translate_btn button {
+  background: var(--md-sys-color-primary) !important;
+  color: var(--md-sys-color-on-primary) !important;
+  border-radius: 9999px !important;
+}
+
+#clear_btn button,
+#ja_example_btn button,
+#en_example_btn button {
+  border-radius: 9999px !important;
+}
+
+/* Result meta: direction chip + badges */
+#result_meta strong {
+  display: inline-block;
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+  padding: 0.25rem 0.6rem;
+  border-radius: 9999px;
+  font-weight: 650;
+}
+
+#result_meta code {
+  display: inline-block;
+  background: var(--md-sys-color-surface);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  color: var(--md-sys-color-on-surface);
+  padding: 0.15rem 0.45rem;
+  border-radius: 9999px;
+}
+
+/* Textareas */
+#input_text textarea,
+#output_text textarea {
+  border-radius: 12px !important;
+  border-color: var(--md-sys-color-outline-variant) !important;
+}
+"""
+
+
+def _has_hf_token() -> bool:
+    return bool(
+        (
+            os.environ.get("HF_TOKEN")
+            or os.environ.get("HUGGINGFACEHUB_API_TOKEN")
+            or os.environ.get("HUGGINGFACE_HUB_TOKEN")
+            or ""
+        ).strip()
+    )
 
 
 def _detect_direction(text: str) -> tuple[str, str]:
@@ -49,12 +144,30 @@ def _max_chars() -> int:
         return _DEFAULT_MAX_CHARS
 
 
-def _model_id() -> str:
-    return (os.environ.get("YAKULINGO_SPACES_MODEL_ID") or _DEFAULT_MODEL_ID).strip()
+def _gguf_repo_id() -> str:
+    return (
+        os.environ.get("YAKULINGO_SPACES_GGUF_REPO_ID") or _DEFAULT_GGUF_REPO_ID
+    ).strip()
 
 
-def _quant() -> str:
-    return (os.environ.get("YAKULINGO_SPACES_QUANT") or "4bit").strip()
+def _gguf_filename() -> str:
+    return (
+        os.environ.get("YAKULINGO_SPACES_GGUF_FILENAME") or _DEFAULT_GGUF_FILENAME
+    ).strip()
+
+
+def _quant_label() -> str:
+    match = re.search(r"-(Q[^.]+)\.gguf$", _gguf_filename(), re.IGNORECASE)
+    return match.group(1) if match else "unknown"
+
+
+def _result_meta_markdown(label: str, *, device: str, elapsed_s: float | None) -> str:
+    parts: list[str] = [f"**{label}**"]
+    parts.append(f"`device={device}`")
+    if elapsed_s is not None:
+        parts.append(f"`{elapsed_s:.2f}s`")
+    parts.append(f"`{_quant_label()}`")
+    return " ".join(parts)
 
 
 def _zerogpu_size() -> str:
@@ -93,9 +206,25 @@ def _error_hint(message: str) -> str:
     if "gpu が利用できません" in lowered:
         return "Space の Hardware を ZeroGPU に設定してください（またはデバッグ用途で `YAKULINGO_SPACES_ALLOW_CPU=1`）。"
     if "401" in lowered or "unauthorized" in lowered or "gated" in lowered:
-        return "モデルが gated の可能性があります。Spaces の Secret に `HF_TOKEN` を設定してください。"
-    if "bitsandbytes" in lowered:
-        return "bitsandbytes の導入に失敗している可能性があります。依存関係（`requirements.txt`）を確認してください。"
+        if not _has_hf_token():
+            return (
+                "このモデルは gated（利用条件の同意/アクセス許可が必要）な可能性があります。"
+                "Spaces の Secret に `HF_TOKEN` を設定し、モデルページで同意/許可を済ませてください。"
+            )
+        return (
+            "HF_TOKEN は設定されていますが、モデルへのアクセス権がない可能性があります。"
+            "モデルページで同意/許可を確認し、Space を再起動してください。"
+        )
+    if "llama_cpp" in lowered or "llama-cpp-python" in lowered:
+        return (
+            "llama-cpp-python の導入/ビルドに失敗している可能性があります。"
+            "依存関係（`spaces/requirements.txt`）と Space のビルドログを確認してください。"
+        )
+    if "huggingface_hub" in lowered or "hf_hub_download" in lowered:
+        return (
+            "モデルのダウンロードに失敗している可能性があります。"
+            "（gated の場合は `HF_TOKEN`、キャッシュは `HF_HOME` を確認してください）"
+        )
     if "cuda" in lowered:
         return "CUDA 周りで失敗している可能性があります。ZeroGPU の割当と依存関係を確認してください。"
     return ""
@@ -111,7 +240,7 @@ def _translate(text: str) -> tuple[str, str, str]:
     if len(cleaned) > _max_chars():
         return (
             "",
-            label,
+            _result_meta_markdown(label, device="unknown", elapsed_s=None),
             f"入力が長すぎます（{len(cleaned)}文字）。{_max_chars()}文字以内に短縮してください。",
         )
 
@@ -124,15 +253,23 @@ def _translate(text: str) -> tuple[str, str, str]:
         detail = f"エラー: {e}"
         if hint:
             detail = f"{detail}\n\n**ヒント**: {hint}"
-        status = (
-            f"{label} / model=`{_model_id()}` / quant=`{_quant()}` / device={translator.runtime_device()}"
-            f"\n\n{detail}"
+        meta = _result_meta_markdown(
+            label, device=translator.runtime_device(), elapsed_s=None
         )
-        return "", label, status
+        status = (
+            f"{detail}\n\n"
+            f"- gguf_repo: `{_gguf_repo_id()}`\n"
+            f"- gguf_file: `{_gguf_filename()}`"
+        )
+        return "", meta, status
 
     elapsed_s = time.monotonic() - start
-    status = f"{label} / model=`{_model_id()}` / quant=`{_quant()}` / device={translator.runtime_device()} / {elapsed_s:.2f}s"
-    return translated, label, status
+    action = "英訳しました" if output_language == "en" else "和訳しました"
+    meta = _result_meta_markdown(
+        label, device=translator.runtime_device(), elapsed_s=elapsed_s
+    )
+    status = f"**{action}**"
+    return translated, meta, status
 
 
 def _server_port() -> int:
@@ -146,42 +283,57 @@ _JP_EXAMPLE = "お世話になっております。こちらの資料をご確�
 _EN_EXAMPLE = "This is a demo. Please translate this sentence into Japanese."
 
 
-with gr.Blocks(title="YakuLingo (訳リンゴ) – HF Spaces Demo") as demo:
-    gr.Markdown("# YakuLingo (訳リンゴ) – Hugging Face Spaces デモ")
-    gr.Markdown("日本語/英語を入力すると自動判定して翻訳します（ZeroGPU 想定）。")
+with gr.Blocks(title="YakuLingo (訳リンゴ) – HF Spaces Demo", css=_CSS) as demo:
+    gr.Markdown("# YakuLingo (訳リンゴ)", elem_classes=["yak-title"])
     gr.Markdown(
-        f"**Model**: `{_model_id()}`  \n"
-        f"**Quant**: `{_quant()}`  \n"
-        f"**ZeroGPU**: size=`{_zerogpu_size()}` duration=`{_zerogpu_duration_seconds()}s`  \n"
-        "（必要に応じて Spaces の Secret に `HF_TOKEN` を設定してください）"
-    )
-
-    input_text = gr.Textbox(
-        label="入力テキスト",
-        lines=10,
-        placeholder="日本語または英語を入力してください",
+        "Hugging Face Spaces（ZeroGPU）向けの **日英テキスト翻訳デモ** です。"
+        "入力言語は自動判定します。",
+        elem_classes=["yak-subtitle"],
     )
 
     with gr.Row():
-        translate_btn = gr.Button("翻訳", variant="primary")
-        clear_btn = gr.Button("クリア")
-        ja_example_btn = gr.Button("日本語例文")
-        en_example_btn = gr.Button("英語例文")
+        with gr.Column(elem_classes=["yak-card"]):
+            gr.Markdown("## 入力")
+            input_text = gr.Textbox(
+                label="入力テキスト",
+                lines=10,
+                placeholder="日本語または英語を入力してください",
+                elem_id="input_text",
+            )
 
-    output_text = gr.Textbox(label="翻訳結果", lines=10)
-    direction = gr.Textbox(label="判定", interactive=False)
-    status = gr.Markdown()
+            with gr.Row():
+                translate_btn = gr.Button("翻訳", elem_id="translate_btn")
+                clear_btn = gr.Button("クリア", elem_id="clear_btn")
+
+            with gr.Row():
+                ja_example_btn = gr.Button("日本語例文", elem_id="ja_example_btn")
+                en_example_btn = gr.Button("英語例文", elem_id="en_example_btn")
+
+            gr.Examples(examples=[[_JP_EXAMPLE], [_EN_EXAMPLE]], inputs=[input_text])
+
+        with gr.Column(elem_classes=["yak-card"]):
+            gr.Markdown("## 翻訳結果")
+            result_meta = gr.Markdown(elem_id="result_meta")
+            output_text = gr.Textbox(label="翻訳結果", lines=10, elem_id="output_text")
+            status = gr.Markdown()
+
+            gr.Markdown(
+                "**設定（環境変数）**  \n"
+                f"- gguf_repo: `{_gguf_repo_id()}`  \n"
+                f"- gguf_file: `{_gguf_filename()}`  \n"
+                f"- ZeroGPU: size=`{_zerogpu_size()}` duration=`{_zerogpu_duration_seconds()}s`  \n"
+                f"- HF_TOKEN: `{('set' if _has_hf_token() else 'not set')}`",
+            )
 
     translate_btn.click(
-        _translate, inputs=[input_text], outputs=[output_text, direction, status]
+        _translate, inputs=[input_text], outputs=[output_text, result_meta, status]
     )
     clear_btn.click(
-        lambda: ("", "", "", ""), outputs=[input_text, output_text, direction, status]
+        lambda: ("", "", "", ""),
+        outputs=[input_text, output_text, result_meta, status],
     )
     ja_example_btn.click(lambda: _JP_EXAMPLE, outputs=[input_text])
     en_example_btn.click(lambda: _EN_EXAMPLE, outputs=[input_text])
-
-    gr.Examples(examples=[[_JP_EXAMPLE], [_EN_EXAMPLE]], inputs=[input_text])
 
 
 if __name__ == "__main__":

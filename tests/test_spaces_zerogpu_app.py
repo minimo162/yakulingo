@@ -26,6 +26,10 @@ def _install_fake_gradio(monkeypatch: pytest.MonkeyPatch) -> None:
         def __init__(self, *args, **kwargs):  # type: ignore[no-untyped-def]
             pass
 
+    class Column(_Ctx):  # type: ignore[no-redef]
+        def __init__(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            pass
+
     def Markdown(*args, **kwargs):  # type: ignore[no-untyped-def]
         return object()
 
@@ -45,6 +49,7 @@ def _install_fake_gradio(monkeypatch: pytest.MonkeyPatch) -> None:
 
     fake_gradio.Blocks = Blocks
     fake_gradio.Row = Row
+    fake_gradio.Column = Column
     fake_gradio.Markdown = Markdown
     fake_gradio.Textbox = Textbox
     fake_gradio.Button = Button
@@ -121,3 +126,22 @@ def test_zerogpu_gpu_decorator_uses_gpu_when_available(
     assert decorator(f)(1) == 2
     assert calls == [{"size": "xlarge", "duration": 42}]
 
+
+def test_error_hint_for_gated_repo_suggests_hf_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = _import_spaces_app(monkeypatch)
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.delenv("HUGGINGFACEHUB_API_TOKEN", raising=False)
+    monkeypatch.delenv("HUGGINGFACE_HUB_TOKEN", raising=False)
+    hint = app._error_hint("You are trying to access a gated repo. 401 Client Error")  # type: ignore[attr-defined]
+    assert "HF_TOKEN" in hint
+
+
+def test_error_hint_for_gated_repo_when_token_set_mentions_access(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = _import_spaces_app(monkeypatch)
+    monkeypatch.setenv("HF_TOKEN", "dummy")
+    hint = app._error_hint("Cannot access gated repo. 401 Client Error")  # type: ignore[attr-defined]
+    assert "アクセス" in hint

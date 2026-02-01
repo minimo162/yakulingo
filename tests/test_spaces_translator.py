@@ -3,83 +3,70 @@ import types
 
 import pytest
 
-from spaces.translator import TranslationConfig, TransformersTranslator, default_config
+from spaces.translator import GGUFTranslator, TranslationConfig, default_config
 
 
-def _install_fake_transformers(
-    monkeypatch: pytest.MonkeyPatch, *, cuda_available: bool
-):
+def _install_fake_llama_stack(monkeypatch: pytest.MonkeyPatch):
     calls: list[dict[str, object]] = []
 
-    float16_sentinel = object()
+    def hf_hub_download(  # type: ignore[no-untyped-def]
+        *, repo_id: str, filename: str, token: str | None = None
+    ) -> str:
+        calls.append(
+            {"fn": "hf_hub_download", "repo_id": repo_id, "filename": filename, "token": token}
+        )
+        return "MODEL.gguf"
 
-    fake_torch = types.SimpleNamespace()
-    fake_torch.float16 = float16_sentinel
-    fake_torch.cuda = types.SimpleNamespace(is_available=lambda: cuda_available)
-
-    class BitsAndBytesConfig:  # type: ignore[no-redef]
-        def __init__(self, **kwargs):  # type: ignore[no-untyped-def]
-            self.kwargs = dict(kwargs)
-
-    class AutoTokenizer:  # type: ignore[no-redef]
-        @classmethod
-        def from_pretrained(cls, model_id: str):  # type: ignore[no-untyped-def]
-            calls.append({"fn": "AutoTokenizer.from_pretrained", "model_id": model_id})
-            return object()
-
-    class AutoModelForCausalLM:  # type: ignore[no-redef]
-        @classmethod
-        def from_pretrained(  # type: ignore[no-untyped-def]
-            cls,
-            model_id: str,
-            device_map: object | None = None,
-            torch_dtype: object | None = None,
-            quantization_config: object | None = None,
-        ):
+    class Llama:  # type: ignore[no-redef]
+        def __init__(  # type: ignore[no-untyped-def]
+            self,
+            *,
+            model_path: str,
+            n_ctx: int,
+            n_gpu_layers: int,
+            verbose: bool = False,
+        ) -> None:
             calls.append(
                 {
-                    "fn": "AutoModelForCausalLM.from_pretrained",
-                    "model_id": model_id,
-                    "device_map": device_map,
-                    "torch_dtype": torch_dtype,
-                    "quantization_config": quantization_config,
+                    "fn": "Llama.__init__",
+                    "model_path": model_path,
+                    "n_ctx": n_ctx,
+                    "n_gpu_layers": n_gpu_layers,
+                    "verbose": verbose,
                 }
             )
-            return object()
 
-    def pipeline(task: str, *, model: object, tokenizer: object):  # type: ignore[no-untyped-def]
-        calls.append(
-            {"fn": "pipeline", "task": task, "model": model, "tokenizer": tokenizer}
-        )
+        def __call__(self, prompt: str, **kwargs):  # type: ignore[no-untyped-def]
+            calls.append({"fn": "Llama.__call__", "prompt": prompt, **kwargs})
+            return {"choices": [{"text": "OUTPUT"}]}
 
-        def run(text: str, **kwargs):  # type: ignore[no-untyped-def]
-            return [{"generated_text": f"{text}OUTPUT"}]
+    fake_hf = types.ModuleType("huggingface_hub")
+    fake_hf.hf_hub_download = hf_hub_download  # type: ignore[attr-defined]
+    fake_llama_cpp = types.ModuleType("llama_cpp")
+    fake_llama_cpp.Llama = Llama  # type: ignore[attr-defined]
 
-        return run
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hf)
+    monkeypatch.setitem(sys.modules, "llama_cpp", fake_llama_cpp)
 
-    fake_transformers = types.SimpleNamespace(
-        AutoTokenizer=AutoTokenizer,
-        AutoModelForCausalLM=AutoModelForCausalLM,
-        BitsAndBytesConfig=BitsAndBytesConfig,
-        pipeline=pipeline,
-    )
-
-    monkeypatch.setitem(sys.modules, "torch", fake_torch)
-    monkeypatch.setitem(sys.modules, "transformers", fake_transformers)
-
-    return calls, float16_sentinel
+    return calls
 
 
 def test_default_config_reads_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("YAKULINGO_SPACES_MODEL_ID", "model-id")
+    monkeypatch.setenv("YAKULINGO_SPACES_GGUF_REPO_ID", "repo-id")
+    monkeypatch.setenv("YAKULINGO_SPACES_GGUF_FILENAME", "file.gguf")
     monkeypatch.setenv("YAKULINGO_SPACES_MAX_NEW_TOKENS", "123")
-    monkeypatch.setenv("YAKULINGO_SPACES_QUANT", "8bit")
+    monkeypatch.setenv("YAKULINGO_SPACES_N_CTX", "2048")
+    monkeypatch.setenv("YAKULINGO_SPACES_N_GPU_LAYERS", "42")
+    monkeypatch.setenv("YAKULINGO_SPACES_TEMPERATURE", "0.25")
     monkeypatch.setenv("YAKULINGO_SPACES_ALLOW_CPU", "1")
 
     cfg = default_config()
-    assert cfg.model_id == "model-id"
+    assert cfg.gguf_repo_id == "repo-id"
+    assert cfg.gguf_filename == "file.gguf"
     assert cfg.max_new_tokens == 123
-    assert cfg.quant == "8bit"
+    assert cfg.n_ctx == 2048
+    assert cfg.n_gpu_layers == 42
+    assert cfg.temperature == 0.25
     assert cfg.allow_cpu is True
 
 
@@ -92,13 +79,17 @@ def test_default_config_invalid_int_falls_back(monkeypatch: pytest.MonkeyPatch) 
 def test_translator_fails_when_cuda_unavailable_by_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls, _ = _install_fake_transformers(monkeypatch, cuda_available=False)
+    calls = _install_fake_llama_stack(monkeypatch)
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
 
-    translator = TransformersTranslator(
+    translator = GGUFTranslator(
         TranslationConfig(
-            model_id="model-id",
+            gguf_repo_id="repo-id",
+            gguf_filename="file.gguf",
             max_new_tokens=10,
-            quant="4bit",
+            n_ctx=512,
+            n_gpu_layers=-1,
+            temperature=0.0,
             allow_cpu=False,
         )
     )
@@ -111,13 +102,17 @@ def test_translator_fails_when_cuda_unavailable_by_default(
 def test_translator_uses_cpu_when_cuda_unavailable_and_allowed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls, _ = _install_fake_transformers(monkeypatch, cuda_available=False)
+    calls = _install_fake_llama_stack(monkeypatch)
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
 
-    translator = TransformersTranslator(
+    translator = GGUFTranslator(
         TranslationConfig(
-            model_id="model-id",
+            gguf_repo_id="repo-id",
+            gguf_filename="file.gguf",
             max_new_tokens=10,
-            quant="4bit",
+            n_ctx=512,
+            n_gpu_layers=-1,
+            temperature=0.0,
             allow_cpu=True,
         )
     )
@@ -125,57 +120,56 @@ def test_translator_uses_cpu_when_cuda_unavailable_and_allowed(
     out = translator.translate("x", output_language="en")
     assert out == "OUTPUT"
 
-    model_call = next(
-        c for c in calls if c["fn"] == "AutoModelForCausalLM.from_pretrained"
-    )
-    assert model_call["device_map"] is None
-    assert model_call["torch_dtype"] is None
+    init_call = next(c for c in calls if c["fn"] == "Llama.__init__")
+    assert init_call["n_gpu_layers"] == 0
 
 
-def test_translator_sets_dtype_when_cuda_available(
+def test_translator_uses_gpu_layers_when_cuda_visible(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls, float16_sentinel = _install_fake_transformers(
-        monkeypatch, cuda_available=True
-    )
+    calls = _install_fake_llama_stack(monkeypatch)
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
 
-    translator = TransformersTranslator(
+    translator = GGUFTranslator(
         TranslationConfig(
-            model_id="model-id",
+            gguf_repo_id="repo-id",
+            gguf_filename="file.gguf",
             max_new_tokens=10,
-            quant="4bit",
+            n_ctx=512,
+            n_gpu_layers=123,
+            temperature=0.0,
             allow_cpu=False,
         )
     )
 
     _ = translator.translate("x", output_language="en")
-    model_call = next(
-        c for c in calls if c["fn"] == "AutoModelForCausalLM.from_pretrained"
-    )
-    assert model_call["device_map"] == "auto"
-    assert model_call["torch_dtype"] is float16_sentinel
-
-    bnb_cfg = model_call["quantization_config"]
-    assert hasattr(bnb_cfg, "kwargs")
-    assert bnb_cfg.kwargs.get("load_in_4bit") is True
+    init_call = next(c for c in calls if c["fn"] == "Llama.__init__")
+    assert init_call["n_gpu_layers"] == 123
 
 
-def test_translator_caches_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls, _ = _install_fake_transformers(monkeypatch, cuda_available=False)
+def test_translator_caches_llm(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = _install_fake_llama_stack(monkeypatch)
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
 
-    translator = TransformersTranslator(
+    translator = GGUFTranslator(
         TranslationConfig(
-            model_id="model-id",
+            gguf_repo_id="repo-id",
+            gguf_filename="file.gguf",
             max_new_tokens=10,
-            quant="4bit",
-            allow_cpu=True,
+            n_ctx=512,
+            n_gpu_layers=1,
+            temperature=0.0,
+            allow_cpu=False,
         )
     )
 
     assert translator.translate("a", output_language="en") == "OUTPUT"
     assert translator.translate("b", output_language="en") == "OUTPUT"
 
-    tokenizer_calls = [c for c in calls if c["fn"] == "AutoTokenizer.from_pretrained"]
-    pipeline_calls = [c for c in calls if c["fn"] == "pipeline"]
-    assert len(tokenizer_calls) == 1
-    assert len(pipeline_calls) == 1
+    download_calls = [c for c in calls if c["fn"] == "hf_hub_download"]
+    init_calls = [c for c in calls if c["fn"] == "Llama.__init__"]
+    run_calls = [c for c in calls if c["fn"] == "Llama.__call__"]
+
+    assert len(download_calls) == 1
+    assert len(init_calls) == 1
+    assert len(run_calls) == 2

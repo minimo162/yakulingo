@@ -4,7 +4,7 @@
 このリポジトリにはデスクトップ向け（NiceGUI）とは別に、Hugging Face Spaces 上で動く **テキスト翻訳デモ** を同梱しています。
 
 - デモ UI: `spaces/app.py`（Gradio）
-- 翻訳バックエンド: `spaces/translator.py`（Transformers / `google/translategemma-27b-it`）
+- 翻訳バックエンド: `spaces/translator.py`（GGUF / llama.cpp / `llama-cpp-python`）
 - ZeroGPU（動的GPU割当）前提で、翻訳処理は `@spaces.GPU` で実行します（GPU が必要な処理の実行時に GPU を要求し、完了後に解放）。
 
 ## できること / できないこと
@@ -63,16 +63,25 @@ Space の Variables/Secrets に以下を設定します。
 
 ### 必須（場合による）
 - `HF_TOKEN`（モデルが gated / 同意が必要な場合は Secret に設定）
+  - NOTE: Space 側でモデルをダウンロードするためのトークンです（訪問者側のトークンは不要）。
+  - 手順（概要）:
+    - モデルページで利用条件に同意し、必要ならアクセス申請を行う
+    - Hugging Face のアクセストークン（read で可）を発行する
+    - Space の Settings → Variables and secrets → Secrets に `HF_TOKEN` を追加して再起動する
 
 ### 任意（キャッシュ）
 - `HF_HOME=/data/.huggingface`（永続ストレージがある場合）
 
-### 任意（モデル差し替え）
-- `YAKULINGO_SPACES_MODEL_ID`（既定: `google/translategemma-27b-it`）
+### 任意（モデル差し替え: GGUF）
+- `YAKULINGO_SPACES_GGUF_REPO_ID`（既定: `mradermacher/translategemma-27b-it-i1-GGUF`）
+- `YAKULINGO_SPACES_GGUF_FILENAME`（既定: `translategemma-27b-it.i1-Q4_K_M.gguf`）
 
-### 任意（量子化）
-- `YAKULINGO_SPACES_QUANT`（既定: `4bit`）
-  - 例: `4bit` / `8bit` / `none`
+### 任意（llama.cpp 設定）
+- `YAKULINGO_SPACES_N_GPU_LAYERS`（既定: `-1`）
+  - `-1`: 可能な限り GPU にオフロード（GPU 対応ビルドの場合）
+  - `0`: CPU のみ
+- `YAKULINGO_SPACES_N_CTX`（既定: `4096`）
+- `YAKULINGO_SPACES_TEMPERATURE`（既定: `0.0`）
 
 ### 任意（ZeroGPU: GPU size / duration）
 - `YAKULINGO_SPACES_ZEROGPU_SIZE`（既定: `large`）
@@ -89,7 +98,7 @@ Space の Variables/Secrets に以下を設定します。
 
 ### デバッグ用途（非推奨）
 - `YAKULINGO_SPACES_ALLOW_CPU=1`
-  - GPU が無い場合でも実行を試みます（27B は非常に遅い/失敗しやすいので非推奨）。
+  - GPU が無い場合でも実行を試みます（27B は遅い/失敗しやすいので非推奨）。
 
 ## 依存関係
 - Spaces（Linux）向けの追加依存は `requirements.txt` に Linux 限定で追記しています。
@@ -128,4 +137,5 @@ python spaces/app.py
   - 入力を短くする
   - `YAKULINGO_SPACES_MAX_NEW_TOKENS` を下げる
   - `YAKULINGO_SPACES_MAX_CHARS` を下げる
-  - `YAKULINGO_SPACES_QUANT=4bit` を確認する
+  - `YAKULINGO_SPACES_GGUF_FILENAME` の量子化（例: `...-Q4_K_M.gguf`）を確認する
+  - `YAKULINGO_SPACES_N_GPU_LAYERS` を調整する（GPU が使えない場合は `0` にする）

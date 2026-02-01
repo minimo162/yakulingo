@@ -14,4 +14,4 @@ python spaces/app.py
 ## 備考
 - 翻訳バックエンドは後続タスクで実装予定です（現状はスタブでエコーします）。
 - Hugging Face Spaces では `sdk=gradio` で `app_file=spaces/app.py` を指定する想定です。
-
+- モデル選定メモ: `docs/HF_SPACES_MODEL.md`

@@ -76,6 +76,14 @@ Space の Variables/Secrets に以下を設定します。
 - `YAKULINGO_SPACES_GGUF_REPO_ID`（既定: `mradermacher/translategemma-27b-it-i1-GGUF`）
 - `YAKULINGO_SPACES_GGUF_FILENAME`（既定: `translategemma-27b-it.i1-Q4_K_M.gguf`）
 
+### 任意（CUDA 推奨: Transformers バックエンド）
+ZeroGPU で **CUDA を使いたい場合**は、llama.cpp（Linux 事前ビルドは Vulkan 前提）ではなく、PyTorch/Transformers 経由で実行します。
+
+- `YAKULINGO_SPACES_BACKEND=transformers`（または未設定でも CUDA が見える環境では自動で選択されます）
+- `YAKULINGO_SPACES_HF_MODEL_ID`（既定: `google/translategemma-27b-it`）
+- `YAKULINGO_SPACES_HF_REVISION`（任意）
+- `YAKULINGO_SPACES_HF_LOAD_IN_4BIT`（既定: `1`。bitsandbytes が必要。失敗する場合は `0`）
+
 ### 任意（llama.cpp 設定）
 - `YAKULINGO_SPACES_N_GPU_LAYERS`（既定: `-1`）
   - `-1`: 可能な限り GPU にオフロード（内部的には `999` 相当として扱います）

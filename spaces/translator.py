@@ -16,6 +16,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 OutputLanguage = Literal["en", "ja"]
+Backend = Literal["gguf", "transformers"]
 
 _RE_CODE_FENCE_LINE = re.compile(r"^\s*```.*$", re.MULTILINE)
 _RE_LEADING_LABEL = re.compile(
@@ -683,6 +684,13 @@ class GGUFTranslator:
             return "cuda"
         return "cpu"
 
+    def backend_label(self) -> str:
+        return "gguf"
+
+    def quant_label(self) -> str:
+        match = re.search(r"-(Q[^.]+)\.gguf$", self._config.gguf_filename, re.IGNORECASE)
+        return match.group(1) if match else "unknown"
+
     def translate(self, text: str, *, output_language: OutputLanguage) -> str:
         cleaned = (text or "").strip()
         if not cleaned:
@@ -815,6 +823,159 @@ class GGUFTranslator:
             return runtime
 
 
+class TransformersTranslator:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._model: object | None = None
+        self._tokenizer: object | None = None
+        self._device: str | None = None
+
+    def backend_label(self) -> str:
+        return "transformers"
+
+    def quant_label(self) -> str:
+        return "4bit" if _env_bool("YAKULINGO_SPACES_HF_LOAD_IN_4BIT", True) else "bf16"
+
+    def runtime_device(self) -> str:
+        if self._device:
+            return self._device
+        return "cuda" if _cuda_visible() else "cpu"
+
+    def translate(self, text: str, *, output_language: OutputLanguage) -> str:
+        cleaned = (text or "").strip()
+        if not cleaned:
+            return ""
+
+        if not _cuda_visible() and not _env_bool("YAKULINGO_SPACES_ALLOW_CPU", False):
+            raise RuntimeError(
+                "GPU が利用できません（ZeroGPU が割り当てられていない可能性があります）。"
+                "Space の Hardware を ZeroGPU に設定してください。"
+            )
+
+        prompt = _build_prompt(cleaned, output_language=output_language)
+        max_new_tokens = max(1, int(_env_int("YAKULINGO_SPACES_MAX_NEW_TOKENS", 256)))
+        temperature = float(_env_float("YAKULINGO_SPACES_TEMPERATURE", 0.0))
+
+        model, tokenizer = self._get_model_and_tokenizer()
+
+        try:
+            import torch  # type: ignore[import-not-found]
+        except ModuleNotFoundError as e:
+            raise RuntimeError("torch が見つかりません（Spaces の依存関係を確認してください）。") from e
+
+        do_sample = temperature > 0.0
+        prompt_text = self._format_chat_prompt(tokenizer, prompt)
+
+        inputs = tokenizer(prompt_text, return_tensors="pt")  # type: ignore[operator]
+        input_ids = inputs["input_ids"]
+        attention_mask = inputs.get("attention_mask")
+
+        device = "cuda" if torch.cuda.is_available() and _cuda_visible() else "cpu"
+        if device == "cuda":
+            input_ids = input_ids.to("cuda")
+            if attention_mask is not None:
+                attention_mask = attention_mask.to("cuda")
+
+        pad_token_id = getattr(tokenizer, "pad_token_id", None)
+        eos_token_id = getattr(tokenizer, "eos_token_id", None)
+        if pad_token_id is None and eos_token_id is not None:
+            pad_token_id = eos_token_id
+
+        kwargs: dict[str, object] = {
+            "input_ids": input_ids,
+            "max_new_tokens": max_new_tokens,
+            "do_sample": do_sample,
+            "top_p": 1.0,
+        }
+        if attention_mask is not None:
+            kwargs["attention_mask"] = attention_mask
+        if pad_token_id is not None:
+            kwargs["pad_token_id"] = pad_token_id
+        if eos_token_id is not None:
+            kwargs["eos_token_id"] = eos_token_id
+        if do_sample:
+            kwargs["temperature"] = temperature
+
+        gen = model.generate(**kwargs)  # type: ignore[operator]
+        generated_ids = gen[0][input_ids.shape[-1] :]
+
+        out = tokenizer.decode(generated_ids, skip_special_tokens=True)  # type: ignore[operator]
+        self._device = "cuda" if device == "cuda" else "cpu"
+        return _clean_translation_output(out)
+
+    def _format_chat_prompt(self, tokenizer: object, prompt: str) -> str:
+        apply = getattr(tokenizer, "apply_chat_template", None)
+        if callable(apply):
+            try:
+                return apply(  # type: ignore[operator]
+                    [{"role": "user", "content": prompt}],
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
+            except Exception:
+                pass
+        return f"<bos><start_of_turn>user\n{prompt}<end_of_turn>\n<start_of_turn>model\n"
+
+    def _get_model_and_tokenizer(self) -> tuple[object, object]:
+        if self._model is not None and self._tokenizer is not None:
+            return self._model, self._tokenizer
+
+        with self._lock:
+            if self._model is not None and self._tokenizer is not None:
+                return self._model, self._tokenizer
+
+            model_id = _env_str(
+                "YAKULINGO_SPACES_HF_MODEL_ID", "google/translategemma-27b-it"
+            )
+            revision = (os.environ.get("YAKULINGO_SPACES_HF_REVISION") or "").strip() or None
+            load_in_4bit = _env_bool("YAKULINGO_SPACES_HF_LOAD_IN_4BIT", True)
+            hf_token = _hf_token()
+
+            try:
+                from transformers import (  # type: ignore[import-not-found]
+                    AutoModelForCausalLM,
+                    AutoTokenizer,
+                )
+            except ModuleNotFoundError as e:
+                raise RuntimeError(
+                    "transformers が見つかりません（Spaces の依存関係を確認してください）。"
+                ) from e
+
+            quant_config = None
+            if load_in_4bit:
+                try:
+                    import torch  # type: ignore[import-not-found]
+                    from transformers import BitsAndBytesConfig  # type: ignore[import-not-found]
+                    import bitsandbytes  # noqa: F401
+                except ModuleNotFoundError as e:
+                    raise RuntimeError(
+                        "4bit 量子化の依存関係（bitsandbytes）が不足しています。"
+                        "（回避: `YAKULINGO_SPACES_HF_LOAD_IN_4BIT=0`）"
+                    ) from e
+                quant_config = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_quant_type="nf4",
+                    bnb_4bit_use_double_quant=True,
+                    bnb_4bit_compute_dtype=torch.bfloat16,
+                )
+
+            tokenizer = AutoTokenizer.from_pretrained(
+                model_id, revision=revision, token=hf_token
+            )
+            model = AutoModelForCausalLM.from_pretrained(
+                model_id,
+                revision=revision,
+                token=hf_token,
+                device_map="auto",
+                torch_dtype="auto",
+                quantization_config=quant_config,
+            )
+
+            self._model = model
+            self._tokenizer = tokenizer
+            return model, tokenizer
+
+
 def _build_prompt(text: str, *, output_language: OutputLanguage) -> str:
     if output_language == "en":
         return (
@@ -851,10 +1012,23 @@ def _clean_translation_output(text: str) -> str:
 
 
 _default_translator = GGUFTranslator()
+_transformers_translator = TransformersTranslator()
 
 
-def get_translator() -> GGUFTranslator:
-    return _default_translator
+def _select_backend() -> Backend:
+    raw = (os.environ.get("YAKULINGO_SPACES_BACKEND") or "auto").strip().lower()
+    if raw in ("gguf", "llama", "llama-server", "llama_server"):
+        return "gguf"
+    if raw in ("transformers", "torch", "hf"):
+        return "transformers"
+    if os.name != "nt" and _cuda_visible():
+        return "transformers"
+    return "gguf"
+
+
+def get_translator() -> GGUFTranslator | TransformersTranslator:
+    backend = _select_backend()
+    return _transformers_translator if backend == "transformers" else _default_translator
 
 
 def _hf_token() -> str | None:

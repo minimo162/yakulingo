@@ -160,13 +160,45 @@ def _quant_label() -> str:
     match = re.search(r"-(Q[^.]+)\.gguf$", _gguf_filename(), re.IGNORECASE)
     return match.group(1) if match else "unknown"
 
+def _translator_backend_label(translator: object) -> str:
+    value = getattr(translator, "backend_label", None)
+    if callable(value):
+        try:
+            return str(value())
+        except Exception:
+            return "unknown"
+    return "unknown"
 
-def _result_meta_markdown(label: str, *, device: str, elapsed_s: float | None) -> str:
+
+def _translator_quant_label(translator: object) -> str:
+    value = getattr(translator, "quant_label", None)
+    if callable(value):
+        try:
+            return str(value())
+        except Exception:
+            return _quant_label()
+    return _quant_label()
+
+
+def _backend_status_lines(translator: object) -> str:
+    backend = _translator_backend_label(translator)
+    if backend == "transformers":
+        model_id = (os.environ.get("YAKULINGO_SPACES_HF_MODEL_ID") or "").strip() or "google/translategemma-27b-it"
+        load_in_4bit = (os.environ.get("YAKULINGO_SPACES_HF_LOAD_IN_4BIT") or "").strip()
+        load_in_4bit = load_in_4bit if load_in_4bit else "1"
+        return f"- hf_model: `{model_id}`\n- hf_load_in_4bit: `{load_in_4bit}`"
+    return f"- gguf_repo: `{_gguf_repo_id()}`\n- gguf_file: `{_gguf_filename()}`"
+
+
+def _result_meta_markdown(
+    label: str, *, translator: object, device: str, elapsed_s: float | None
+) -> str:
     parts: list[str] = [f"**{label}**"]
     parts.append(f"`device={device}`")
     if elapsed_s is not None:
         parts.append(f"`{elapsed_s:.2f}s`")
-    parts.append(f"`{_quant_label()}`")
+    parts.append(f"`backend={_translator_backend_label(translator)}`")
+    parts.append(f"`{_translator_quant_label(translator)}`")
     return " ".join(parts)
 
 
@@ -226,6 +258,12 @@ def _error_hint(message: str) -> str:
             "Space のログを確認し、必要なら `YAKULINGO_SPACES_LLAMA_CPP_*`（URL/ASSET_SUFFIX など）"
             "や `HF_HOME`（キャッシュ）を見直してください。"
         )
+    if "bitsandbytes" in lowered or "transformers" in lowered or "torch" in lowered:
+        return (
+            "Transformers（PyTorch）経由の起動/量子化に失敗している可能性があります。"
+            "依存関係（`torch`/`transformers`/`bitsandbytes`）と Space のログを確認し、"
+            "必要なら `YAKULINGO_SPACES_HF_LOAD_IN_4BIT=0` を試してください。"
+        )
     if "huggingface_hub" in lowered or "hf_hub_download" in lowered:
         return (
             "モデルのダウンロードに失敗している可能性があります。"
@@ -242,15 +280,17 @@ def _translate(text: str) -> tuple[str, str, str]:
     if not cleaned:
         return "", "", ""
 
+    translator = get_translator()
     output_language, label = _detect_direction(cleaned)
     if len(cleaned) > _max_chars():
         return (
             "",
-            _result_meta_markdown(label, device="unknown", elapsed_s=None),
+            _result_meta_markdown(
+                label, translator=translator, device="unknown", elapsed_s=None
+            ),
             f"入力が長すぎます（{len(cleaned)}文字）。{_max_chars()}文字以内に短縮してください。",
         )
 
-    translator = get_translator()
     start = time.monotonic()
     try:
         translated = translator.translate(cleaned, output_language=output_language)  # type: ignore[arg-type]
@@ -260,19 +300,24 @@ def _translate(text: str) -> tuple[str, str, str]:
         if hint:
             detail = f"{detail}\n\n**ヒント**: {hint}"
         meta = _result_meta_markdown(
-            label, device=translator.runtime_device(), elapsed_s=None
+            label,
+            translator=translator,
+            device=translator.runtime_device(),
+            elapsed_s=None,
         )
         status = (
             f"{detail}\n\n"
-            f"- gguf_repo: `{_gguf_repo_id()}`\n"
-            f"- gguf_file: `{_gguf_filename()}`"
+            f"{_backend_status_lines(translator)}"
         )
         return "", meta, status
 
     elapsed_s = time.monotonic() - start
     action = "英訳しました" if output_language == "en" else "和訳しました"
     meta = _result_meta_markdown(
-        label, device=translator.runtime_device(), elapsed_s=elapsed_s
+        label,
+        translator=translator,
+        device=translator.runtime_device(),
+        elapsed_s=elapsed_s,
     )
     status = f"**{action}**"
     return translated, meta, status

@@ -12,7 +12,8 @@
   - file: `translategemma-27b-it.i1-Q4_K_M.gguf`
 
 ## 実行方式（決定）
-- `llama-server`（llama.cpp の事前ビルド済みバイナリ）で GGUF を実行して翻訳する
+- 既定: `llama-server`（llama.cpp の事前ビルド済みバイナリ）で GGUF を実行して翻訳する
+- CUDA を使う場合: PyTorch/Transformers バックエンドを使う（`YAKULINGO_SPACES_BACKEND=transformers`）
 - ZeroGPU（動的GPU割当）前提で、翻訳処理は `@spaces.GPU` の内側で実行する（`size` / `duration` は環境変数で指定）
 - 量子化は GGUF のファイルで決まる（例: `...-Q4_K_M.gguf`）
 - GPU が使えない場合:
@@ -50,6 +51,9 @@
 - `YAKULINGO_SPACES_LLAMA_DEVICE`（任意。`--device` 上書き）
 - `YAKULINGO_SPACES_LLAMA_SERVER_PORT`（任意。既定: `8090`）
 - `YAKULINGO_SPACES_LLAMA_SERVER_STARTUP_TIMEOUT`（任意。既定: `120`）
+- `YAKULINGO_SPACES_BACKEND=transformers`（CUDA を使う場合）
+- `YAKULINGO_SPACES_HF_MODEL_ID`（既定: `google/translategemma-27b-it`）
+- `YAKULINGO_SPACES_HF_LOAD_IN_4BIT`（既定: `1`。失敗する場合は `0`）
 - `HF_TOKEN`（モデルが gated / 同意が必要な場合）
 
 ## 推奨（ZeroGPU）

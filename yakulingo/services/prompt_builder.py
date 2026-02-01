@@ -43,7 +43,7 @@ _RE_EN_NUMBER_WITH_LARGE_UNIT = re.compile(
     rf"(?P<number>{_EN_NUMBER_WITH_OPTIONAL_COMMAS_PATTERN}(?:\.\d+)?)"
     rf"(?P<suffix>\)?)"
     r"\s*"
-    r"(?P<unit>billion|trillion|bn)\b"
+    r"(?P<unit>billion|trillion|trllion|bn)\b"
     r"(?:\s*(?P<yen>yen)(?![A-Za-z0-9]))?",
     re.IGNORECASE,
 )
@@ -53,6 +53,15 @@ _RE_EN_NUMBER_WITH_OKU_UNIT = re.compile(
     rf"(?P<suffix>\)?)"
     r"\s*"
     r"(?P<unit>oku)\b"
+    r"(?:\s*(?P<yen>yen)(?![A-Za-z0-9]))?",
+    re.IGNORECASE,
+)
+_RE_EN_NUMBER_WITH_SMALL_UNIT = re.compile(
+    rf"(?P<prefix>\(?[▲+\-−]?[¥￥]?)"
+    rf"(?P<number>{_EN_NUMBER_WITH_OPTIONAL_COMMAS_PATTERN}(?:\.\d+)?)"
+    rf"(?P<suffix>\)?)"
+    r"\s*"
+    r"(?P<unit>thousand|million)\b"
     r"(?:\s*(?P<yen>yen)(?![A-Za-z0-9]))?",
     re.IGNORECASE,
 )
@@ -184,10 +193,49 @@ def _normalize_en_financial_expressions_to_japanese(text: str) -> str:
         prefix = prefix.replace("¥", "").replace("￥", "")
 
         unit_key = "billion" if unit == "bn" else unit
+        if unit_key == "trllion":
+            unit_key = "trillion"
         multiplier = Decimal("10") if unit_key == "billion" else Decimal("10000")
         oku_amount = number * multiplier
         jp_amount = _format_oku_to_japanese_cho_oku(oku_amount, include_yen=has_yen)
         return f"{prefix}{jp_amount}{suffix}"
+
+    def format_number_with_commas(value: Decimal) -> str:
+        sign = "-" if value < 0 else ""
+        value = abs(value)
+        try:
+            if value == value.to_integral():
+                return f"{sign}{int(value):,}"
+        except (InvalidOperation, ValueError):
+            return f"{sign}0"
+
+        text = format(value.normalize(), "f")
+        int_part, _, frac_part = text.partition(".")
+        int_part_with_commas = f"{int(int_part):,}"
+        frac_part = frac_part.rstrip("0")
+        if frac_part:
+            return f"{sign}{int_part_with_commas}.{frac_part}"
+        return f"{sign}{int_part_with_commas}"
+
+    def repl_small(match: re.Match[str]) -> str:
+        prefix = match.group("prefix") or ""
+        number_str = match.group("number") or ""
+        suffix = match.group("suffix") or ""
+        unit = (match.group("unit") or "").lower()
+        yen_word = match.group("yen") or ""
+
+        number = parse_decimal(number_str)
+        if number is None:
+            return match.group(0)
+
+        has_yen = bool(yen_word) or ("¥" in prefix or "￥" in prefix)
+        prefix = prefix.replace("¥", "").replace("￥", "")
+
+        multiplier = Decimal("1000") if unit == "thousand" else Decimal("1000000")
+        amount = number * multiplier
+        if has_yen:
+            return f"{prefix}{_format_japanese_yen_amount(amount)}{suffix}"
+        return f"{prefix}{format_number_with_commas(amount)}{suffix}"
 
     def repl_oku(match: re.Match[str]) -> str:
         prefix = match.group("prefix") or ""
@@ -206,6 +254,7 @@ def _normalize_en_financial_expressions_to_japanese(text: str) -> str:
         return f"{prefix}{jp_amount}{suffix}"
 
     fixed = text
+    fixed = _RE_EN_NUMBER_WITH_SMALL_UNIT.sub(repl_small, fixed)
     fixed = _RE_EN_NUMBER_WITH_LARGE_UNIT.sub(repl_unit, fixed)
     fixed = _RE_EN_NUMBER_WITH_OKU_UNIT.sub(repl_oku, fixed)
     return fixed
@@ -536,7 +585,14 @@ class PromptBuilder:
         if output_language == "jp":
             lowered = input_text.lower()
             if (
-                ("billion" in lowered or "trillion" in lowered or "bn" in lowered)
+                (
+                    "thousand" in lowered
+                    or "million" in lowered
+                    or "billion" in lowered
+                    or "trillion" in lowered
+                    or "trllion" in lowered
+                    or "bn" in lowered
+                )
                 or ("oku" in lowered)
                 or ("¥" in input_text or "￥" in input_text)
             ):

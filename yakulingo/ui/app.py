@@ -8509,6 +8509,20 @@ class YakuLingoApp:
         self._local_ai_warmup_key = None
         logger.info("[TIMING] LocalAI warmup cancelled: %s", reason)
 
+    def _is_warmup_blocking_translation(self) -> bool:
+        """Return True when startup warmup is still running and translation must be gated."""
+        task = self._local_ai_warmup_task
+        if task is None:
+            return False
+        done = getattr(task, "done", None)
+        if callable(done):
+            try:
+                return not bool(done())
+            except Exception:
+                return True
+        # Unknown task-like object: be safe and treat as running.
+        return True
+
     def _start_local_ai_warmup(self, runtime: "LocalAIServerRuntime") -> None:
         key = self._build_local_ai_warmup_key(runtime)
         existing = self._local_ai_warmup_task

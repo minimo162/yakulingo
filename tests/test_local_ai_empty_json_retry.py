@@ -65,19 +65,27 @@ class EmptyJsonOnceLocalAIClient(LocalAIClient):
 def test_translate_single_does_not_retry_without_response_format_when_empty_json() -> (
     None
 ):
+    import yakulingo.services.local_ai_client as client_module
+
+    client_module._WARMED_RUNTIME_KEYS.clear()
     client = EmptyJsonOnceLocalAIClient()
 
     raw = client.translate_single("ignored", 'Return JSON only: {"translation": ""}')
 
     assert raw == "{}"
-    assert len(client.http_payloads) == 1
-    assert "response_format" in client.http_payloads[0]
+    assert len(client.http_payloads) == 2  # warmup ping + translate
+    warmup_payload, translate_payload = client.http_payloads
+    assert warmup_payload["messages"][0]["content"] == "ping"
+    assert "response_format" in translate_payload
     assert client._get_response_format_support(client.runtime) is None
 
 
 def test_translate_single_streaming_does_not_retry_without_response_format_when_empty_json() -> (
     None
 ):
+    import yakulingo.services.local_ai_client as client_module
+
+    client_module._WARMED_RUNTIME_KEYS.clear()
     client = EmptyJsonOnceLocalAIClient()
 
     raw = client.translate_single(
@@ -89,5 +97,6 @@ def test_translate_single_streaming_does_not_retry_without_response_format_when_
     assert raw == "{}"
     assert len(client.streaming_payloads) == 1
     assert "response_format" in client.streaming_payloads[0]
-    assert len(client.http_payloads) == 0
+    assert len(client.http_payloads) == 1  # warmup ping only
+    assert client.http_payloads[0]["messages"][0]["content"] == "ping"
     assert client._get_response_format_support(client.runtime) is None

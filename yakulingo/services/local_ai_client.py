@@ -23,6 +23,26 @@ from yakulingo.services.exceptions import TranslationCancelledError
 
 logger = logging.getLogger(__name__)
 
+_WARMED_RUNTIME_KEYS: set[str] = set()
+_WARMED_RUNTIME_LOCK = threading.Lock()
+
+
+def _warmup_key(runtime: "LocalAIServerRuntime") -> str:
+    model = runtime.model_id or runtime.model_path.name
+    return f"{runtime.host}:{runtime.port}:{model}"
+
+
+def _is_warmed(runtime: "LocalAIServerRuntime") -> bool:
+    key = _warmup_key(runtime)
+    with _WARMED_RUNTIME_LOCK:
+        return key in _WARMED_RUNTIME_KEYS
+
+
+def _mark_warmed(runtime: "LocalAIServerRuntime") -> None:
+    key = _warmup_key(runtime)
+    with _WARMED_RUNTIME_LOCK:
+        _WARMED_RUNTIME_KEYS.add(key)
+
 _TIMING_ENABLED = os.environ.get("YAKULINGO_LOCAL_AI_TIMING") == "1"
 
 _DIAGNOSTIC_SNIPPET_CHARS = 200
@@ -1134,6 +1154,21 @@ class LocalAIClient:
             t_req,
             _sent_prompt_len(prompt, repeat=False),
         )
+        _mark_warmed(runtime)
+
+    def _ensure_warmed(self, runtime: LocalAIServerRuntime, timeout: Optional[int]) -> None:
+        if _is_warmed(runtime):
+            return
+        try:
+            warmup_timeout = timeout
+            if warmup_timeout is not None:
+                warmup_timeout = max(1, int(warmup_timeout))
+            self.warmup(runtime=runtime, timeout=warmup_timeout, max_tokens=1)
+        except Exception as e:
+            logger.debug("LocalAI warmup before translate failed: %s", e)
+        finally:
+            # Avoid re-running warmup on every request if it keeps failing.
+            _mark_warmed(runtime)
 
     def translate_single(
         self,
@@ -1157,6 +1192,8 @@ class LocalAIClient:
                 runtime.port,
                 runtime.model_id or runtime.model_path.name,
             )
+
+        self._ensure_warmed(runtime, timeout)
 
         t1 = time.perf_counter()
         repeat_used = False
@@ -1224,6 +1261,8 @@ class LocalAIClient:
                 runtime.port,
                 runtime.model_id or runtime.model_path.name,
             )
+
+        self._ensure_warmed(runtime, timeout)
 
         t1 = time.perf_counter()
         repeat_used = False

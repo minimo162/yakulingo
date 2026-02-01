@@ -91,6 +91,15 @@ HF Spaces では `requirements.txt` に CUDA 向けの事前ビルド wheel を�
 - `YAKULINGO_SPACES_BACKEND=llama-cpp-python`（または `gguf-python`）
 - `YAKULINGO_SPACES_GGUF_REPO_ID` / `YAKULINGO_SPACES_GGUF_FILENAME`
 
+#### 設定例（推奨）
+Space の Settings → Variables に以下を追加してください（Secrets ではありません）。
+
+```text
+YAKULINGO_SPACES_BACKEND=llama-cpp-python
+YAKULINGO_SPACES_GGUF_REPO_ID=mradermacher/translategemma-27b-it-i1-GGUF
+YAKULINGO_SPACES_GGUF_FILENAME=translategemma-27b-it.i1-Q4_K_M.gguf
+```
+
 ### 任意（llama.cpp 設定）
 - `YAKULINGO_SPACES_N_GPU_LAYERS`（既定: `-1`）
   - `-1`: 可能な限り GPU にオフロード（内部的には `999` 相当として扱います）

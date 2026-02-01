@@ -41,6 +41,8 @@ USER_SETTINGS_KEYS = {
     "font_jp_to_en",
     "font_en_to_jp",
     "font_size_adjustment_jp_to_en",
+    "ui_keepalive_enabled",
+    "ui_keepalive_interval_sec",
     # 出力オプション（ファイル翻訳パネルで変更）
     "bilingual_output",
     # ブラウザ表示モード
@@ -381,6 +383,10 @@ class AppSettings:
     # "minimized": 最小化して非表示
     # "foreground": 前面に表示
     browser_display_mode: str = "minimized"
+
+    # Idle freeze mitigation: periodic lightweight UI heartbeat (best-effort).
+    ui_keepalive_enabled: bool = True
+    ui_keepalive_interval_sec: int = 60
     # Login overlay guard (Edge foreground/overlay A/B guard)
     login_overlay_guard: dict[str, object] = field(
         default_factory=lambda: {"enabled": False, "remove_after_version": None}
@@ -597,6 +603,30 @@ class AppSettings:
                 copilot_enabled_raw,
             )
         self.copilot_enabled = False
+
+        if not isinstance(self.ui_keepalive_enabled, bool):
+            logger.warning(
+                "ui_keepalive_enabled invalid (%s), resetting to True",
+                type(self.ui_keepalive_enabled).__name__,
+            )
+            self.ui_keepalive_enabled = True
+
+        try:
+            interval = int(self.ui_keepalive_interval_sec)
+        except (TypeError, ValueError):
+            logger.warning(
+                "ui_keepalive_interval_sec invalid (%s), resetting to 60",
+                self.ui_keepalive_interval_sec,
+            )
+            interval = 60
+        if interval < 10:
+            logger.warning(
+                "ui_keepalive_interval_sec too small (%d), resetting to 60", interval
+            )
+            interval = 60
+        if interval > 3600:
+            interval = 3600
+        self.ui_keepalive_interval_sec = interval
 
         # Translation style (file translation)
         # SSOT is "minimal"; accept legacy values ("standard"/"concise") and normalize.

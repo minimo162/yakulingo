@@ -1622,6 +1622,8 @@ class YakuLingoApp:
         self._login_polling_task: "asyncio.Task | None" = None
         # Connection status auto-refresh (avoids stale "準備中..." UI after transient timeouts)
         self._status_auto_refresh_task: "asyncio.Task | None" = None
+        # Idle freeze mitigation: periodic lightweight UI keepalive (best-effort).
+        self._ui_keepalive_task: "asyncio.Task | None" = None
         # Local AI startup/ensure task (avoid duplicate ensure_ready calls)
         self._local_ai_ensure_task: "asyncio.Task | None" = None
         self._local_ai_warmup_task: "asyncio.Task | None" = None
@@ -6067,6 +6069,7 @@ class YakuLingoApp:
         self._refresh_status()
         self._refresh_translate_button_state()
         self._start_status_auto_refresh("browser_ready")
+        self._start_ui_keepalive()
 
         async def _refresh_status_later() -> None:
             await asyncio.sleep(1.0)
@@ -6246,6 +6249,50 @@ class YakuLingoApp:
                 and self._status_auto_refresh_task is current_task
             ):
                 self._status_auto_refresh_task = None
+
+    def _start_ui_keepalive(self) -> None:
+        if self._shutdown_requested:
+            return
+        enabled = bool(getattr(self.settings, "ui_keepalive_enabled", True))
+        if not enabled:
+            return
+        try:
+            interval_sec = float(getattr(self.settings, "ui_keepalive_interval_sec", 60))
+        except Exception:
+            interval_sec = 60.0
+        if interval_sec <= 0:
+            return
+
+        existing = self._ui_keepalive_task
+        if existing is not None and not existing.done():
+            return
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._ui_keepalive_task = _create_logged_task(
+            self._ui_keepalive_loop(interval_sec=interval_sec),
+            name="ui_keepalive",
+        )
+
+    async def _ui_keepalive_loop(self, *, interval_sec: float) -> None:
+        current_task = asyncio.current_task()
+        try:
+            while not self._shutdown_requested:
+                client = self._get_active_client()
+                if client is not None:
+                    try:
+                        await asyncio.wait_for(
+                            client.run_javascript("Date.now()"), timeout=2.0
+                        )
+                    except Exception as e:
+                        logger.debug("UI keepalive ping failed: %s", e)
+                await asyncio.sleep(float(interval_sec))
+        except asyncio.CancelledError:
+            pass
+        finally:
+            if current_task is not None and self._ui_keepalive_task is current_task:
+                self._ui_keepalive_task = None
 
     def _refresh_content(self):
         """Refresh main content area and update layout classes"""
@@ -11884,6 +11931,16 @@ def run_app(
             logger.debug(
                 "[TIMING] Cancel: status_auto_refresh_task: %.3fs",
                 time_module.time() - t0,
+            )
+
+        if yakulingo_app._ui_keepalive_task is not None:
+            t0 = time_module.time()
+            try:
+                yakulingo_app._ui_keepalive_task.cancel()
+            except Exception:
+                pass
+            logger.debug(
+                "[TIMING] Cancel: ui_keepalive_task: %.3fs", time_module.time() - t0
             )
 
         if yakulingo_app._resident_heartbeat_task is not None:

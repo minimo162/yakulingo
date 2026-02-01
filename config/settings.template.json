@@ -41,6 +41,8 @@
   "ocr_batch_size": 5,
   "ocr_dpi": 300,
   "ocr_device": "auto",
+  "ui_keepalive_enabled": true,
+  "ui_keepalive_interval_sec": 60,
   "auto_update_enabled": true,
   "auto_update_check_interval": 0,
   "github_repo_owner": "minimo162",

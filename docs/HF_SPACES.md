@@ -84,6 +84,10 @@ ZeroGPU で **CUDA を使いたい場合**は、llama.cpp（Linux 事前ビル�
 - `YAKULINGO_SPACES_HF_REVISION`（任意）
 - `YAKULINGO_SPACES_HF_LOAD_IN_4BIT`（既定: `1`。bitsandbytes が必要。失敗する場合は `0`）
 
+#### TranslateGemma の chat template（Transformers）
+TranslateGemma は messages 構造が強く制約されます（`user.content` は要素1つのlist、`type/source_lang_code/target_lang_code/text` 必須）。
+本デモの Transformers バックエンドは、TranslateGemma の場合は `apply_chat_template()` に **専用構造の messages** を渡します。
+
 ### 任意（CUDA 推奨: llama-cpp-python バックエンド / GGUF）
 GGUF を **Python（llama-cpp-python）から直接ロード**し、CUDA でオフロードします（`llama-server` 外部プロセス不要）。
 HF Spaces では `requirements.txt` に CUDA 向けの事前ビルド wheel を指定してください（ソースビルド回避）。

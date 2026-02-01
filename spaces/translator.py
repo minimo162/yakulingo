@@ -23,6 +23,7 @@ _RE_LEADING_LABEL = re.compile(
     r"^\s*(?:Translation|Translated|訳|訳文|翻訳)\s*[:：]\s*", re.IGNORECASE
 )
 _RE_GEMMA_TURN = re.compile(r"<(?:start|end)_of_turn>\s*", re.IGNORECASE)
+_RE_TRANSLATEGEMMA = re.compile(r"(^|/|-)translategemma(-|$)", re.IGNORECASE)
 
 _DEFAULT_LLAMA_CPP_REPO = "ggerganov/llama.cpp"
 _DEFAULT_LLAMA_CPP_ASSET_SUFFIX = "bin-ubuntu-vulkan-x64.tar.gz"
@@ -74,6 +75,35 @@ def _cuda_visible() -> bool:
 def _env_str(name: str, default: str) -> str:
     raw = (os.environ.get(name) or "").strip()
     return raw or default
+
+
+def _is_translategemma_model_id(model_id: str) -> bool:
+    return bool(_RE_TRANSLATEGEMMA.search((model_id or "").strip()))
+
+
+def _translategemma_lang_codes(output_language: OutputLanguage) -> tuple[str, str]:
+    if output_language == "en":
+        return "ja", "en"
+    return "en", "ja"
+
+
+def _build_translategemma_messages(
+    text: str, *, output_language: OutputLanguage
+) -> list[dict[str, object]]:
+    source, target = _translategemma_lang_codes(output_language)
+    return [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "source_lang_code": source,
+                    "target_lang_code": target,
+                    "text": text,
+                }
+            ],
+        }
+    ]
 
 
 @dataclass(frozen=True)
@@ -947,6 +977,8 @@ class TransformersTranslator:
         self._lock = threading.Lock()
         self._model: object | None = None
         self._tokenizer: object | None = None
+        self._processor: object | None = None
+        self._model_id: str | None = None
         self._device: str | None = None
 
     def backend_label(self) -> str:
@@ -971,11 +1003,15 @@ class TransformersTranslator:
                 "Space の Hardware を ZeroGPU に設定してください。"
             )
 
+        model_id = _env_str("YAKULINGO_SPACES_HF_MODEL_ID", "google/translategemma-27b-it")
+        if _is_translategemma_model_id(model_id):
+            return self._translate_translategemma(cleaned, output_language=output_language)
+
         prompt = _build_prompt(cleaned, output_language=output_language)
         max_new_tokens = max(1, int(_env_int("YAKULINGO_SPACES_MAX_NEW_TOKENS", 256)))
         temperature = float(_env_float("YAKULINGO_SPACES_TEMPERATURE", 0.0))
 
-        model, tokenizer = self._get_model_and_tokenizer()
+        model, tokenizer = self._get_model_and_tokenizer(model_id=model_id)
 
         try:
             import torch  # type: ignore[import-not-found]
@@ -1035,7 +1071,65 @@ class TransformersTranslator:
                 pass
         return f"<bos><start_of_turn>user\n{prompt}<end_of_turn>\n<start_of_turn>model\n"
 
-    def _get_model_and_tokenizer(self) -> tuple[object, object]:
+    def _translate_translategemma(self, text: str, *, output_language: OutputLanguage) -> str:
+        max_new_tokens = max(1, int(_env_int("YAKULINGO_SPACES_MAX_NEW_TOKENS", 256)))
+        temperature = float(_env_float("YAKULINGO_SPACES_TEMPERATURE", 0.0))
+        do_sample = temperature > 0.0
+        model_id = _env_str("YAKULINGO_SPACES_HF_MODEL_ID", "google/translategemma-27b-it")
+
+        model, processor = self._get_translategemma_model_and_processor(model_id=model_id)
+        messages = _build_translategemma_messages(text, output_language=output_language)
+
+        try:
+            import torch  # type: ignore[import-not-found]
+        except ModuleNotFoundError as e:
+            raise RuntimeError("torch が見つかりません（Spaces の依存関係を確認してください）。") from e
+
+        apply = getattr(processor, "apply_chat_template", None)
+        if not callable(apply):
+            raise RuntimeError("TranslateGemma の chat template を適用できません（apply_chat_template がありません）。")
+
+        inputs = apply(  # type: ignore[operator]
+            messages,
+            tokenize=True,
+            add_generation_prompt=True,
+            return_dict=True,
+            return_tensors="pt",
+        )
+        to = getattr(inputs, "to", None)
+        if callable(to):
+            try:
+                inputs = to(getattr(model, "device", None), dtype=torch.bfloat16)
+            except Exception:
+                try:
+                    inputs = to(getattr(model, "device", None))
+                except Exception:
+                    pass
+
+        input_ids = inputs["input_ids"]  # type: ignore[index]
+        input_len = int(input_ids.shape[-1])
+
+        kwargs: dict[str, object] = {
+            **inputs,  # type: ignore[arg-type]
+            "max_new_tokens": max_new_tokens,
+            "do_sample": do_sample,
+        }
+        if do_sample:
+            kwargs["temperature"] = temperature
+            kwargs["top_p"] = 1.0
+
+        gen = model.generate(**kwargs)  # type: ignore[operator]
+        generated_ids = gen[0][input_len:]
+
+        decode = getattr(processor, "decode", None)
+        if not callable(decode):
+            raise RuntimeError("TranslateGemma の decode が利用できません。")
+        out = decode(generated_ids, skip_special_tokens=True)  # type: ignore[operator]
+
+        self._device = "cuda" if _cuda_visible() else "cpu"
+        return _clean_translation_output(out)
+
+    def _get_model_and_tokenizer(self, *, model_id: str) -> tuple[object, object]:
         if self._model is not None and self._tokenizer is not None:
             return self._model, self._tokenizer
 
@@ -1043,9 +1137,6 @@ class TransformersTranslator:
             if self._model is not None and self._tokenizer is not None:
                 return self._model, self._tokenizer
 
-            model_id = _env_str(
-                "YAKULINGO_SPACES_HF_MODEL_ID", "google/translategemma-27b-it"
-            )
             revision = (os.environ.get("YAKULINGO_SPACES_HF_REVISION") or "").strip() or None
             load_in_4bit = _env_bool("YAKULINGO_SPACES_HF_LOAD_IN_4BIT", True)
             hf_token = _hf_token()
@@ -1092,7 +1183,72 @@ class TransformersTranslator:
 
             self._model = model
             self._tokenizer = tokenizer
+            self._processor = None
+            self._model_id = model_id
             return model, tokenizer
+
+    def _get_translategemma_model_and_processor(self, *, model_id: str) -> tuple[object, object]:
+        if self._model is not None and self._processor is not None and self._model_id == model_id:
+            return self._model, self._processor
+
+        with self._lock:
+            if self._model is not None and self._processor is not None and self._model_id == model_id:
+                return self._model, self._processor
+
+            revision = (os.environ.get("YAKULINGO_SPACES_HF_REVISION") or "").strip() or None
+            load_in_4bit = _env_bool("YAKULINGO_SPACES_HF_LOAD_IN_4BIT", True)
+            hf_token = _hf_token()
+
+            try:
+                from transformers import (  # type: ignore[import-not-found]
+                    AutoModelForImageTextToText,
+                    AutoProcessor,
+                )
+            except ModuleNotFoundError as e:
+                raise RuntimeError(
+                    "transformers が見つかりません（Spaces の依存関係を確認してください）。"
+                ) from e
+            except ImportError as e:
+                raise RuntimeError(
+                    "TranslateGemma 用の AutoModelForImageTextToText/AutoProcessor が利用できません。"
+                    "transformers のバージョンを確認してください。"
+                ) from e
+
+            quant_config = None
+            if load_in_4bit:
+                try:
+                    import torch  # type: ignore[import-not-found]
+                    from transformers import BitsAndBytesConfig  # type: ignore[import-not-found]
+                    import bitsandbytes  # noqa: F401
+                except ModuleNotFoundError as e:
+                    raise RuntimeError(
+                        "4bit 量子化の依存関係（bitsandbytes）が不足しています。"
+                        "（回避: `YAKULINGO_SPACES_HF_LOAD_IN_4BIT=0`）"
+                    ) from e
+                quant_config = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_quant_type="nf4",
+                    bnb_4bit_use_double_quant=True,
+                    bnb_4bit_compute_dtype=torch.bfloat16,
+                )
+
+            processor = AutoProcessor.from_pretrained(
+                model_id, revision=revision, token=hf_token
+            )
+            model = AutoModelForImageTextToText.from_pretrained(
+                model_id,
+                revision=revision,
+                token=hf_token,
+                device_map="auto",
+                torch_dtype="auto",
+                quantization_config=quant_config,
+            )
+
+            self._model = model
+            self._tokenizer = None
+            self._processor = processor
+            self._model_id = model_id
+            return model, processor
 
 
 def _build_prompt(text: str, *, output_language: OutputLanguage) -> str:

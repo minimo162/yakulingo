@@ -59,6 +59,12 @@ _RE_EN_NUMBER_WITH_OKU_UNIT = re.compile(
 _RE_JP_OKU_CHOU_YEN_AMOUNT = re.compile(
     rf"(?P<sign>[▲△+\-−])?\s*(?:(?P<trillion>{_EN_NUMBER_WITH_OPTIONAL_COMMAS_PATTERN})兆(?:(?P<oku>{_EN_NUMBER_WITH_OPTIONAL_COMMAS_PATTERN})億)?|(?P<oku_only>{_EN_NUMBER_WITH_OPTIONAL_COMMAS_PATTERN})億)(?P<yen>円)?"
 )
+_RE_JP_MAN_SEN_AMOUNT = re.compile(
+    r"(?P<sign>[▲△+\-−])?\s*(?P<man>\d[\d,]*(?:\.\d+)?)万(?:(?P<sen>\d[\d,]*(?:\.\d+)?)千)?(?P<unit>円|台)?"
+)
+_RE_JP_SEN_AMOUNT = re.compile(
+    r"(?P<sign>[▲△+\-−])?\s*(?P<sen>\d[\d,]*(?:\.\d+)?)千(?P<unit>円|台)?"
+)
 
 
 def _format_japanese_yen_amount(yen_amount: Decimal) -> str:
@@ -252,6 +258,88 @@ def _normalize_jp_financial_expressions_to_english(text: str) -> str:
         return f"{sign}{currency}{format_billion_1dp(total_oku)} billion"
 
     return _RE_JP_OKU_CHOU_YEN_AMOUNT.sub(repl, text)
+
+
+def _normalize_jp_man_sen_expressions_to_english(text: str) -> str:
+    if not text:
+        return text
+    if "万" not in text and "千" not in text:
+        return text
+
+    def parse_decimal(value: str) -> Decimal | None:
+        if not value:
+            return None
+        try:
+            return Decimal(value.replace(",", ""))
+        except InvalidOperation:
+            return None
+
+    def format_k_amount(value: Decimal) -> str:
+        sign = "-" if value < 0 else ""
+        value = abs(value)
+        try:
+            if value == value.to_integral():
+                return f"{sign}{int(value):,}"
+        except (InvalidOperation, ValueError):
+            return f"{sign}0"
+
+        text = format(value.normalize(), "f")
+        int_part, _, frac_part = text.partition(".")
+        int_part_with_commas = f"{int(int_part):,}"
+        frac_part = frac_part.rstrip("0")
+        if frac_part:
+            return f"{sign}{int_part_with_commas}.{frac_part}"
+        return f"{sign}{int_part_with_commas}"
+
+    def unit_suffix(unit: str) -> str:
+        if unit == "円":
+            return " yen"
+        if unit == "台":
+            return " units"
+        return ""
+
+    def repl_man_sen(match: re.Match[str]) -> str:
+        start = match.start()
+        if start > 0 and match.string[start - 1] in {"兆", "億"}:
+            return match.group(0)
+
+        sign_marker = (match.group("sign") or "").strip()
+        is_negative = sign_marker in {"▲", "△", "-", "−"}
+        man = parse_decimal(match.group("man") or "")
+        if man is None:
+            return match.group(0)
+        sen = parse_decimal(match.group("sen") or "") or Decimal(0)
+
+        k_value = man * Decimal("10") + sen
+        if is_negative:
+            k_value = -k_value
+
+        formatted = format_k_amount(k_value).lstrip("-")
+        suffix = unit_suffix((match.group("unit") or "").strip())
+        replaced = f"{formatted}k{suffix}"
+        return f"({replaced})" if is_negative else replaced
+
+    def repl_sen(match: re.Match[str]) -> str:
+        start = match.start()
+        if start > 0 and match.string[start - 1] in {"兆", "億", "万"}:
+            return match.group(0)
+
+        sign_marker = (match.group("sign") or "").strip()
+        is_negative = sign_marker in {"▲", "△", "-", "−"}
+        sen = parse_decimal(match.group("sen") or "")
+        if sen is None:
+            return match.group(0)
+
+        k_value = -sen if is_negative else sen
+        formatted = format_k_amount(k_value).lstrip("-")
+        suffix = unit_suffix((match.group("unit") or "").strip())
+        replaced = f"{formatted}k{suffix}"
+        return f"({replaced})" if is_negative else replaced
+
+    fixed = text
+    fixed = _RE_JP_MAN_SEN_AMOUNT.sub(repl_man_sen, fixed)
+    fixed = _RE_JP_SEN_AMOUNT.sub(repl_sen, fixed)
+    return fixed
 
 
 # 参考ファイル参照の指示文（ファイル添付時のみ挿入）
@@ -455,9 +543,12 @@ class PromptBuilder:
                 return _normalize_en_financial_expressions_to_japanese(input_text)
             return input_text
         if output_language == "en":
-            if "兆" in input_text or "億" in input_text:
-                return _normalize_jp_financial_expressions_to_english(input_text)
-            return input_text
+            fixed = input_text
+            if "万" in fixed or "千" in fixed:
+                fixed = _normalize_jp_man_sen_expressions_to_english(fixed)
+            if "兆" in fixed or "億" in fixed:
+                fixed = _normalize_jp_financial_expressions_to_english(fixed)
+            return fixed
         return input_text
 
     @staticmethod

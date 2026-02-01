@@ -1,9 +1,9 @@
-# Hugging Face Spaces（ZeroGPU）デプロイ手順（訳リンゴ・デモ）
+# Hugging Face Spaces（ZeroGPU）デプロイ手順（訳リンゴ）
 
 ## 目的
-このリポジトリにはデスクトップ向け（NiceGUI）とは別に、Hugging Face Spaces 上で動く **テキスト翻訳デモ** を同梱しています。
+このリポジトリにはデスクトップ向け（NiceGUI）とは別に、Hugging Face Spaces 上で動く **テキスト翻訳 UI** を同梱しています。
 
-- デモ UI: `spaces/app.py`（Gradio）
+- UI: `spaces/app.py`（Gradio）
 - 翻訳バックエンド: `spaces/translator.py`（GGUF / llama.cpp / llama-server（事前ビルド済みバイナリ））
 - ZeroGPU（動的GPU割当）前提で、翻訳処理は `@spaces.GPU` で実行します（GPU が必要な処理の実行時に GPU を要求し、完了後に解放）。
 
@@ -11,7 +11,7 @@
 ### できること
 - 日本語 ⇄ 英語のテキスト翻訳（自動判定）
 
-### できないこと（本デモでは非対応）
+### できないこと（Spaces 版では非対応）
 - Excel / Word / PowerPoint / PDF 等のファイル翻訳
 - デスクトップアプリ（NiceGUI + native window）としての配布
 
@@ -36,7 +36,7 @@ Spaces の `README.md` 先頭に以下の YAML を置くと、Space の表示設
 
 ```yaml
 ---
-title: YakuLingo (訳リンゴ) – ZeroGPU Translation Demo
+title: YakuLingo (訳リンゴ) – ZeroGPU Translator
 emoji: 🍎
 colorFrom: indigo
 colorTo: pink
@@ -86,7 +86,7 @@ ZeroGPU で **CUDA を使いたい場合**は、llama.cpp（Linux 事前ビル�
 
 #### TranslateGemma の chat template（Transformers）
 TranslateGemma は messages 構造が強く制約されます（`user.content` は要素1つのlist、`type/source_lang_code/target_lang_code/text` 必須）。
-本デモの Transformers バックエンドは、TranslateGemma の場合は `apply_chat_template()` に **専用構造の messages** を渡します。
+本 UI の Transformers バックエンドは、TranslateGemma の場合は `apply_chat_template()` に **専用構造の messages** を渡します。
 
 ### 任意（CUDA 推奨: llama-cpp-python バックエンド / GGUF）
 GGUF を **Python（llama-cpp-python）から直接ロード**し、CUDA でオフロードします（`llama-server` 外部プロセス不要）。
@@ -145,8 +145,8 @@ YAKULINGO_SPACES_GGUF_FILENAME=translategemma-27b-it.i1-Q4_K_M.gguf
 
 ## 依存関係
 - Spaces（Linux）向けの追加依存は `requirements.txt` に Linux 限定で追記しています。
-- ローカルでデモだけ動かしたい場合は `spaces/requirements.txt` を利用してください。
-  - NOTE: 本デモは `llama-server`（llama.cpp）を外部プロセスとして起動します。Windows でローカル確認する場合は、
+- ローカルで Spaces 版だけ動かしたい場合は `spaces/requirements.txt` を利用してください。
+  - NOTE: `llama-server`（llama.cpp）を外部プロセスとして起動するバックエンドの場合、Windows でローカル確認する場合は、
     `YAKULINGO_SPACES_LLAMA_SERVER_PATH=local_ai/llama_cpp/(avx2|vulkan)/llama-server.exe` を設定してください。
 
 ## ローカルでの動作確認
@@ -158,12 +158,12 @@ python spaces/app.py
 ```
 
 ## ZeroGPU 公式仕様メモ（抜粋）
-- ZeroGPU は **Gradio SDK 専用**（本デモは Gradio 前提）
+- ZeroGPU は **Gradio SDK 専用**（本 UI は Gradio 前提）
 - 対応バージョン（例）:
   - Gradio 4+
   - Python 3.10.13 / 3.12.12
   - PyTorch 2.1.0〜latest（広範）
-- `torch.compile` は ZeroGPU では非対応（本デモは未使用）
+- `torch.compile` は ZeroGPU では非対応（本 UI は未使用）
 - GPU 利用は日次クォータ制（閲覧者のアカウント種別で優先度/上限が変わる）
 - Usage tiers（例。日次クォータ/優先度）:
   - 未ログイン: 2分 / 低

@@ -1,4 +1,4 @@
-# Hugging Face Spaces 用デモ（骨格）
+# Hugging Face Spaces 用アプリ（骨格）
 
 ## 目的
 - 既存の `app.py`（NiceGUI/デスクトップ向け）とは別に、Hugging Face Spaces で起動できる最小 UI を提供します。

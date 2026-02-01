@@ -8,11 +8,16 @@ from pathlib import Path
 
 import gradio as gr
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
-if str(_PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PROJECT_ROOT))
+_SPACES_DIR = Path(__file__).resolve().parent
+if str(_SPACES_DIR) not in sys.path:
+    sys.path.insert(0, str(_SPACES_DIR))
 
-from spaces.translator import get_translator  # noqa: E402
+from translator import get_translator  # noqa: E402
+
+try:
+    import spaces as hf_spaces  # type: ignore[import-not-found]
+except ModuleNotFoundError:
+    hf_spaces = None
 
 _RE_JP_KANA = re.compile(r"[\u3040-\u309F\u30A0-\u30FF\uFF65-\uFF9F]")
 _RE_HANGUL = re.compile(r"[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]")
@@ -20,6 +25,8 @@ _RE_LATIN_ALPHA = re.compile(r"[A-Za-z]")
 
 _DEFAULT_MAX_CHARS = 2000
 _DEFAULT_MODEL_ID = "google/translategemma-27b-it"
+_DEFAULT_ZEROGPU_SIZE = "large"
+_DEFAULT_ZEROGPU_DURATION_S = 120
 
 
 def _detect_direction(text: str) -> tuple[str, str]:
@@ -50,6 +57,37 @@ def _quant() -> str:
     return (os.environ.get("YAKULINGO_SPACES_QUANT") or "4bit").strip()
 
 
+def _zerogpu_size() -> str:
+    raw = (
+        os.environ.get("YAKULINGO_SPACES_ZEROGPU_SIZE") or _DEFAULT_ZEROGPU_SIZE
+    ).strip()
+    value = raw.lower()
+    return value if value in ("large", "xlarge") else _DEFAULT_ZEROGPU_SIZE
+
+
+def _zerogpu_duration_seconds() -> int:
+    raw = (
+        os.environ.get("YAKULINGO_SPACES_ZEROGPU_DURATION")
+        or str(_DEFAULT_ZEROGPU_DURATION_S)
+    ).strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        return _DEFAULT_ZEROGPU_DURATION_S
+    return max(1, value)
+
+
+def _zerogpu_gpu_decorator():  # type: ignore[no-untyped-def]
+    gpu = getattr(hf_spaces, "GPU", None) if hf_spaces is not None else None
+    if gpu is None:
+
+        def noop(fn):  # type: ignore[no-untyped-def]
+            return fn
+
+        return noop
+    return gpu(size=_zerogpu_size(), duration=_zerogpu_duration_seconds())
+
+
 def _error_hint(message: str) -> str:
     lowered = message.lower()
     if "gpu が利用できません" in lowered:
@@ -63,6 +101,7 @@ def _error_hint(message: str) -> str:
     return ""
 
 
+@_zerogpu_gpu_decorator()
 def _translate(text: str) -> tuple[str, str, str]:
     cleaned = (text or "").strip()
     if not cleaned:
@@ -113,6 +152,7 @@ with gr.Blocks(title="YakuLingo (訳リンゴ) – HF Spaces Demo") as demo:
     gr.Markdown(
         f"**Model**: `{_model_id()}`  \n"
         f"**Quant**: `{_quant()}`  \n"
+        f"**ZeroGPU**: size=`{_zerogpu_size()}` duration=`{_zerogpu_duration_seconds()}s`  \n"
         "（必要に応じて Spaces の Secret に `HF_TOKEN` を設定してください）"
     )
 

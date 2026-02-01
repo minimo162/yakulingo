@@ -324,12 +324,6 @@ class TranslationOption:
     explanation: str                 # 使用文脈・説明
     char_count: int = 0
     style: Optional[str] = None      # "standard" | "concise" | "minimal"（テキスト英訳では "standard" は後方互換で "concise" 扱い）
-    back_translation_input_text: Optional[str] = None
-    back_translation_source_text: Optional[str] = None
-    back_translation_text: Optional[str] = None
-    back_translation_explanation: Optional[str] = None
-    back_translation_error: Optional[str] = None
-    back_translation_in_progress: bool = False
 
 @dataclass
 class TextTranslationResult:

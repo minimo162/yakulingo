@@ -55,6 +55,10 @@ Space の Variables/Secrets に以下を設定します。
 - `YAKULINGO_SPACES_MAX_CHARS`（既定: 2000）
 - `YAKULINGO_SPACES_MAX_NEW_TOKENS`（既定: 256）
 
+### デバッグ用途（非推奨）
+- `YAKULINGO_SPACES_ALLOW_CPU=1`
+  - GPU が無い場合でも実行を試みます（27B は非常に遅い/失敗しやすいので非推奨）。
+
 ## 依存関係
 - Spaces（Linux）向けの追加依存は `requirements.txt` に Linux 限定で追記しています。
 - ローカルでデモだけ動かしたい場合は `spaces/requirements.txt` を利用してください。

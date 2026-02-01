@@ -32,6 +32,7 @@
 - `HF_HUB_DISABLE_TELEMETRY=1`
 - `YAKULINGO_SPACES_MODEL_ID`（既定: `google/translategemma-27b-it`）
 - `YAKULINGO_SPACES_QUANT`（既定: `4bit`）
+- `YAKULINGO_SPACES_ALLOW_CPU=1`（デバッグ用途。非推奨）
 - `HF_TOKEN`（モデルが gated の場合）
 
 ## ライセンス / 利用条件

@@ -12,6 +12,8 @@ python spaces/app.py
 ```
 
 ## 備考
-- 翻訳バックエンドは Transformers（`google/translategemma-27b-it`）で実装します（後続タスクで差し替え）。
+- 翻訳バックエンドは Transformers（`google/translategemma-27b-it`）で実装しています。
 - Hugging Face Spaces では `sdk=gradio` で `app_file=spaces/app.py` を指定する想定です。
 - モデル選定メモ: `docs/HF_SPACES_MODEL.md`
+- gated の場合は Spaces の Secret に `HF_TOKEN` を設定してください。
+- 既定は `YAKULINGO_SPACES_QUANT=4bit` を想定しています。

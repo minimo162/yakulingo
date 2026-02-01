@@ -22,6 +22,8 @@
 3. Hardware: **ZeroGPU** を選択（利用可能な場合）
 
 > NOTE: ZeroGPU のホスティングは、個人アカウントは PRO、組織は Team/Enterprise 等が必要です（ZeroGPU が選べない場合は契約/権限を確認してください）。
+>
+> NOTE: ZeroGPU の Python は `3.10.13` / `3.12.12` が選べます。本リポジトリは Python 3.11+ 前提のため、**`3.12.12` を推奨**します。
 
 ### 2) この GitHub リポジトリを接続
 1. Space 設定から GitHub 連携でこのリポジトリを指定（既定ブランチ: `main`）
@@ -61,6 +63,7 @@ Space の Variables/Secrets に以下を設定します。
 - `YAKULINGO_SPACES_ZEROGPU_DURATION`（既定: `120`）
   - `@spaces.GPU(duration=...)` の設定値（秒）
   - ZeroGPU の既定は 60 秒のため、重い初回ロード等でタイムアウトする場合は調整してください
+  - なるべく短い duration を指定すると、ZeroGPU の待ち行列で有利になる場合があります
 
 ### 任意（入力制限・生成設定）
 - `YAKULINGO_SPACES_MAX_CHARS`（既定: 2000）
@@ -90,6 +93,15 @@ python spaces/app.py
   - PyTorch 2.1.0〜latest（広範）
 - `torch.compile` は ZeroGPU では非対応（本デモは未使用）
 - GPU 利用は日次クォータ制（閲覧者のアカウント種別で優先度/上限が変わる）
+- Usage tiers（例。日次クォータ/優先度）:
+  - 未ログイン: 2分 / 低
+  - Free: 3.5分 / 中
+  - PRO: 25分 / 最優先
+  - Team: 25分 / 最優先
+  - Enterprise: 45分 / 最優先
+- Hosting limitations（例）:
+  - 個人（PRO）: ZeroGPU Spaces 最大 10
+  - 組織（Enterprise Hub）: 最大 50
 
 ## ZeroGPU の注意点（よくある詰まり）
 - 初回起動はモデルダウンロードで時間がかかります（数分かかる場合あり）

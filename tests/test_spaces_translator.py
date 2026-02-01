@@ -17,7 +17,9 @@ def _install_fake_transformers(
     fake_torch.float16 = float16_sentinel
     fake_torch.cuda = types.SimpleNamespace(is_available=lambda: cuda_available)
 
-    def pipeline(task: str, *, model: str, device: int, model_kwargs: object | None):  # type: ignore[no-untyped-def]
+    def pipeline(  # type: ignore[no-untyped-def]
+        task: str, *, model: str, device: int, model_kwargs: object | None
+    ):
         calls.append(
             {
                 "task": task,
@@ -27,10 +29,10 @@ def _install_fake_transformers(
             }
         )
 
-        def run(text: str, *, max_new_tokens: int, num_beams: int):  # type: ignore[no-untyped-def]
+        def run(text: str, **kwargs):  # type: ignore[no-untyped-def]
             return [
                 {
-                    "translation_text": f"{model}|{text}|{max_new_tokens}|{num_beams}",
+                    "generated_text": f"{model}|{text}|{kwargs}",
                 }
             ]
 
@@ -45,16 +47,12 @@ def _install_fake_transformers(
 
 
 def test_default_config_reads_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("YAKULINGO_SPACES_MODEL_JA_EN", "ja-en-model")
-    monkeypatch.setenv("YAKULINGO_SPACES_MODEL_EN_JA", "en-ja-model")
+    monkeypatch.setenv("YAKULINGO_SPACES_MODEL_ID", "model-id")
     monkeypatch.setenv("YAKULINGO_SPACES_MAX_NEW_TOKENS", "123")
-    monkeypatch.setenv("YAKULINGO_SPACES_NUM_BEAMS", "7")
 
     cfg = default_config()
-    assert cfg.model_ja_en == "ja-en-model"
-    assert cfg.model_en_ja == "en-ja-model"
+    assert cfg.model_id == "model-id"
     assert cfg.max_new_tokens == 123
-    assert cfg.num_beams == 7
 
 
 def test_default_config_invalid_int_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -70,24 +68,22 @@ def test_translator_caches_pipeline_per_direction(
 
     translator = TransformersTranslator(
         TranslationConfig(
-            model_ja_en="ja-en-model",
-            model_en_ja="en-ja-model",
+            model_id="model-id",
             max_new_tokens=10,
-            num_beams=2,
         )
     )
 
     out1 = translator.translate("hello", output_language="ja")
-    assert out1.startswith("en-ja-model|hello|10|2")
+    assert out1.startswith("model-id|")
     assert len(calls) == 1
 
     out2 = translator.translate("hello2", output_language="ja")
-    assert out2.startswith("en-ja-model|hello2|10|2")
+    assert out2.startswith("model-id|")
     assert len(calls) == 1  # cached
 
     out3 = translator.translate("こんにちは", output_language="en")
-    assert out3.startswith("ja-en-model|こんにちは|10|2")
-    assert len(calls) == 2
+    assert out3.startswith("model-id|")
+    assert len(calls) == 1
 
 
 def test_translator_uses_cpu_when_cuda_unavailable(
@@ -97,10 +93,8 @@ def test_translator_uses_cpu_when_cuda_unavailable(
 
     translator = TransformersTranslator(
         TranslationConfig(
-            model_ja_en="ja-en-model",
-            model_en_ja="en-ja-model",
+            model_id="model-id",
             max_new_tokens=10,
-            num_beams=2,
         )
     )
 
@@ -118,10 +112,8 @@ def test_translator_sets_dtype_when_cuda_available(
 
     translator = TransformersTranslator(
         TranslationConfig(
-            model_ja_en="ja-en-model",
-            model_en_ja="en-ja-model",
+            model_id="model-id",
             max_new_tokens=10,
-            num_beams=2,
         )
     )
 

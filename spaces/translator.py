@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import os
+import re
 import threading
 from dataclasses import dataclass
 from typing import Literal
 
 OutputLanguage = Literal["en", "ja"]
+
+_RE_CODE_FENCE_LINE = re.compile(r"^\s*```.*$", re.MULTILINE)
+_RE_LEADING_LABEL = re.compile(
+    r"^\s*(?:Translation|Translated|訳|訳文|翻訳)\s*[:：]\s*", re.IGNORECASE
+)
 
 
 def _env_int(name: str, default: int) -> int:
@@ -20,22 +26,16 @@ def _env_int(name: str, default: int) -> int:
 
 @dataclass(frozen=True)
 class TranslationConfig:
-    model_ja_en: str
-    model_en_ja: str
+    model_id: str
     max_new_tokens: int
-    num_beams: int
 
 
 def default_config() -> TranslationConfig:
     return TranslationConfig(
-        model_ja_en=os.environ.get(
-            "YAKULINGO_SPACES_MODEL_JA_EN", "Helsinki-NLP/opus-mt-ja-en"
-        ),
-        model_en_ja=os.environ.get(
-            "YAKULINGO_SPACES_MODEL_EN_JA", "Helsinki-NLP/opus-tatoeba-en-ja"
+        model_id=os.environ.get(
+            "YAKULINGO_SPACES_MODEL_ID", "google/translategemma-27b-it"
         ),
         max_new_tokens=_env_int("YAKULINGO_SPACES_MAX_NEW_TOKENS", 256),
-        num_beams=_env_int("YAKULINGO_SPACES_NUM_BEAMS", 4),
     )
 
 
@@ -43,7 +43,7 @@ class TransformersTranslator:
     def __init__(self, config: TranslationConfig | None = None) -> None:
         self._config = config or default_config()
         self._lock = threading.Lock()
-        self._pipelines: dict[OutputLanguage, object] = {}
+        self._pipeline: object | None = None
         self._device: str | None = None
 
     def runtime_device(self) -> str:
@@ -61,44 +61,33 @@ class TransformersTranslator:
         if not cleaned:
             return ""
 
-        pipeline_obj = self._get_pipeline(output_language)
-
         max_new_tokens = max(1, int(self._config.max_new_tokens))
-        num_beams = max(1, int(self._config.num_beams))
+        prompt = _build_prompt(cleaned, output_language=output_language)
+        pipeline_obj = self._get_pipeline()
 
         try:
-            result = pipeline_obj(  # type: ignore[operator]
-                cleaned,
-                max_new_tokens=max_new_tokens,
-                num_beams=num_beams,
-            )
+            result = pipeline_obj(
+                prompt, max_new_tokens=max_new_tokens, do_sample=False
+            )  # type: ignore[operator]
         except Exception as e:
             raise RuntimeError(
                 f"翻訳に失敗しました（backend=transformers, device={self.runtime_device()}）: {e}"
             ) from e
 
-        if not result:
-            return ""
+        generated = _extract_generated_text(result)
+        if generated.startswith(prompt):
+            generated = generated[len(prompt) :]
+        return _clean_translation_output(generated)
 
-        first = result[0]
-        translated = str(first.get("translation_text", "")).strip()
-        return translated
-
-    def _get_pipeline(self, output_language: OutputLanguage) -> object:
-        cached = self._pipelines.get(output_language)
-        if cached is not None:
-            return cached
+    def _get_pipeline(self) -> object:
+        if self._pipeline is not None:
+            return self._pipeline
 
         with self._lock:
-            cached = self._pipelines.get(output_language)
-            if cached is not None:
-                return cached
+            if self._pipeline is not None:
+                return self._pipeline
 
-            model_id = (
-                self._config.model_ja_en
-                if output_language == "en"
-                else self._config.model_en_ja
-            )
+            model_id = self._config.model_id
 
             try:
                 import torch  # type: ignore[import-not-found]
@@ -116,15 +105,51 @@ class TransformersTranslator:
                 model_kwargs["torch_dtype"] = torch.float16
 
             pipeline_obj = pipeline(
-                "translation",
+                "text-generation",
                 model=model_id,
                 device=device_index,
                 model_kwargs=model_kwargs or None,
             )
 
             self._device = "cuda" if use_cuda else "cpu"
-            self._pipelines[output_language] = pipeline_obj
+            self._pipeline = pipeline_obj
             return pipeline_obj
+
+
+def _build_prompt(text: str, *, output_language: OutputLanguage) -> str:
+    if output_language == "en":
+        return (
+            "Translate the following Japanese text into English.\n"
+            "Output the translation only.\n\n"
+            f"{text}\n"
+        )
+    return (
+        "Translate the following English text into Japanese.\n"
+        "Output the translation only.\n\n"
+        f"{text}\n"
+    )
+
+
+def _extract_generated_text(result: object) -> str:
+    if isinstance(result, list) and result:
+        first = result[0]
+        if isinstance(first, dict):
+            for key in ("generated_text", "text", "translation_text"):
+                value = first.get(key)
+                if value:
+                    return str(value)
+            return ""
+        return str(first)
+    return str(result or "")
+
+
+def _clean_translation_output(text: str) -> str:
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return ""
+    cleaned = _RE_CODE_FENCE_LINE.sub("", cleaned).strip()
+    cleaned = _RE_LEADING_LABEL.sub("", cleaned).strip()
+    return cleaned
 
 
 _default_translator = TransformersTranslator()

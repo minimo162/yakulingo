@@ -18,3 +18,10 @@
 - ブランチ: case-yakulingo-disable-backtranslation-double-prompt-20260201-075708-05-ui-cleanup（commit: a415da79）
 - 検証: `uv run --extra test pyright` / `uv run --extra test ruff check .` / `uv run --extra test pytest`（全て成功）
 - Cleanup: 作業ブランチを remote+local 削除（`git ls-remote --heads origin <branch>` / `git branch --list <branch>` ともに空）
+
+## Task 06（2026-02-01）
+- PR: #1192（merge: d643fe74）
+- ブランチ: case-yakulingo-disable-backtranslation-double-prompt-20260201-075708-06-regression（commit: 4bd1c418）
+- 仕上げ: 削除済みテンプレ参照（ドキュメント）を整理
+- 検証: `uv run --extra test pyright` / `uv run --extra test ruff check .` / `uv run --extra test pytest`（全て成功）
+- Cleanup: 作業ブランチを remote+local 削除（`git ls-remote --heads origin <branch>` / `git branch --list <branch>` ともに空）

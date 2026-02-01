@@ -79,9 +79,7 @@ _CSS = """
   border-radius: 9999px !important;
 }
 
-#clear_btn button,
-#ja_example_btn button,
-#en_example_btn button {
+#clear_btn button {
   border-radius: 9999px !important;
 }
 
@@ -291,10 +289,10 @@ def _error_hint(message: str) -> str:
 
 
 @_zerogpu_gpu_decorator()
-def _translate(text: str) -> tuple[str, str, str]:
+def _translate(text: str) -> tuple[str, str, str, str]:
     cleaned = (text or "").strip()
     if not cleaned:
-        return "", "", ""
+        return "", "", "", ""
 
     translator = get_translator()
     output_language, label = _detect_direction(cleaned)
@@ -305,6 +303,7 @@ def _translate(text: str) -> tuple[str, str, str]:
                 label, translator=translator, device="unknown", elapsed_s=None
             ),
             f"入力が長すぎます（{len(cleaned)}文字）。{_max_chars()}文字以内に短縮してください。",
+            cleaned,
         )
 
     start = time.monotonic()
@@ -325,7 +324,7 @@ def _translate(text: str) -> tuple[str, str, str]:
             f"{detail}\n\n"
             f"{_backend_status_lines(translator)}"
         )
-        return "", meta, status
+        return "", meta, status, cleaned
 
     elapsed_s = time.monotonic() - start
     action = "英訳しました" if output_language == "en" else "和訳しました"
@@ -336,7 +335,7 @@ def _translate(text: str) -> tuple[str, str, str]:
         elapsed_s=elapsed_s,
     )
     status = f"**{action}**"
-    return translated, meta, status
+    return translated, meta, status, cleaned
 
 
 def _server_port() -> int:
@@ -346,15 +345,10 @@ def _server_port() -> int:
         return 7860
 
 
-_JP_EXAMPLE = "お世話になっております。こちらの資料をご確認ください。"
-_EN_EXAMPLE = "This is a demo. Please translate this sentence into Japanese."
-
-
-with gr.Blocks(title="YakuLingo (訳リンゴ) – HF Spaces Demo", css=_CSS) as demo:
+with gr.Blocks(title="YakuLingo (訳リンゴ)", css=_CSS) as demo:
     gr.Markdown("# YakuLingo (訳リンゴ)", elem_classes=["yak-title"])
     gr.Markdown(
-        "Hugging Face Spaces（ZeroGPU）向けの **日英テキスト翻訳デモ** です。"
-        "入力言語は自動判定します。",
+        "Hugging Face Spaces（ZeroGPU）対応。入力言語は自動判定します。",
         elem_classes=["yak-subtitle"],
     )
 
@@ -372,35 +366,31 @@ with gr.Blocks(title="YakuLingo (訳リンゴ) – HF Spaces Demo", css=_CSS) as
                 translate_btn = gr.Button("翻訳", elem_id="translate_btn")
                 clear_btn = gr.Button("クリア", elem_id="clear_btn")
 
-            with gr.Row():
-                ja_example_btn = gr.Button("日本語例文", elem_id="ja_example_btn")
-                en_example_btn = gr.Button("英語例文", elem_id="en_example_btn")
-
-            gr.Examples(examples=[[_JP_EXAMPLE], [_EN_EXAMPLE]], inputs=[input_text])
-
         with gr.Column(elem_classes=["yak-card"]):
             gr.Markdown("## 翻訳結果")
             result_meta = gr.Markdown(elem_id="result_meta")
+            source_text = gr.Textbox(label="原文", lines=6, interactive=False)
             output_text = gr.Textbox(label="翻訳結果", lines=10, elem_id="output_text")
             status = gr.Markdown()
 
-            gr.Markdown(
-                "**設定（環境変数）**  \n"
-                f"- gguf_repo: `{_gguf_repo_id()}`  \n"
-                f"- gguf_file: `{_gguf_filename()}`  \n"
-                f"- ZeroGPU: size=`{_zerogpu_size()}` duration=`{_zerogpu_duration_seconds()}s`  \n"
-                f"- HF_TOKEN: `{('set' if _has_hf_token() else 'not set')}`",
-            )
+            with gr.Accordion("詳細", open=False):
+                gr.Markdown(
+                    "**設定（環境変数）**  \n"
+                    f"- gguf_repo: `{_gguf_repo_id()}`  \n"
+                    f"- gguf_file: `{_gguf_filename()}`  \n"
+                    f"- ZeroGPU: size=`{_zerogpu_size()}` duration=`{_zerogpu_duration_seconds()}s`  \n"
+                    f"- HF_TOKEN: `{('set' if _has_hf_token() else 'not set')}`",
+                )
 
     translate_btn.click(
-        _translate, inputs=[input_text], outputs=[output_text, result_meta, status]
+        _translate,
+        inputs=[input_text],
+        outputs=[output_text, result_meta, status, source_text],
     )
     clear_btn.click(
-        lambda: ("", "", "", ""),
-        outputs=[input_text, output_text, result_meta, status],
+        lambda: ("", "", "", "", ""),
+        outputs=[input_text, output_text, result_meta, status, source_text],
     )
-    ja_example_btn.click(lambda: _JP_EXAMPLE, outputs=[input_text])
-    en_example_btn.click(lambda: _EN_EXAMPLE, outputs=[input_text])
 
 
 if __name__ == "__main__":

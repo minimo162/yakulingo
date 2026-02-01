@@ -30,6 +30,10 @@ def _install_fake_gradio(monkeypatch: pytest.MonkeyPatch) -> None:
         def __init__(self, *args, **kwargs):  # type: ignore[no-untyped-def]
             pass
 
+    class Accordion(_Ctx):  # type: ignore[no-redef]
+        def __init__(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            pass
+
     def Markdown(*args, **kwargs):  # type: ignore[no-untyped-def]
         return object()
 
@@ -50,6 +54,7 @@ def _install_fake_gradio(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_gradio.Blocks = Blocks
     fake_gradio.Row = Row
     fake_gradio.Column = Column
+    fake_gradio.Accordion = Accordion
     fake_gradio.Markdown = Markdown
     fake_gradio.Textbox = Textbox
     fake_gradio.Button = Button

@@ -1,10 +1,19 @@
 from __future__ import annotations
 
+import json
 import os
 import re
+import shutil
+import subprocess
 import threading
+import time
+import tarfile
+import zipfile
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 OutputLanguage = Literal["en", "ja"]
 
@@ -13,6 +22,14 @@ _RE_LEADING_LABEL = re.compile(
     r"^\s*(?:Translation|Translated|訳|訳文|翻訳)\s*[:：]\s*", re.IGNORECASE
 )
 _RE_GEMMA_TURN = re.compile(r"<(?:start|end)_of_turn>\s*", re.IGNORECASE)
+
+_DEFAULT_LLAMA_CPP_REPO = "ggerganov/llama.cpp"
+_DEFAULT_LLAMA_CPP_ASSET_SUFFIX = "bin-ubuntu-vulkan-x64.tar.gz"
+_DEFAULT_LLAMA_SERVER_HOST = "127.0.0.1"
+_DEFAULT_LLAMA_SERVER_PORT = 8090
+_DEFAULT_LLAMA_SERVER_STARTUP_TIMEOUT_S = 120
+_DEFAULT_HTTP_TIMEOUT_S = 60
+_AUTO_N_GPU_LAYERS = 999
 
 
 def _env_int(name: str, default: int) -> int:
@@ -49,6 +66,11 @@ def _cuda_visible() -> bool:
     return True
 
 
+def _env_str(name: str, default: str) -> str:
+    raw = (os.environ.get(name) or "").strip()
+    return raw or default
+
+
 @dataclass(frozen=True)
 class TranslationConfig:
     gguf_repo_id: str
@@ -77,12 +99,477 @@ def default_config() -> TranslationConfig:
     )
 
 
+@dataclass(frozen=True)
+class _LlamaAsset:
+    tag: str
+    name: str
+    url: str
+
+
+@dataclass
+class _LlamaServerRuntime:
+    exe_path: Path
+    base_url: str
+    model_id: str
+    process: subprocess.Popen[bytes]
+    log_path: Path
+    log_handle: object
+    asset_name: str
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def _bundled_llama_server_path() -> Path | None:
+    root = _repo_root()
+    candidates = [
+        root / "local_ai" / "llama_cpp" / "vulkan" / "llama-server.exe",
+        root / "local_ai" / "llama_cpp" / "avx2" / "llama-server.exe",
+        root / "local_ai" / "llama_cpp" / "generic" / "llama-server.exe",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _cache_base_dir() -> Path:
+    hf_home = (os.environ.get("HF_HOME") or "").strip()
+    if hf_home:
+        return Path(hf_home) / "yakulingo"
+    return Path.home() / ".cache" / "huggingface" / "yakulingo"
+
+
+def _github_get_json(url: str, *, timeout_s: int) -> object:
+    req = Request(url, headers={"User-Agent": "yakulingo-spaces"})
+    with urlopen(req, timeout=timeout_s) as resp:
+        body = resp.read()
+    return json.loads(body.decode("utf-8"))
+
+
+def _resolve_llama_asset() -> _LlamaAsset:
+    direct_url = (os.environ.get("YAKULINGO_SPACES_LLAMA_CPP_URL") or "").strip()
+    if direct_url:
+        return _LlamaAsset(tag="custom", name=Path(direct_url).name, url=direct_url)
+
+    repo = _env_str("YAKULINGO_SPACES_LLAMA_CPP_REPO", _DEFAULT_LLAMA_CPP_REPO)
+    suffix = _env_str(
+        "YAKULINGO_SPACES_LLAMA_CPP_ASSET_SUFFIX", _DEFAULT_LLAMA_CPP_ASSET_SUFFIX
+    )
+
+    data = _github_get_json(
+        f"https://api.github.com/repos/{repo}/releases/latest",
+        timeout_s=_DEFAULT_HTTP_TIMEOUT_S,
+    )
+    if not isinstance(data, dict):
+        raise RuntimeError("llama.cpp の GitHub Release 情報の取得に失敗しました。")
+
+    tag = str(data.get("tag_name") or "").strip()
+    if not tag:
+        raise RuntimeError("llama.cpp の release tag が取得できませんでした。")
+
+    assets = data.get("assets")
+    if not isinstance(assets, list):
+        raise RuntimeError("llama.cpp の assets 情報が取得できませんでした。")
+
+    wanted_suffix = suffix.lower()
+    best: tuple[str, str] | None = None
+    names: list[str] = []
+    for asset in assets:
+        if not isinstance(asset, dict):
+            continue
+        name = str(asset.get("name") or "").strip()
+        url = str(asset.get("browser_download_url") or "").strip()
+        if not name or not url:
+            continue
+        names.append(name)
+        if name.lower().endswith(wanted_suffix):
+            best = (name, url)
+            break
+
+    if best is None:
+        joined = ", ".join(names[:25])
+        more = "" if len(names) <= 25 else f" …(+{len(names) - 25})"
+        raise RuntimeError(
+            "llama.cpp の事前ビルド済みバイナリが見つかりません。"
+            f"（repo={repo}, tag={tag}, suffix={suffix}）\n"
+            f"利用可能な assets: {joined}{more}\n"
+            "ヒント: `YAKULINGO_SPACES_LLAMA_CPP_ASSET_SUFFIX` を見直すか、"
+            "`YAKULINGO_SPACES_LLAMA_CPP_URL` を直接指定してください。"
+        )
+
+    name, url = best
+    return _LlamaAsset(tag=tag, name=name, url=url)
+
+
+def _strip_archive_suffix(name: str) -> str:
+    lowered = name.lower()
+    if lowered.endswith(".tar.gz"):
+        return name[: -len(".tar.gz")]
+    if lowered.endswith(".tgz"):
+        return name[: -len(".tgz")]
+    if lowered.endswith(".zip"):
+        return name[: -len(".zip")]
+    return Path(name).stem
+
+
+def _ensure_executable(path: Path) -> None:
+    try:
+        path.chmod(path.stat().st_mode | 0o111)
+    except Exception:
+        return
+
+
+def _download_url(url: str, dest_path: Path, *, timeout_s: int) -> None:
+    tmp_path = dest_path.with_name(dest_path.name + ".partial")
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        req = Request(url, headers={"User-Agent": "yakulingo-spaces"})
+        with urlopen(req, timeout=timeout_s) as resp, open(tmp_path, "wb") as f:
+            shutil.copyfileobj(resp, f)
+        tmp_path.replace(dest_path)
+    finally:
+        try:
+            if tmp_path.exists():
+                tmp_path.unlink()
+        except Exception:
+            pass
+
+
+def _validate_relpath(name: str) -> None:
+    p = Path(name)
+    if p.is_absolute() or any(part == ".." for part in p.parts):
+        raise RuntimeError(f"アーカイブに危険なパスが含まれています: {name}")
+
+
+def _extract_archive(archive_path: Path, dest_dir: Path) -> None:
+    name = archive_path.name.lower()
+    if name.endswith(".zip"):
+        with zipfile.ZipFile(archive_path) as zf:
+            for info in zf.infolist():
+                _validate_relpath(info.filename)
+            zf.extractall(dest_dir)
+        return
+
+    with tarfile.open(archive_path, "r:*") as tf:
+        for member in tf.getmembers():
+            _validate_relpath(member.name)
+        tf.extractall(dest_dir)
+
+
+def _find_llama_server(root: Path) -> Path | None:
+    if not root.exists():
+        return None
+    for filename in ("llama-server", "llama-server.exe"):
+        for candidate in root.rglob(filename):
+            if candidate.is_file():
+                return candidate
+    return None
+
+
+def _llama_server_override_path() -> Path | None:
+    raw = (os.environ.get("YAKULINGO_SPACES_LLAMA_SERVER_PATH") or "").strip()
+    if not raw:
+        return None
+    path = Path(raw)
+    if path.exists():
+        return path
+    raise RuntimeError(f"YAKULINGO_SPACES_LLAMA_SERVER_PATH が存在しません: {path}")
+
+
+def _ensure_llama_server_binary() -> tuple[Path, str]:
+    override = _llama_server_override_path()
+    if override is not None:
+        _ensure_executable(override)
+        return override, override.name
+
+    if os.name == "nt":
+        bundled = _bundled_llama_server_path()
+        if bundled is not None:
+            _ensure_executable(bundled)
+            return bundled, bundled.name
+
+    asset = _resolve_llama_asset()
+    repo = _env_str("YAKULINGO_SPACES_LLAMA_CPP_REPO", _DEFAULT_LLAMA_CPP_REPO)
+    repo_dir = repo.replace("/", "__").replace("\\", "__")
+    base_dir = _cache_base_dir() / "llama_cpp" / repo_dir / asset.tag
+
+    extract_dir = base_dir / _strip_archive_suffix(asset.name)
+    existing = _find_llama_server(extract_dir)
+    if existing is not None:
+        _ensure_executable(existing)
+        return existing, asset.name
+
+    archive_path = base_dir / asset.name
+    if not archive_path.exists():
+        _download_url(asset.url, archive_path, timeout_s=_DEFAULT_HTTP_TIMEOUT_S)
+
+    staging_dir = extract_dir.with_name(extract_dir.name + "._staging")
+    if staging_dir.exists():
+        shutil.rmtree(staging_dir, ignore_errors=True)
+    staging_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        _extract_archive(archive_path, staging_dir)
+        found = _find_llama_server(staging_dir)
+        if found is None:
+            raise RuntimeError(
+                f"llama.cpp アーカイブ内に llama-server が見つかりません: {asset.name}"
+            )
+        _ensure_executable(found)
+
+        if extract_dir.exists():
+            shutil.rmtree(extract_dir, ignore_errors=True)
+        staging_dir.replace(extract_dir)
+    finally:
+        if staging_dir.exists():
+            shutil.rmtree(staging_dir, ignore_errors=True)
+
+    resolved = _find_llama_server(extract_dir)
+    if resolved is None:
+        raise RuntimeError(f"llama-server の展開に失敗しました: {asset.name}")
+    _ensure_executable(resolved)
+    return resolved, asset.name
+
+
+def _llama_server_host() -> str:
+    return _env_str("YAKULINGO_SPACES_LLAMA_SERVER_HOST", _DEFAULT_LLAMA_SERVER_HOST)
+
+
+def _llama_server_port() -> int:
+    return _env_int("YAKULINGO_SPACES_LLAMA_SERVER_PORT", _DEFAULT_LLAMA_SERVER_PORT)
+
+
+def _llama_server_startup_timeout_s() -> int:
+    return _env_int(
+        "YAKULINGO_SPACES_LLAMA_SERVER_STARTUP_TIMEOUT",
+        _DEFAULT_LLAMA_SERVER_STARTUP_TIMEOUT_S,
+    )
+
+
+def _llama_server_log_path() -> Path:
+    base = _cache_base_dir() / "spaces"
+    base.mkdir(parents=True, exist_ok=True)
+    return base / "llama_server.log"
+
+
+def _read_tail_text(path: Path, *, max_bytes: int) -> str:
+    if max_bytes <= 0:
+        return ""
+    try:
+        if not path.exists():
+            return ""
+        size = path.stat().st_size
+        offset = max(0, int(size) - int(max_bytes))
+        with open(path, "rb") as f:
+            f.seek(offset)
+            data = f.read()
+        text = data.decode("utf-8", errors="replace")
+        if offset > 0:
+            nl = text.find("\n")
+            if nl != -1:
+                text = text[nl + 1 :]
+        return text
+    except Exception:
+        return ""
+
+
+def _get_help_text(exe_path: Path) -> str:
+    try:
+        proc = subprocess.run(
+            [str(exe_path), "--help"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except Exception:
+        return ""
+    return (proc.stdout or "") + "\n" + (proc.stderr or "")
+
+
+def _help_has_long(help_text: str, flag: str) -> bool:
+    return bool(help_text) and flag in help_text
+
+
+def _help_has_short(help_text: str, flag: str) -> bool:
+    if not help_text or not flag.startswith("-") or flag.startswith("--"):
+        return False
+    return bool(re.search(rf"(?m)^\s*{re.escape(flag)}(?:,|\s)", help_text))
+
+
+def _infer_device_from_asset(asset_name: str) -> str | None:
+    lowered = (asset_name or "").strip().lower()
+    if not lowered:
+        return None
+    if "vulkan" in lowered:
+        return "vulkan"
+    if "cuda" in lowered:
+        return "cuda"
+    if "hip" in lowered:
+        return "hip"
+    if "opencl" in lowered:
+        return "opencl"
+    if "sycl" in lowered:
+        return "sycl"
+    return None
+
+
+def _build_llama_server_args(
+    *,
+    exe_path: Path,
+    model_path: str,
+    host: str,
+    port: int,
+    n_ctx: int,
+    n_gpu_layers: int,
+    use_cuda: bool,
+    asset_name: str,
+) -> list[str]:
+    help_text = _get_help_text(exe_path)
+
+    args: list[str] = [str(exe_path), "--host", host, "--port", str(port)]
+
+    if _help_has_short(help_text, "-m"):
+        args += ["-m", model_path]
+    elif _help_has_long(help_text, "--model"):
+        args += ["--model", model_path]
+    else:
+        args += ["-m", model_path]
+
+    ctx = max(256, int(n_ctx))
+    if _help_has_long(help_text, "--ctx-size"):
+        args += ["--ctx-size", str(ctx)]
+    elif _help_has_short(help_text, "-c"):
+        args += ["-c", str(ctx)]
+
+    if _help_has_long(help_text, "--device"):
+        if use_cuda:
+            device = (os.environ.get("YAKULINGO_SPACES_LLAMA_DEVICE") or "").strip()
+            if not device:
+                device = _infer_device_from_asset(asset_name) or "vulkan"
+            args += ["--device", device]
+        else:
+            args += ["--device", "none"]
+
+    ngl_flag: str | None = None
+    if _help_has_long(help_text, "--n-gpu-layers"):
+        ngl_flag = "--n-gpu-layers"
+    elif _help_has_short(help_text, "-ngl"):
+        ngl_flag = "-ngl"
+
+    if ngl_flag:
+        ngl_value = int(n_gpu_layers)
+        if use_cuda:
+            if ngl_value < 0:
+                ngl_value = _AUTO_N_GPU_LAYERS
+        else:
+            ngl_value = 0
+        args += [ngl_flag, str(ngl_value)]
+
+    return args
+
+
+def _http_json(
+    *,
+    method: str,
+    url: str,
+    body: dict | None,
+    timeout_s: int,
+) -> object:
+    data = None if body is None else json.dumps(body).encode("utf-8")
+    req = Request(url, data=data, method=method)
+    if data is not None:
+        req.add_header("Content-Type", "application/json")
+    with urlopen(req, timeout=timeout_s) as resp:
+        payload = resp.read()
+    return json.loads(payload.decode("utf-8"))
+
+
+def _probe_openai_model_id(base_url: str) -> str | None:
+    data = _http_json(
+        method="GET", url=f"{base_url}/v1/models", body=None, timeout_s=5
+    )
+    if not isinstance(data, dict):
+        return None
+    items = data.get("data")
+    if not isinstance(items, list) or not items:
+        return None
+    first = items[0]
+    if not isinstance(first, dict):
+        return None
+    model_id = first.get("id")
+    if model_id is None:
+        return None
+    return str(model_id)
+
+
+def _wait_for_llama_server(
+    *, base_url: str, process: subprocess.Popen[bytes], timeout_s: int
+) -> str:
+    deadline = time.monotonic() + max(1, int(timeout_s))
+    last_error: str | None = None
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            raise RuntimeError(f"llama-server が終了しました（exit_code={process.returncode}）。")
+        try:
+            model_id = _probe_openai_model_id(base_url)
+            if model_id:
+                return model_id
+        except (HTTPError, URLError, TimeoutError) as e:
+            last_error = str(e)
+        except Exception as e:
+            last_error = str(e)
+        time.sleep(0.4)
+    raise RuntimeError(
+        f"llama-server の起動がタイムアウトしました（timeout={timeout_s}s）。"
+        + (f" 最後のエラー: {last_error}" if last_error else "")
+    )
+
+
+def _openai_completions(
+    *,
+    base_url: str,
+    model_id: str,
+    prompt: str,
+    max_tokens: int,
+    temperature: float,
+) -> str:
+    payload = {
+        "model": model_id,
+        "prompt": prompt,
+        "max_tokens": int(max_tokens),
+        "temperature": float(temperature),
+        "top_p": 1.0,
+        "stop": ["<end_of_turn>"],
+        "stream": False,
+    }
+    data = _http_json(
+        method="POST", url=f"{base_url}/v1/completions", body=payload, timeout_s=60
+    )
+    return _extract_llama_text(data)
+
+
 class GGUFTranslator:
     def __init__(self, config: TranslationConfig | None = None) -> None:
         self._config = config or default_config()
         self._lock = threading.Lock()
-        self._llm: object | None = None
+        self._runtime: _LlamaServerRuntime | None = None
         self._device: str | None = None
+
+    def _dispose_runtime(self) -> None:
+        runtime = self._runtime
+        self._runtime = None
+        if runtime is None:
+            return
+
+        try:
+            close = getattr(runtime.log_handle, "close", None)
+            if callable(close):
+                close()
+        except Exception:
+            pass
 
     def runtime_device(self) -> str:
         if self._device:
@@ -98,31 +585,32 @@ class GGUFTranslator:
 
         max_new_tokens = max(1, int(self._config.max_new_tokens))
         prompt = _build_prompt(cleaned, output_language=output_language)
-        llm = self._get_llm()
+        runtime = self._get_runtime()
 
         try:
-            result = llm(  # type: ignore[operator]
-                prompt,
+            generated = _openai_completions(
+                base_url=runtime.base_url,
+                model_id=runtime.model_id,
+                prompt=prompt,
                 max_tokens=max_new_tokens,
                 temperature=float(self._config.temperature),
-                top_p=1.0,
-                stop=["<end_of_turn>"],
             )
         except Exception as e:
             raise RuntimeError(
-                f"翻訳に失敗しました（backend=gguf/llama.cpp, device={self.runtime_device()}）: {e}"
+                f"翻訳に失敗しました（backend=gguf/llama.cpp/llama-server, device={self.runtime_device()}）: {e}"
             ) from e
 
-        generated = _extract_llama_text(result)
         return _clean_translation_output(generated)
 
-    def _get_llm(self) -> object:
-        if self._llm is not None:
-            return self._llm
+    def _get_runtime(self) -> _LlamaServerRuntime:
+        if self._runtime is not None and self._runtime.process.poll() is None:
+            return self._runtime
+        self._dispose_runtime()
 
         with self._lock:
-            if self._llm is not None:
-                return self._llm
+            if self._runtime is not None and self._runtime.process.poll() is None:
+                return self._runtime
+            self._dispose_runtime()
 
             hf_token = _hf_token()
 
@@ -130,19 +618,21 @@ class GGUFTranslator:
                 from huggingface_hub import (  # type: ignore[import-not-found]
                     hf_hub_download,
                 )
-                from llama_cpp import Llama  # type: ignore[import-not-found]
             except ModuleNotFoundError as e:
                 raise RuntimeError(
                     "Spaces 用の依存関係が不足しています。"
                     "（例: pip install -r spaces/requirements.txt）"
                 ) from e
 
-            use_cuda = _cuda_visible()
-            if not use_cuda and not self._config.allow_cpu:
+            cuda_visible = _cuda_visible()
+            gpu_requested = int(self._config.n_gpu_layers) != 0
+            use_cuda = cuda_visible and gpu_requested
+            if gpu_requested and not cuda_visible and not self._config.allow_cpu:
                 raise RuntimeError(
                     "GPU が利用できません（ZeroGPU が割り当てられていない可能性があります）。"
                     "Space の Hardware を ZeroGPU に設定してください。"
-                    "（デバッグ用途で CPU を許可する場合は YAKULINGO_SPACES_ALLOW_CPU=1）"
+                    "（デバッグ用途で CPU を許可する場合は YAKULINGO_SPACES_ALLOW_CPU=1、"
+                    "または YAKULINGO_SPACES_N_GPU_LAYERS=0）"
                 )
 
             gguf_path = hf_hub_download(
@@ -151,20 +641,73 @@ class GGUFTranslator:
                 token=hf_token,
             )
 
+            exe_path, asset_name = _ensure_llama_server_binary()
+            host = _llama_server_host()
+            port = _llama_server_port()
+            base_url = f"http://{host}:{port}"
             n_gpu_layers = int(self._config.n_gpu_layers)
-            if not use_cuda:
-                n_gpu_layers = 0
 
-            llm = Llama(
-                model_path=gguf_path,
-                n_ctx=max(256, int(self._config.n_ctx)),
+            args = _build_llama_server_args(
+                exe_path=exe_path,
+                model_path=str(gguf_path),
+                host=host,
+                port=port,
+                n_ctx=int(self._config.n_ctx),
                 n_gpu_layers=n_gpu_layers,
-                verbose=False,
+                use_cuda=use_cuda,
+                asset_name=asset_name,
             )
 
-            self._device = "cuda" if use_cuda and n_gpu_layers != 0 else "cpu"
-            self._llm = llm
-            return llm
+            log_path = _llama_server_log_path()
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_handle = open(log_path, "ab")
+            try:
+                process = subprocess.Popen(  # noqa: S603
+                    args,
+                    stdout=log_handle,
+                    stderr=subprocess.STDOUT,
+                )
+            except Exception:
+                try:
+                    log_handle.close()
+                except Exception:
+                    pass
+                raise
+
+            try:
+                model_id = _wait_for_llama_server(
+                    base_url=base_url,
+                    process=process,
+                    timeout_s=_llama_server_startup_timeout_s(),
+                )
+            except Exception as e:
+                try:
+                    process.terminate()
+                except Exception:
+                    pass
+                try:
+                    log_handle.close()
+                except Exception:
+                    pass
+                tail = _read_tail_text(log_path, max_bytes=32_000).strip()
+                if tail:
+                    raise RuntimeError(
+                        f"llama-server の起動に失敗しました: {e}\n\n直近のログ:\n\n{tail}"
+                    ) from e
+                raise
+
+            self._device = "cuda" if use_cuda else "cpu"
+            runtime = _LlamaServerRuntime(
+                exe_path=exe_path,
+                base_url=base_url,
+                model_id=model_id,
+                process=process,
+                log_path=log_path,
+                log_handle=log_handle,
+                asset_name=asset_name,
+            )
+            self._runtime = runtime
+            return runtime
 
 
 def _build_prompt(text: str, *, output_language: OutputLanguage) -> str:

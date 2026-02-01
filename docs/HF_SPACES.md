@@ -4,7 +4,7 @@
 このリポジトリにはデスクトップ向け（NiceGUI）とは別に、Hugging Face Spaces 上で動く **テキスト翻訳デモ** を同梱しています。
 
 - デモ UI: `spaces/app.py`（Gradio）
-- 翻訳バックエンド: `spaces/translator.py`（GGUF / llama.cpp / `llama-cpp-python`）
+- 翻訳バックエンド: `spaces/translator.py`（GGUF / llama.cpp / llama-server（事前ビルド済みバイナリ））
 - ZeroGPU（動的GPU割当）前提で、翻訳処理は `@spaces.GPU` で実行します（GPU が必要な処理の実行時に GPU を要求し、完了後に解放）。
 
 ## できること / できないこと
@@ -78,10 +78,19 @@ Space の Variables/Secrets に以下を設定します。
 
 ### 任意（llama.cpp 設定）
 - `YAKULINGO_SPACES_N_GPU_LAYERS`（既定: `-1`）
-  - `-1`: 可能な限り GPU にオフロード（GPU 対応ビルドの場合）
+  - `-1`: 可能な限り GPU にオフロード（内部的には `999` 相当として扱います）
   - `0`: CPU のみ
 - `YAKULINGO_SPACES_N_CTX`（既定: `4096`）
 - `YAKULINGO_SPACES_TEMPERATURE`（既定: `0.0`）
+- `YAKULINGO_SPACES_LLAMA_CPP_REPO`（既定: `ggerganov/llama.cpp`）
+- `YAKULINGO_SPACES_LLAMA_CPP_ASSET_SUFFIX`（既定: `bin-ubuntu-vulkan-x64.tar.gz`）
+  - GitHub Releases の assets から、この suffix で終わるファイルを自動選択します（例: `llama-b7898-bin-ubuntu-vulkan-x64.tar.gz`）。
+- `YAKULINGO_SPACES_LLAMA_CPP_URL`（任意）
+  - 上記の自動選択がうまくいかない場合に、llama.cpp のアーカイブ URL を直接指定します（優先）。
+- `YAKULINGO_SPACES_LLAMA_DEVICE`（任意）
+  - `--device` に渡す値を上書きします（例: `vulkan`）。
+- `YAKULINGO_SPACES_LLAMA_SERVER_PORT`（任意。既定: `8090`）
+- `YAKULINGO_SPACES_LLAMA_SERVER_STARTUP_TIMEOUT`（任意。既定: `120`）
 
 ### 任意（ZeroGPU: GPU size / duration）
 - `YAKULINGO_SPACES_ZEROGPU_SIZE`（既定: `large`）
@@ -103,6 +112,8 @@ Space の Variables/Secrets に以下を設定します。
 ## 依存関係
 - Spaces（Linux）向けの追加依存は `requirements.txt` に Linux 限定で追記しています。
 - ローカルでデモだけ動かしたい場合は `spaces/requirements.txt` を利用してください。
+  - NOTE: 本デモは `llama-server`（llama.cpp）を外部プロセスとして起動します。Windows でローカル確認する場合は、
+    `YAKULINGO_SPACES_LLAMA_SERVER_PATH=local_ai/llama_cpp/(avx2|vulkan)/llama-server.exe` を設定してください。
 
 ## ローカルでの動作確認
 ```bash

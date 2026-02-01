@@ -12,7 +12,7 @@ python spaces/app.py
 ```
 
 ## 備考
-- 翻訳バックエンドは GGUF（llama.cpp / `llama-cpp-python`）で実装しています。
+- 翻訳バックエンドは GGUF（llama.cpp / llama-server（事前ビルド済みバイナリ））で実装しています。
 - Hugging Face Spaces では `sdk=gradio` で `app_file=spaces/app.py` を指定する想定です。
 - ZeroGPU では `@spaces.GPU` で GPU を動的に割り当てます（`YAKULINGO_SPACES_ZEROGPU_SIZE` / `YAKULINGO_SPACES_ZEROGPU_DURATION`）。
 - モデル選定メモ: `docs/HF_SPACES_MODEL.md`

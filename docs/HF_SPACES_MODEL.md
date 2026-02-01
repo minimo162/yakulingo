@@ -12,7 +12,7 @@
   - file: `translategemma-27b-it.i1-Q4_K_M.gguf`
 
 ## 実行方式（決定）
-- `llama-cpp-python`（llama.cpp）で GGUF を実行して翻訳する
+- `llama-server`（llama.cpp の事前ビルド済みバイナリ）で GGUF を実行して翻訳する
 - ZeroGPU（動的GPU割当）前提で、翻訳処理は `@spaces.GPU` の内側で実行する（`size` / `duration` は環境変数で指定）
 - 量子化は GGUF のファイルで決まる（例: `...-Q4_K_M.gguf`）
 - GPU が使えない場合:
@@ -21,7 +21,9 @@
 
 ## 実装方針（実装済み）
 - GGUF は HF Hub から初回ダウンロードしてキャッシュする（`HF_HOME` を推奨）
-- `huggingface_hub.hf_hub_download` で `.gguf` を取得し、`llama_cpp.Llama` でロードする
+- `huggingface_hub.hf_hub_download` で `.gguf` を取得する
+- llama.cpp の GitHub Releases から `llama-server` のアーカイブをダウンロードしてキャッシュする（`HF_HOME` 推奨）
+- `llama-server` をサブプロセスで起動し、OpenAI 互換 API（`/v1/models` / `/v1/completions`）で推論する
 - 方向ごとにプロンプトを組み立て（JP→EN / EN→JP）、出力は「翻訳文のみ」を要求する
 - 出力の後処理（余計な前置き/コードフェンス/ラベル/`<start_of_turn>` 等）を実装する
 - 入力ガード:
@@ -34,12 +36,18 @@
 - `YAKULINGO_SPACES_GGUF_REPO_ID`（既定: `mradermacher/translategemma-27b-it-i1-GGUF`）
 - `YAKULINGO_SPACES_GGUF_FILENAME`（既定: `translategemma-27b-it.i1-Q4_K_M.gguf`）
 - `YAKULINGO_SPACES_N_GPU_LAYERS`（既定: `-1`）
-  - `-1`: 可能な限り GPU にオフロード（GPU 対応ビルドの場合）
+  - `-1`: 可能な限り GPU にオフロード（内部的には `999` 相当として扱います）
   - `0`: CPU のみ
 - `YAKULINGO_SPACES_N_CTX`（既定: `4096`）
 - `YAKULINGO_SPACES_TEMPERATURE`（既定: `0.0`）
 - `YAKULINGO_SPACES_MAX_NEW_TOKENS`（既定: `256`）
 - `YAKULINGO_SPACES_ALLOW_CPU=1`（デバッグ用途。非推奨）
+- `YAKULINGO_SPACES_LLAMA_CPP_REPO`（既定: `ggerganov/llama.cpp`）
+- `YAKULINGO_SPACES_LLAMA_CPP_ASSET_SUFFIX`（既定: `bin-ubuntu-vulkan-x64.tar.gz`）
+- `YAKULINGO_SPACES_LLAMA_CPP_URL`（任意。直接 URL 指定）
+- `YAKULINGO_SPACES_LLAMA_DEVICE`（任意。`--device` 上書き）
+- `YAKULINGO_SPACES_LLAMA_SERVER_PORT`（任意。既定: `8090`）
+- `YAKULINGO_SPACES_LLAMA_SERVER_STARTUP_TIMEOUT`（任意。既定: `120`）
 - `HF_TOKEN`（モデルが gated / 同意が必要な場合）
 
 ## 推奨（ZeroGPU）

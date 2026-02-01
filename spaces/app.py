@@ -215,10 +215,16 @@ def _error_hint(message: str) -> str:
             "HF_TOKEN は設定されていますが、モデルへのアクセス権がない可能性があります。"
             "モデルページで同意/許可を確認し、Space を再起動してください。"
         )
-    if "llama_cpp" in lowered or "llama-cpp-python" in lowered:
+    if (
+        "llama-server" in lowered
+        or "llama.cpp" in lowered
+        or "llama_cpp" in lowered
+        or "llama-cpp-python" in lowered
+    ):
         return (
-            "llama-cpp-python の導入/ビルドに失敗している可能性があります。"
-            "依存関係（`spaces/requirements.txt`）と Space のビルドログを確認してください。"
+            "llama.cpp（llama-server）の取得/展開/起動に失敗している可能性があります。"
+            "Space のログを確認し、必要なら `YAKULINGO_SPACES_LLAMA_CPP_*`（URL/ASSET_SUFFIX など）"
+            "や `HF_HOME`（キャッシュ）を見直してください。"
         )
     if "huggingface_hub" in lowered or "hf_hub_download" in lowered:
         return (

@@ -43,6 +43,7 @@ colorTo: pink
 sdk: gradio
 sdk_version: "4.0.0"
 python_version: "3.12.12"
+license: apache-2.0
 app_file: spaces/app.py
 pinned: false
 ---

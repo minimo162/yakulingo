@@ -24,10 +24,19 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = (os.environ.get(name) or "").strip().lower()
+    if not raw:
+        return default
+    return raw in ("1", "true", "yes", "y", "on")
+
+
 @dataclass(frozen=True)
 class TranslationConfig:
     model_id: str
     max_new_tokens: int
+    quant: str
+    allow_cpu: bool
 
 
 def default_config() -> TranslationConfig:
@@ -36,6 +45,8 @@ def default_config() -> TranslationConfig:
             "YAKULINGO_SPACES_MODEL_ID", "google/translategemma-27b-it"
         ),
         max_new_tokens=_env_int("YAKULINGO_SPACES_MAX_NEW_TOKENS", 256),
+        quant=(os.environ.get("YAKULINGO_SPACES_QUANT") or "4bit").strip().lower(),
+        allow_cpu=_env_bool("YAKULINGO_SPACES_ALLOW_CPU", False),
     )
 
 
@@ -91,7 +102,12 @@ class TransformersTranslator:
 
             try:
                 import torch  # type: ignore[import-not-found]
-                from transformers import pipeline  # type: ignore[import-not-found]
+                from transformers import (  # type: ignore[import-not-found]
+                    AutoModelForCausalLM,
+                    AutoTokenizer,
+                    BitsAndBytesConfig,
+                    pipeline,
+                )
             except ModuleNotFoundError as e:
                 raise RuntimeError(
                     "Spaces 用の依存関係が不足しています。"
@@ -99,17 +115,43 @@ class TransformersTranslator:
                 ) from e
 
             use_cuda = bool(torch.cuda.is_available())
-            device_index = 0 if use_cuda else -1
-            model_kwargs: dict[str, object] = {}
-            if use_cuda:
-                model_kwargs["torch_dtype"] = torch.float16
+            if not use_cuda and not self._config.allow_cpu:
+                raise RuntimeError(
+                    "GPU が利用できません（ZeroGPU が割り当てられていない可能性があります）。"
+                    "Space の Hardware を ZeroGPU に設定してください。"
+                    "（デバッグ用途で CPU を許可する場合は YAKULINGO_SPACES_ALLOW_CPU=1）"
+                )
 
-            pipeline_obj = pipeline(
-                "text-generation",
-                model=model_id,
-                device=device_index,
-                model_kwargs=model_kwargs or None,
+            quant = (self._config.quant or "").strip().lower()
+            torch_dtype = torch.float16 if use_cuda else None
+
+            quantization_config = None
+            if use_cuda:
+                if quant in ("4bit", "4-bit", "4"):
+                    quantization_config = BitsAndBytesConfig(
+                        load_in_4bit=True,
+                        bnb_4bit_quant_type="nf4",
+                        bnb_4bit_use_double_quant=True,
+                        bnb_4bit_compute_dtype=torch.float16,
+                    )
+                elif quant in ("8bit", "8-bit", "8"):
+                    quantization_config = BitsAndBytesConfig(load_in_8bit=True)
+                elif quant in ("none", "", "fp16", "bf16"):
+                    quantization_config = None
+                else:
+                    raise RuntimeError(
+                        f"YAKULINGO_SPACES_QUANT が不正です: {self._config.quant!r}（例: 4bit / 8bit / none）"
+                    )
+
+            tokenizer = AutoTokenizer.from_pretrained(model_id)
+            model = AutoModelForCausalLM.from_pretrained(
+                model_id,
+                device_map="auto" if use_cuda else None,
+                torch_dtype=torch_dtype,
+                quantization_config=quantization_config,
             )
+
+            pipeline_obj = pipeline("text-generation", model=model, tokenizer=tokenizer)
 
             self._device = "cuda" if use_cuda else "cpu"
             self._pipeline = pipeline_obj

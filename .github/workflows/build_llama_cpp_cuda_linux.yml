@@ -1,0 +1,92 @@
+name: build_llama_cpp_cuda_linux
+
+on:
+  workflow_dispatch:
+    inputs:
+      llama_cpp_ref:
+        description: "llama.cpp git ref (tag/branch/sha)"
+        required: true
+        default: "b7898"
+      cuda_image:
+        description: "Docker image (CUDA devel)"
+        required: true
+        default: "nvidia/cuda:12.4.1-devel-ubuntu22.04"
+      output_name:
+        description: "Output archive name (tar.gz)"
+        required: true
+        default: "llama-server-cuda-ubuntu-x64.tar.gz"
+      cuda_architectures:
+        description: "CMAKE_CUDA_ARCHITECTURES (semicolon-separated)"
+        required: true
+        default: "80;86;89;90"
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build llama.cpp (CUDA) in Docker
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          docker pull "${{ inputs.cuda_image }}"
+
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/work" \
+            -w /work \
+            "${{ inputs.cuda_image }}" \
+            bash -lc '
+              set -euo pipefail
+              apt-get update
+              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+                git ca-certificates build-essential cmake ninja-build pkg-config
+              rm -rf /var/lib/apt/lists/*
+
+              rm -rf /tmp/llama.cpp
+              git clone --depth 1 --branch "${{ inputs.llama_cpp_ref }}" https://github.com/ggerganov/llama.cpp /tmp/llama.cpp \
+                || (git clone https://github.com/ggerganov/llama.cpp /tmp/llama.cpp && cd /tmp/llama.cpp && git checkout "${{ inputs.llama_cpp_ref }}")
+
+              cd /tmp/llama.cpp
+              mkdir -p build
+              cd build
+
+              # Prefer newer flag name; fall back if needed.
+              if cmake -G Ninja -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES="${{ inputs.cuda_architectures }}" -DCMAKE_BUILD_TYPE=Release .. ; then
+                echo "Configured with -DGGML_CUDA=ON"
+              else
+                rm -rf ./*
+                cmake -G Ninja -DLLAMA_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES="${{ inputs.cuda_architectures }}" -DCMAKE_BUILD_TYPE=Release ..
+                echo "Configured with -DLLAMA_CUDA=ON"
+              fi
+
+              cmake --build . --config Release --target llama-server llama-cli
+
+              # Collect runtime
+              mkdir -p /work/out/runtime
+              find . -maxdepth 3 -type f -name "llama-server" -exec cp -f {} /work/out/runtime/llama-server \;
+              find . -maxdepth 3 -type f -name "llama-cli" -exec cp -f {} /work/out/runtime/llama-cli \;
+
+              # Collect shared libs built by llama.cpp (best-effort)
+              find . -maxdepth 3 -type f -name "libllama*.so*" -exec cp -f {} /work/out/runtime/ \; || true
+              find . -maxdepth 3 -type f -name "libggml*.so*" -exec cp -f {} /work/out/runtime/ \; || true
+              find . -maxdepth 3 -type f -name "libmtmd*.so*" -exec cp -f {} /work/out/runtime/ \; || true
+              cp -f ../LICENSE /work/out/runtime/LICENSE || true
+
+              chmod +x /work/out/runtime/llama-server /work/out/runtime/llama-cli || true
+
+              # Pack
+              cd /work/out
+              tar -czf "${{ inputs.output_name }}" runtime
+            '
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.output_name }}
+          path: out/${{ inputs.output_name }}
+          if-no-files-found: error

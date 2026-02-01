@@ -98,9 +98,13 @@ ZeroGPU で **CUDA を使いたい場合**は、llama.cpp（Linux 事前ビル�
 - `YAKULINGO_SPACES_LLAMA_CPP_URL`（任意）
   - 上記の自動選択がうまくいかない場合に、llama.cpp のアーカイブ URL を直接指定します（優先）。
 - `YAKULINGO_SPACES_LLAMA_DEVICE`（任意）
-  - `--device` に渡す値を上書きします（例: `vulkan`）。
+  - `--device` に渡す値を上書きします（例: `CUDA0` / `Vulkan0`）。
+  - `auto` を指定すると `llama-cli --list-devices` の結果から自動選択します（推奨）。
 - `YAKULINGO_SPACES_LLAMA_SERVER_PORT`（任意。既定: `8090`）
 - `YAKULINGO_SPACES_LLAMA_SERVER_STARTUP_TIMEOUT`（任意。既定: `120`）
+
+#### 上級（CUDA 版 llama.cpp を事前ビルドして使う）
+- `docs/HF_SPACES_LLAMA_CPP_CUDA.md` を参照してください。
 
 ### 任意（ZeroGPU: GPU size / duration）
 - `YAKULINGO_SPACES_ZEROGPU_SIZE`（既定: `large`）

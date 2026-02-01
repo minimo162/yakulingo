@@ -4,7 +4,7 @@
 このリポジトリにはデスクトップ向け（NiceGUI）とは別に、Hugging Face Spaces 上で動く **テキスト翻訳デモ** を同梱しています。
 
 - デモ UI: `spaces/app.py`（Gradio）
-- 翻訳バックエンド: `spaces/translator.py`（Transformers / MarianMT）
+- 翻訳バックエンド: `spaces/translator.py`（Transformers / `google/translategemma-27b-it`）
 
 ## できること / できないこと
 ### できること
@@ -38,17 +38,22 @@ Space の Variables/Secrets に以下を設定します。
 ### 必須（推奨）
 - `HF_HUB_DISABLE_TELEMETRY=1`
 
+### 必須（場合による）
+- `HF_TOKEN`（モデルが gated / 同意が必要な場合は Secret に設定）
+
 ### 任意（キャッシュ）
 - `HF_HOME=/data/.huggingface`（永続ストレージがある場合）
 
 ### 任意（モデル差し替え）
-- `YAKULINGO_SPACES_MODEL_JA_EN`（既定: `Helsinki-NLP/opus-mt-ja-en`）
-- `YAKULINGO_SPACES_MODEL_EN_JA`（既定: `Helsinki-NLP/opus-tatoeba-en-ja`）
+- `YAKULINGO_SPACES_MODEL_ID`（既定: `google/translategemma-27b-it`）
+
+### 任意（量子化）
+- `YAKULINGO_SPACES_QUANT`（既定: `4bit`）
+  - 例: `4bit` / `8bit` / `none`
 
 ### 任意（入力制限・生成設定）
 - `YAKULINGO_SPACES_MAX_CHARS`（既定: 2000）
 - `YAKULINGO_SPACES_MAX_NEW_TOKENS`（既定: 256）
-- `YAKULINGO_SPACES_NUM_BEAMS`（既定: 4）
 
 ## 依存関係
 - Spaces（Linux）向けの追加依存は `requirements.txt` に Linux 限定で追記しています。
@@ -64,9 +69,9 @@ python spaces/app.py
 
 ## ZeroGPU の注意点（よくある詰まり）
 - 初回起動はモデルダウンロードで時間がかかります（数分かかる場合あり）
-- GPU が使えないタイミングでは CPU 実行になります（処理が遅くなることがあります）
+- GPU が使えないタイミングがあり得ます（CPU での 27B 実行は現実的に遅くなるため、原則はエラーで案内する想定）
 - メモリ不足/タイムアウトが出る場合:
   - 入力を短くする
   - `YAKULINGO_SPACES_MAX_NEW_TOKENS` を下げる
   - `YAKULINGO_SPACES_MAX_CHARS` を下げる
-
+  - `YAKULINGO_SPACES_QUANT=4bit` を確認する

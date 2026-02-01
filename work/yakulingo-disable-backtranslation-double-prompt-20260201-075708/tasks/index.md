@@ -1,4 +1,4 @@
-# タスク一覧
+﻿# タスク一覧
 
 ステータスは `TODO | DOING | DONE | BLOCKED | SKIP` のいずれか。
 
@@ -11,3 +11,4 @@
 | 04 | DONE | 戻し訳用プロンプト/テンプレート/PromptBuilderを整理し、テストを更新 | `case-yakulingo-disable-backtranslation-double-prompt-20260201-075708-04-prompt-cleanup` | `4009f433` |
 | 05 | TODO | UI表示（戻し訳/パス）を整理し、設定UIの選択肢を更新 | `case/yakulingo-disable-backtranslation-double-prompt-20260201-075708/task-05` | `<SHA>` |
 | 06 | TODO | 統合リグレッション（typecheck/lint/full tests）と仕上げ | `case/yakulingo-disable-backtranslation-double-prompt-20260201-075708/task-06` | `<SHA>` |
+

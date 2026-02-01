@@ -38,6 +38,10 @@ def test_translate_single_does_not_retry_with_repeated_prompt_on_schema_mismatch
 ):
     client = LocalAIClient(AppSettings())
     runtime = _make_runtime()
+    import yakulingo.services.local_ai_client as client_module
+
+    client_module._WARMED_RUNTIME_KEYS.clear()
+    client_module._mark_warmed(runtime)
     prompt = 'Return JSON only: {"translation": ""}'
     calls: list[dict[str, object]] = []
     state = {"calls": 0}
@@ -70,6 +74,10 @@ def test_translate_single_does_not_retry_with_repeated_prompt_on_schema_mismatch
 def test_translate_single_does_not_retry_with_repeated_prompt_on_missing_json() -> None:
     client = LocalAIClient(AppSettings())
     runtime = _make_runtime()
+    import yakulingo.services.local_ai_client as client_module
+
+    client_module._WARMED_RUNTIME_KEYS.clear()
+    client_module._mark_warmed(runtime)
     prompt = 'Return JSON only: {"translation": ""}'
     calls: list[dict[str, object]] = []
     state = {"calls": 0}
@@ -102,6 +110,10 @@ def test_translate_single_does_not_retry_with_repeated_prompt_on_missing_json() 
 def test_translate_single_does_not_retry_when_prompt_is_not_json() -> None:
     client = LocalAIClient(AppSettings())
     runtime = _make_runtime()
+    import yakulingo.services.local_ai_client as client_module
+
+    client_module._WARMED_RUNTIME_KEYS.clear()
+    client_module._mark_warmed(runtime)
     prompt = "Translate this text."
     calls: list[dict[str, object]] = []
 
@@ -127,6 +139,10 @@ def test_translate_single_does_not_retry_when_prompt_is_not_json() -> None:
 def test_translate_sync_does_not_retry_with_repeated_prompt_on_parse_failure() -> None:
     client = LocalAIClient(AppSettings())
     runtime = _make_runtime()
+    import yakulingo.services.local_ai_client as client_module
+
+    client_module._WARMED_RUNTIME_KEYS.clear()
+    client_module._mark_warmed(runtime)
     prompt = 'Return JSON only: {"items":[{"id":1,"translation":""}]} (items_json)'
     calls: list[dict[str, object]] = []
     state = {"calls": 0}

@@ -31,6 +31,23 @@
 
 > NOTE: UI の項目名は変更されることがあります。要点は「Gradio SDK」「ZeroGPU」「app_file=spaces/app.py」です。
 
+### （参考）Spaces の README front matter（設定）例
+Spaces の `README.md` 先頭に以下の YAML を置くと、Space の表示設定を固定できます（色、SDK、Python、app_file など）。
+
+```yaml
+---
+title: YakuLingo (訳リンゴ) – ZeroGPU Translation Demo
+emoji: 🍎
+colorFrom: indigo
+colorTo: pink
+sdk: gradio
+sdk_version: "4.0.0"
+python_version: "3.12.12"
+app_file: spaces/app.py
+pinned: false
+---
+```
+
 ### 3) （任意）永続ストレージを有効化
 モデルは初回起動時にダウンロードされます。永続ストレージが使える場合はキャッシュを残すと安定します。
 

@@ -169,12 +169,39 @@ _CSS = """
   box-shadow: none !important;
 }
 
+.yak-select {
+  /* remove Gradio block frame around dropdown */
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+  --block-background-fill: transparent;
+  --block-border-width: 0px;
+  --block-padding: 0px;
+  --block-radius: 0px;
+}
+
+.yak-select > div,
+.yak-select .wrap,
+.yak-select label,
+.yak-select .container,
+.yak-select .input-container {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+}
+
 .yak-select select,
 .yak-select input {
   border-radius: 9999px !important;
   border: 1px solid var(--yak-border) !important;
   padding: 10px 14px !important;
   height: 44px !important;
+  background: var(--yak-surface) !important;
 }
 
 /* Result meta: minimal chips */

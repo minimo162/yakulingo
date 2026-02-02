@@ -122,11 +122,35 @@ _CSS = """
   /* Gradio block variables (if used by the theme) */
   --block-background-fill: var(--md-sys-color-surface);
   --block-border-color: var(--md-sys-color-outline-variant);
+  --block-border-width: 1px;
+  --block-radius: 12px;
+  --block-padding: 0px;
+  position: relative;
 }
 
 #input_text.padded,
 #output_text.padded {
   padding: 0 !important;
+}
+
+/* Force a white underlay inside the Textbox block.
+   Some Gradio themes paint a grey background via nested wrappers/pseudo-elements,
+   which can show up as "grey squares" around rounded corners. */
+#input_text::after,
+#output_text::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--md-sys-color-surface);
+  border-radius: 12px;
+  z-index: 0;
+  pointer-events: none;
+}
+
+#input_text > *,
+#output_text > * {
+  position: relative;
+  z-index: 1;
 }
 
 /* Gradio wrapper variations (keep scope under elem_id) */
@@ -170,6 +194,21 @@ _CSS = """
 #input_text::before,
 #output_text::before {
   background: transparent !important;
+}
+
+/* Also neutralize Textbox internals pseudo-elements */
+#input_text label.container.show_textbox_border::before,
+#output_text label.container.show_textbox_border::before,
+#input_text label.container.show_textbox_border::after,
+#output_text label.container.show_textbox_border::after,
+#input_text .input-container::before,
+#output_text .input-container::before,
+#input_text .input-container::after,
+#output_text .input-container::after {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
 }
 
 /* Actual textarea */

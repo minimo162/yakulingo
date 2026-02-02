@@ -51,7 +51,8 @@ _CSS = """
 .gradio-container {
   background: var(--md-sys-color-surface);
   color: var(--md-sys-color-on-surface);
-  max-width: 1100px;
+  max-width: 1400px;
+  margin: 0 auto;
 }
 
 /* Card container */
@@ -349,11 +350,11 @@ with gr.Blocks(title="YakuLingo", css=_CSS) as demo:
     gr.Markdown("# YakuLingo", elem_classes=["yak-title"])
 
     with gr.Row():
-        with gr.Column(elem_classes=["yak-card"]):
+        with gr.Column(scale=1, min_width=520, elem_classes=["yak-card"]):
             gr.Markdown("## 入力")
             input_text = gr.Textbox(
                 label="入力テキスト",
-                lines=10,
+                lines=18,
                 placeholder="日本語または英語を入力してください",
                 elem_id="input_text",
             )
@@ -362,11 +363,11 @@ with gr.Blocks(title="YakuLingo", css=_CSS) as demo:
                 translate_btn = gr.Button("翻訳", elem_id="translate_btn")
                 clear_btn = gr.Button("クリア", elem_id="clear_btn")
 
-        with gr.Column(elem_classes=["yak-card"]):
+        with gr.Column(scale=1, min_width=520, elem_classes=["yak-card"]):
             gr.Markdown("## 翻訳結果")
             result_meta = gr.Markdown(elem_id="result_meta")
             source_text = gr.Textbox(label="原文", lines=6, interactive=False)
-            output_text = gr.Textbox(label="翻訳結果", lines=10, elem_id="output_text")
+            output_text = gr.Textbox(label="翻訳結果", lines=18, elem_id="output_text")
             status = gr.Markdown()
 
             with gr.Accordion("詳細", open=False):

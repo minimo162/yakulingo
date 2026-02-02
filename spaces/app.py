@@ -169,6 +169,23 @@ _CSS = """
   border-radius: 12px !important;
 }
 
+/* Hide card background showing through textarea rounded corners by framing the whole Textbox */
+#input_text,
+#output_text {
+  background: var(--md-sys-color-surface) !important;
+  border: 1px solid var(--md-sys-color-outline-variant) !important;
+  border-radius: 12px !important;
+  overflow: hidden;
+}
+
+#input_text textarea,
+#output_text textarea {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 12px 14px !important;
+}
+
 /* Main layout: keep the centerline between the two cards at the screen center */
 .yak-main-row {
   display: grid !important;

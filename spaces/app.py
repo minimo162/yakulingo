@@ -113,6 +113,8 @@ _CSS = """
   border-color: var(--md-sys-color-outline-variant) !important;
   font-size: 18px !important;
   line-height: 1.5;
+  background: var(--md-sys-color-surface) !important;
+  border: 1px solid var(--md-sys-color-outline-variant) !important;
 }
 
 /* Remove the extra white rectangle around textareas (Gradio Textbox container) */
@@ -147,6 +149,24 @@ _CSS = """
   padding: 0 !important;
   margin: 0 !important;
   border-radius: 0 !important;
+}
+
+/* Nuclear option: clear any remaining underlay inside the Textbox component (restore textarea afterwards) */
+#input_text *,
+#output_text * {
+  background: transparent !important;
+  box-shadow: none !important;
+  border-color: transparent !important;
+  border-style: none !important;
+  outline: none !important;
+  border-radius: 0 !important;
+}
+
+#input_text textarea,
+#output_text textarea {
+  background: var(--md-sys-color-surface) !important;
+  border: 1px solid var(--md-sys-color-outline-variant) !important;
+  border-radius: 12px !important;
 }
 
 /* Main layout: keep the centerline between the two cards at the screen center */

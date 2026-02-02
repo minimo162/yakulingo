@@ -17,7 +17,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 OutputLanguage = Literal["en", "ja"]
-Backend = Literal["gguf", "gguf_python", "transformers"]
+Backend = Literal["gguf", "gguf_python", "transformers", "plamo"]
 
 _RE_CODE_FENCE_LINE = re.compile(r"^\s*```.*$", re.MULTILINE)
 _RE_LEADING_LABEL = re.compile(
@@ -885,11 +885,15 @@ def _http_json(
     url: str,
     body: dict | None,
     timeout_s: int,
+    headers: dict[str, str] | None = None,
 ) -> object:
     data = None if body is None else json.dumps(body).encode("utf-8")
     req = Request(url, data=data, method=method)
     if data is not None:
         req.add_header("Content-Type", "application/json")
+    if headers:
+        for key, value in headers.items():
+            req.add_header(str(key), str(value))
     with urlopen(req, timeout=timeout_s) as resp:
         payload = resp.read()
     return json.loads(payload.decode("utf-8"))
@@ -897,7 +901,7 @@ def _http_json(
 
 def _probe_openai_model_id(base_url: str) -> str | None:
     data = _http_json(
-        method="GET", url=f"{base_url}/v1/models", body=None, timeout_s=5
+        method="GET", url=f"{base_url}/v1/models", body=None, timeout_s=5, headers=None
     )
     if not isinstance(data, dict):
         return None
@@ -954,10 +958,148 @@ def _openai_completions(
         "stream": False,
     }
     data = _http_json(
-        method="POST", url=f"{base_url}/v1/completions", body=payload, timeout_s=60
+        method="POST",
+        url=f"{base_url}/v1/completions",
+        body=payload,
+        timeout_s=60,
+        headers=None,
     )
     return _extract_llama_text(data)
 
+
+class PlamoTranslator:
+    def backend_label(self) -> str:
+        return "plamo"
+
+    def engine_label(self) -> str:
+        return "chat-completions"
+
+    def quant_label(self) -> str:
+        return "api"
+
+    def runtime_device(self) -> str:
+        return "remote"
+
+    def translate(self, text: str, *, output_language: OutputLanguage) -> str:
+        cleaned = (text or "").strip()
+        if not cleaned:
+            return ""
+
+        cleaned = _pre_normalize_numeric_units(cleaned, output_language=output_language)
+
+        api_key = (os.environ.get("YAKULINGO_SPACES_PLAMO_API_KEY") or "").strip()
+        if not api_key:
+            api_key = (os.environ.get("PLAMO_API_KEY") or "").strip()
+        if not api_key:
+            raise RuntimeError(
+                "PLaMo API キーが未設定です（Secrets に YAKULINGO_SPACES_PLAMO_API_KEY を設定してください）。"
+            )
+
+        base_url = _env_str(
+            "YAKULINGO_SPACES_PLAMO_BASE_URL",
+            "https://platform.preferredai.jp/api/completion/v1",
+        ).rstrip("/")
+        model = _env_str("YAKULINGO_SPACES_PLAMO_MODEL", "plamo-2.2-prime")
+        temperature = float(_env_float("YAKULINGO_SPACES_PLAMO_TEMPERATURE", 0.0))
+        max_tokens = max(1, int(_env_int("YAKULINGO_SPACES_PLAMO_MAX_TOKENS", 1024)))
+        timeout_s = max(
+            1,
+            int(_env_int("YAKULINGO_SPACES_PLAMO_TIMEOUT_S", _DEFAULT_HTTP_TIMEOUT_S)),
+        )
+        max_retries = max(0, int(_env_int("YAKULINGO_SPACES_PLAMO_MAX_RETRIES", 2)))
+
+        prompt = _build_prompt(cleaned, output_language=output_language).strip()
+        payload = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a translation engine. Output the translation only.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": False,
+        }
+
+        headers = {"Authorization": f"Bearer {api_key}"}
+        last_error: Exception | None = None
+        for attempt in range(max_retries + 1):
+            try:
+                data = _http_json(
+                    method="POST",
+                    url=f"{base_url}/chat/completions",
+                    body=payload,
+                    timeout_s=timeout_s,
+                    headers=headers,
+                )
+                content = _extract_chat_completion_content(data)
+                return _clean_translation_output(content)
+            except HTTPError as e:
+                last_error = e
+                detail = _read_http_error_body(e)
+                status = getattr(e, "code", None)
+                raise RuntimeError(
+                    _format_plamo_http_error(status=status, detail=detail)
+                ) from e
+            except (URLError, TimeoutError) as e:
+                last_error = e
+                if attempt >= max_retries:
+                    raise RuntimeError(f"PLaMo API に接続できません: {e}") from e
+                time.sleep(0.5 * (attempt + 1))
+            except Exception as e:
+                last_error = e
+                raise RuntimeError(f"PLaMo API の呼び出しに失敗しました: {e}") from e
+
+        raise RuntimeError(f"PLaMo API の呼び出しに失敗しました: {last_error}")
+
+
+def _read_http_error_body(error: HTTPError) -> str | None:
+    try:
+        raw = error.read()
+    except Exception:
+        return None
+    if not raw:
+        return None
+    try:
+        return raw.decode("utf-8", errors="replace")
+    except Exception:
+        return None
+
+
+def _extract_chat_completion_content(data: object) -> str:
+    if isinstance(data, dict):
+        choices = data.get("choices")
+        if isinstance(choices, list) and choices:
+            first = choices[0]
+            if isinstance(first, dict):
+                message = first.get("message")
+                if isinstance(message, dict):
+                    content = message.get("content")
+                    if content is not None:
+                        return str(content)
+                content = first.get("text")
+                if content is not None:
+                    return str(content)
+    return str(data or "")
+
+
+def _format_plamo_http_error(*, status: int | None, detail: str | None) -> str:
+    base = "PLaMo API がエラーを返しました"
+    if status is None:
+        return base
+    if status == 401:
+        return f"{base}（401: 認証失敗）。API キーを確認してください。"
+    if status == 403:
+        return f"{base}（403: アクセス拒否）。プロジェクト/権限を確認してください。"
+    if status == 429:
+        return f"{base}（429: レート制限）。時間をおいて再試行してください。"
+    if status >= 500:
+        return f"{base}（{status}: サーバー側エラー）。時間をおいて再試行してください。"
+    if detail:
+        return f"{base}（{status}）。詳細: {detail}"
+    return f"{base}（{status}）。"
 
 class GGUFTranslator:
     def __init__(self, config: TranslationConfig | None = None) -> None:
@@ -1569,6 +1711,7 @@ def _clean_translation_output(text: str) -> str:
 _default_translator = GGUFTranslator()
 _gguf_python_translator = LlamaCppPythonTranslator()
 _transformers_translator = TransformersTranslator()
+_plamo_translator = PlamoTranslator()
 
 
 def _select_backend() -> Backend:
@@ -1579,17 +1722,21 @@ def _select_backend() -> Backend:
         return "gguf_python"
     if raw in ("transformers", "torch", "hf"):
         return "transformers"
+    if raw in ("plamo", "preferredai", "preferred-ai", "pfn"):
+        return "plamo"
     if os.name != "nt" and _cuda_visible():
         return "transformers"
     return "gguf"
 
 
-def get_translator() -> GGUFTranslator | LlamaCppPythonTranslator | TransformersTranslator:
+def get_translator() -> GGUFTranslator | LlamaCppPythonTranslator | TransformersTranslator | PlamoTranslator:
     backend = _select_backend()
     if backend == "transformers":
         return _transformers_translator
     if backend == "gguf_python":
         return _gguf_python_translator
+    if backend == "plamo":
+        return _plamo_translator
     return _default_translator
 
 

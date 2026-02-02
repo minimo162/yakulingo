@@ -31,49 +31,42 @@ _DEFAULT_ZEROGPU_DURATION_S = 120
 
 _CSS = """
 :root {
-  /* M3-ish design tokens (subset) */
+  /* Minimal tokens (keep small for Spaces) */
   --md-sys-color-primary: #4355B9;
   --md-sys-color-on-primary: #FFFFFF;
-  --md-sys-color-primary-container: #DEE0FF;
-  --md-sys-color-on-primary-container: #00105C;
-
-  --md-sys-color-secondary-container: #E6E7EB;
-  --md-sys-color-on-secondary-container: #1F2328;
-
-  --md-sys-color-surface: #FCFCFD;
-  --md-sys-color-surface-container: #EEF0F5;
-  --md-sys-color-on-surface: #1D1D1F;
-  --md-sys-color-on-surface-variant: #5A5A63;
-  --md-sys-color-outline: #7E7E87;
-  --md-sys-color-outline-variant: #D0D2DA;
+  --yak-border: #E5E7EB;
+  --yak-surface: #FFFFFF;
+  --yak-surface-muted: #F3F4F6;
+  --yak-text: #111827;
+  --yak-text-muted: #6B7280;
 }
 
 .gradio-container {
-  background: var(--md-sys-color-surface);
-  color: var(--md-sys-color-on-surface);
+  background: var(--yak-surface) !important;
+  color: var(--yak-text) !important;
   /* HF Spaces / Gradio の既定 max-width を確実に上書き */
   max-width: none !important;
   width: 100% !important;
+  margin: 0 auto !important;
+  padding: 0 24px !important;
+}
+
+.yak-page {
+  width: min(1320px, 100%);
   margin: 0 auto;
-  padding: 0 16px;
+  padding: 28px 0 40px;
 }
 
-/* Card container */
-.yak-card {
-  background: var(--md-sys-color-surface-container);
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: 28px;
-  padding: 18px 18px 14px 18px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+.yak-header {
+  text-align: center;
+  margin: 8px 0 22px;
 }
 
-.yak-title h1 {
-  margin: 0.25rem 0 0.25rem 0;
-}
-
-.yak-subtitle {
-  color: var(--md-sys-color-on-surface-variant);
-  margin-top: 0.25rem;
+.yak-header h1 {
+  font-size: 40px;
+  line-height: 1.1;
+  font-weight: 750;
+  margin: 0;
 }
 
 /* Buttons */
@@ -81,165 +74,113 @@ _CSS = """
   background: var(--md-sys-color-primary) !important;
   color: var(--md-sys-color-on-primary) !important;
   border-radius: 9999px !important;
+  padding: 10px 18px !important;
 }
 
 #clear_btn button {
   border-radius: 9999px !important;
+  padding: 10px 18px !important;
 }
 
-/* Result meta: direction chip + badges */
-#result_meta strong {
-  display: inline-block;
-  background: var(--md-sys-color-secondary-container);
-  color: var(--md-sys-color-on-secondary-container);
-  padding: 0.25rem 0.6rem;
-  border-radius: 9999px;
-  font-weight: 650;
+/* OpenAI 翻訳UI風: 言語セレクタ行 */
+.yak-lang-row {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  margin: 0 0 18px 0;
 }
 
-#result_meta code {
-  display: inline-block;
-  background: var(--md-sys-color-surface);
-  border: 1px solid var(--md-sys-color-outline-variant);
-  color: var(--md-sys-color-on-surface);
-  padding: 0.15rem 0.45rem;
-  border-radius: 9999px;
-}
-
-/* Textareas */
-/* Textboxes (Gradio Textbox):
-   Make the component wrapper the single white, rounded underlay so that
-   the "grey squares" around rounded corners don't show up. */
-#input_text,
-#output_text {
-  background: var(--md-sys-color-surface) !important;
-  border: 1px solid var(--md-sys-color-outline-variant) !important;
-  border-radius: 12px !important;
-  overflow: hidden;
-  box-shadow: none !important;
+.yak-swap button {
+  border-radius: 9999px !important;
+  min-width: 44px !important;
+  height: 44px !important;
   padding: 0 !important;
-  margin: 0 !important;
-  /* Gradio block variables (if used by the theme) */
-  --block-background-fill: var(--md-sys-color-surface);
-  --block-border-color: var(--md-sys-color-outline-variant);
-  --block-border-width: 1px;
-  --block-radius: 12px;
-  --block-padding: 0px;
-  position: relative;
+  border: 1px solid var(--yak-border) !important;
+  background: var(--yak-surface) !important;
 }
 
-#input_text.padded,
-#output_text.padded {
-  padding: 0 !important;
-}
-
-/* Force a white underlay inside the Textbox block.
-   Some Gradio themes paint a grey background via nested wrappers/pseudo-elements,
-   which can show up as "grey squares" around rounded corners. */
-#input_text::after,
-#output_text::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: var(--md-sys-color-surface);
-  border-radius: 12px;
-  z-index: 0;
-  pointer-events: none;
-}
-
-#input_text > *,
-#output_text > * {
-  position: relative;
-  z-index: 1;
-}
-
-/* Gradio wrapper variations (keep scope under elem_id) */
-#input_text > div,
-#output_text > div,
-#input_text .wrap,
-#output_text .wrap,
-#input_text .container,
-#output_text .container,
-#input_text .gr-block,
-#output_text .gr-block,
-#input_text .gr-box,
-#output_text .gr-box,
-#input_text .gr-panel,
-#output_text .gr-panel,
-#input_text .gr-form,
-#output_text .gr-form {
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  padding: 0 !important;
-  margin: 0 !important;
-  border-radius: inherit !important;
-}
-
-/* Gradio v4 Textbox internals (observed on HF Spaces):
-   label.container.show_textbox_border + .input-container may keep a grey underlay.
-   Force them transparent under elem_id. */
-#input_text label.container.show_textbox_border,
-#output_text label.container.show_textbox_border,
-#input_text .input-container,
-#output_text .input-container {
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  padding: 0 !important;
-  margin: 0 !important;
-}
-
-/* Some Gradio themes use pseudo-elements for block backgrounds */
-#input_text::before,
-#output_text::before {
-  background: transparent !important;
-}
-
-/* Also neutralize Textbox internals pseudo-elements */
-#input_text label.container.show_textbox_border::before,
-#output_text label.container.show_textbox_border::before,
-#input_text label.container.show_textbox_border::after,
-#output_text label.container.show_textbox_border::after,
-#input_text .input-container::before,
-#output_text .input-container::before,
-#input_text .input-container::after,
-#output_text .input-container::after {
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  outline: none !important;
-}
-
-/* Actual textarea */
-#input_text textarea,
-#output_text textarea {
-  background: transparent !important;
-  border: none !important;
-  border-radius: 0 !important;
-  font-size: 18px !important;
-  line-height: 1.5;
-  padding: 12px 14px !important;
-}
-
-/* Main layout: keep the centerline between the two cards at the screen center */
-.yak-main-row {
+/* 2ペイン */
+.yak-panels {
   display: grid !important;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 18px;
-  align-items: start;
-  width: min(1680px, 100%);
-  margin: 0 auto;
-}
-
-.yak-main-row > * {
-  min-width: 0;
+  gap: 24px;
+  align-items: stretch;
+  margin: 0 0 14px 0;
 }
 
 @media (max-width: 1100px) {
-  .yak-main-row {
+  .yak-lang-row {
     grid-template-columns: 1fr;
   }
+  .yak-panels {
+    grid-template-columns: 1fr;
+  }
+  .yak-swap {
+    display: none;
+  }
+}
+
+.yak-panel {
+  border-radius: 22px;
+  overflow: hidden;
+  border: 1px solid var(--yak-border);
+  background: var(--yak-surface);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+}
+
+.yak-panel-output {
+  background: var(--yak-surface-muted);
+}
+
+/* Textbox を container=False で使う前提: id が textarea 自体になる場合もある */
+#input_text,
+#output_text,
+#input_text textarea,
+#output_text textarea {
+  width: 100% !important;
+  min-height: 420px !important;
+  font-size: 18px !important;
+  line-height: 1.6 !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  padding: 18px 18px !important;
+  margin: 0 !important;
+  resize: none !important;
+  background: transparent !important;
+}
+
+#output_text,
+#output_text textarea {
+  color: var(--yak-text) !important;
+}
+
+/* disabled の見た目を薄くしすぎない */
+#output_text:disabled,
+#output_text textarea:disabled {
+  opacity: 1 !important;
+  -webkit-text-fill-color: var(--yak-text) !important;
+}
+
+/* セレクタの見た目（Dropdown） */
+.yak-select,
+.yak-select * {
+  box-shadow: none !important;
+}
+
+.yak-select select,
+.yak-select input {
+  border-radius: 9999px !important;
+  border: 1px solid var(--yak-border) !important;
+  padding: 10px 14px !important;
+  height: 44px !important;
+}
+
+/* Result meta: minimal chips */
+#result_meta {
+  color: var(--yak-text-muted);
+  margin-top: 6px;
 }
 """
 
@@ -348,6 +289,42 @@ def _result_meta_markdown(
     return " ".join(parts)
 
 
+def _swap_langs(source: str, target: str) -> tuple[str, str]:
+    if source == "言語を検出する":
+        return source, target
+    if target == "自動":
+        return source, target
+    return target, source
+
+
+def _ui_dropdown(  # type: ignore[no-untyped-def]
+    *,
+    choices: list[str],
+    value: str,
+    elem_id: str,
+    elem_classes: list[str],
+):
+    """Gradio Dropdown が無い環境（テスト用のfake gradio）でも import できるようにする。"""
+    Dropdown = getattr(gr, "Dropdown", None)
+    if Dropdown is None:
+        return gr.Textbox(
+            value=value,
+            label="",
+            show_label=False,
+            interactive=False,
+            elem_id=elem_id,
+            elem_classes=elem_classes,
+        )
+    return Dropdown(
+        choices=choices,
+        value=value,
+        label="",
+        show_label=False,
+        elem_id=elem_id,
+        elem_classes=elem_classes,
+    )
+
+
 def _zerogpu_size() -> str:
     raw = (
         os.environ.get("YAKULINGO_SPACES_ZEROGPU_SIZE") or _DEFAULT_ZEROGPU_SIZE
@@ -422,13 +399,20 @@ def _error_hint(message: str) -> str:
 
 
 @_zerogpu_gpu_decorator()
-def _translate(text: str) -> tuple[str, str, str]:
+def _translate(text: str, source: str, target: str) -> tuple[str, str, str]:
     cleaned = (text or "").strip()
     if not cleaned:
         return "", "", ""
 
     translator = get_translator()
-    output_language, label = _detect_direction(cleaned)
+    if target == "自動":
+        output_language, label = _detect_direction(cleaned)
+    else:
+        output_language = "en" if target == "英語" else "ja"
+        if source == "言語を検出する":
+            label = f"自動 → {target}"
+        else:
+            label = f"{source} → {target}"
     if len(cleaned) > _max_chars():
         return (
             "",
@@ -478,51 +462,74 @@ def _server_port() -> int:
 
 
 with gr.Blocks(title="YakuLingo", css=_CSS) as demo:
-    gr.Markdown("# YakuLingo", elem_classes=["yak-title"])
+    with gr.Column(elem_classes=["yak-page"]):
+        gr.Markdown("# YakuLingo", elem_classes=["yak-header"])
 
-    with gr.Row(elem_classes=["yak-main-row"]):
-        with gr.Column(scale=1, min_width=520, elem_classes=["yak-card"]):
-            gr.Markdown("## 入力")
-            input_text = gr.Textbox(
-                label="",
-                show_label=False,
-                lines=18,
-                placeholder="日本語または英語を入力してください",
-                elem_id="input_text",
+        with gr.Row(elem_classes=["yak-lang-row"]):
+            source_lang = _ui_dropdown(
+                choices=["言語を検出する", "日本語", "英語"],
+                value="言語を検出する",
+                elem_id="source_lang",
+                elem_classes=["yak-select"],
+            )
+            swap_btn = gr.Button("⇄", elem_id="swap_btn", elem_classes=["yak-swap"])
+            target_lang = _ui_dropdown(
+                choices=["自動", "英語", "日本語"],
+                value="自動",
+                elem_id="target_lang",
+                elem_classes=["yak-select"],
             )
 
-            with gr.Row():
-                translate_btn = gr.Button("翻訳", elem_id="translate_btn")
-                clear_btn = gr.Button("クリア", elem_id="clear_btn")
-
-        with gr.Column(scale=1, min_width=520, elem_classes=["yak-card"]):
-            gr.Markdown("## 翻訳結果")
-            output_text = gr.Textbox(
-                label="",
-                show_label=False,
-                lines=18,
-                elem_id="output_text",
-            )
-            result_meta = gr.Markdown(elem_id="result_meta")
-            status = gr.Markdown()
-
-            with gr.Accordion("詳細", open=False):
-                gr.Markdown(
-                    "**設定（環境変数）**  \n"
-                    f"- gguf_repo: `{_gguf_repo_id()}`  \n"
-                    f"- gguf_file: `{_gguf_filename()}`  \n"
-                    f"- ZeroGPU: size=`{_zerogpu_size()}` duration=`{_zerogpu_duration_seconds()}s`  \n"
-                    f"- HF_TOKEN: `{('set' if _has_hf_token() else 'not set')}`",
+        with gr.Row(elem_classes=["yak-panels"]):
+            with gr.Column(elem_classes=["yak-panel"]):
+                input_text = gr.Textbox(
+                    label="",
+                    show_label=False,
+                    lines=18,
+                    placeholder="翻訳するテキストを入力するか、貼り付けます",
+                    elem_id="input_text",
+                    container=False,
                 )
+
+            with gr.Column(elem_classes=["yak-panel", "yak-panel-output"]):
+                output_text = gr.Textbox(
+                    label="",
+                    show_label=False,
+                    lines=18,
+                    elem_id="output_text",
+                    interactive=False,
+                    container=False,
+                )
+
+        with gr.Row():
+            translate_btn = gr.Button("翻訳", elem_id="translate_btn")
+            clear_btn = gr.Button("クリア", elem_id="clear_btn")
+
+        result_meta = gr.Markdown(elem_id="result_meta")
+        status = gr.Markdown()
+
+        with gr.Accordion("詳細", open=False):
+            gr.Markdown(
+                "**設定（環境変数）**  \n"
+                f"- gguf_repo: `{_gguf_repo_id()}`  \n"
+                f"- gguf_file: `{_gguf_filename()}`  \n"
+                f"- ZeroGPU: size=`{_zerogpu_size()}` duration=`{_zerogpu_duration_seconds()}s`  \n"
+                f"- HF_TOKEN: `{('set' if _has_hf_token() else 'not set')}`",
+            )
 
     translate_btn.click(
         _translate,
-        inputs=[input_text],
+        inputs=[input_text, source_lang, target_lang],
         outputs=[output_text, result_meta, status],
     )
+    swap_btn.click(
+        _swap_langs,
+        inputs=[source_lang, target_lang],
+        outputs=[source_lang, target_lang],
+    )
     clear_btn.click(
-        lambda: ("", "", "", ""),
-        outputs=[input_text, output_text, result_meta, status],
+        lambda: ("", "", "", "", "言語を検出する", "自動"),
+        outputs=[input_text, output_text, result_meta, status, source_lang, target_lang],
     )
 
 

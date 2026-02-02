@@ -51,8 +51,9 @@ _CSS = """
 .gradio-container {
   background: var(--md-sys-color-surface);
   color: var(--md-sys-color-on-surface);
-  max-width: 1400px;
+  max-width: 1680px;
   margin: 0 auto;
+  padding: 0 16px;
 }
 
 /* Card container */

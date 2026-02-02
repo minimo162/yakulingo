@@ -119,6 +119,14 @@ _CSS = """
   box-shadow: none !important;
   padding: 0 !important;
   margin: 0 !important;
+  /* Gradio block variables (if used by the theme) */
+  --block-background-fill: var(--md-sys-color-surface);
+  --block-border-color: var(--md-sys-color-outline-variant);
+}
+
+#input_text.padded,
+#output_text.padded {
+  padding: 0 !important;
 }
 
 /* Gradio wrapper variations (keep scope under elem_id) */
@@ -142,6 +150,26 @@ _CSS = """
   padding: 0 !important;
   margin: 0 !important;
   border-radius: inherit !important;
+}
+
+/* Gradio v4 Textbox internals (observed on HF Spaces):
+   label.container.show_textbox_border + .input-container may keep a grey underlay.
+   Force them transparent under elem_id. */
+#input_text label.container.show_textbox_border,
+#output_text label.container.show_textbox_border,
+#input_text .input-container,
+#output_text .input-container {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+/* Some Gradio themes use pseudo-elements for block backgrounds */
+#input_text::before,
+#output_text::before {
+  background: transparent !important;
 }
 
 /* Actual textarea */

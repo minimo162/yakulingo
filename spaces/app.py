@@ -145,6 +145,15 @@ _CSS = """
   margin: 0 0 14px 0;
 }
 
+.yak-details-row {
+  width: min(920px, 100%);
+  margin: 10px auto 0;
+}
+
+.yak-details-row > * {
+  width: 100%;
+}
+
 @media (max-width: 1100px) {
   .yak-lang-row {
     grid-template-columns: 1fr;
@@ -590,14 +599,15 @@ with gr.Blocks(title="YakuLingo", css=_CSS) as demo:
         result_meta = gr.Markdown(elem_id="result_meta")
         status = gr.Markdown()
 
-        with gr.Accordion("詳細", open=False):
-            gr.Markdown(
-                "**設定（環境変数）**  \n"
-                f"- gguf_repo: `{_gguf_repo_id()}`  \n"
-                f"- gguf_file: `{_gguf_filename()}`  \n"
-                f"- ZeroGPU: size=`{_zerogpu_size()}` duration=`{_zerogpu_duration_seconds()}s`  \n"
-                f"- HF_TOKEN: `{('set' if _has_hf_token() else 'not set')}`",
-            )
+        with gr.Row(elem_classes=["yak-details-row"]):
+            with gr.Accordion("詳細", open=False, elem_id="details_accordion"):
+                gr.Markdown(
+                    "**設定（環境変数）**  \n"
+                    f"- gguf_repo: `{_gguf_repo_id()}`  \n"
+                    f"- gguf_file: `{_gguf_filename()}`  \n"
+                    f"- ZeroGPU: size=`{_zerogpu_size()}` duration=`{_zerogpu_duration_seconds()}s`  \n"
+                    f"- HF_TOKEN: `{('set' if _has_hf_token() else 'not set')}`",
+                )
 
     translate_btn.click(
         _translate,

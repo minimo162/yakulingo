@@ -345,12 +345,8 @@ def _server_port() -> int:
         return 7860
 
 
-with gr.Blocks(title="YakuLingo (訳リンゴ)", css=_CSS) as demo:
-    gr.Markdown("# YakuLingo (訳リンゴ)", elem_classes=["yak-title"])
-    gr.Markdown(
-        "Hugging Face Spaces（ZeroGPU）対応。入力言語は自動判定します。",
-        elem_classes=["yak-subtitle"],
-    )
+with gr.Blocks(title="YakuLingo", css=_CSS) as demo:
+    gr.Markdown("# YakuLingo", elem_classes=["yak-title"])
 
     with gr.Row():
         with gr.Column(elem_classes=["yak-card"]):

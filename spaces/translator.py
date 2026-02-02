@@ -10,6 +10,7 @@ import time
 import tarfile
 import zipfile
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 from typing import Literal
 from urllib.error import HTTPError, URLError
@@ -24,6 +25,39 @@ _RE_LEADING_LABEL = re.compile(
 )
 _RE_GEMMA_TURN = re.compile(r"<(?:start|end)_of_turn>\s*", re.IGNORECASE)
 _RE_TRANSLATEGEMMA = re.compile(r"(^|/|-)translategemma(-|$)", re.IGNORECASE)
+
+_EN_NUMBER_WITH_OPTIONAL_COMMAS_PATTERN = r"(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?"
+_RE_EN_NUMBER_WITH_LARGE_UNIT = re.compile(
+    rf"(?P<prefix>\(?[▲+\-−]?[¥￥]?)"
+    rf"(?P<number>{_EN_NUMBER_WITH_OPTIONAL_COMMAS_PATTERN})"
+    rf"(?P<suffix>\)?)"
+    r"\s*"
+    r"(?P<unit>billion|trillion|trllion|bn)\b"
+    r"(?:\s*(?P<yen>yen)(?![A-Za-z0-9]))?",
+    re.IGNORECASE,
+)
+_RE_EN_NUMBER_WITH_SMALL_UNIT = re.compile(
+    rf"(?P<prefix>\(?[▲+\-−]?[¥￥]?)"
+    rf"(?P<number>{_EN_NUMBER_WITH_OPTIONAL_COMMAS_PATTERN})"
+    rf"(?P<suffix>\)?)"
+    r"\s*"
+    r"(?P<unit>thousand|million)\b"
+    r"(?:\s*(?P<yen>yen)(?![A-Za-z0-9]))?",
+    re.IGNORECASE,
+)
+_RE_JP_OKU_CHOU_AMOUNT = re.compile(
+    r"(?P<sign>[▲△+\-−])?\s*"
+    rf"(?:(?P<trillion>{_EN_NUMBER_WITH_OPTIONAL_COMMAS_PATTERN})兆"
+    rf"(?:(?P<oku>{_EN_NUMBER_WITH_OPTIONAL_COMMAS_PATTERN})億)?"
+    rf"|(?P<oku_only>{_EN_NUMBER_WITH_OPTIONAL_COMMAS_PATTERN})億)"
+    r"(?P<yen>円)?"
+)
+_RE_JP_MAN_SEN_AMOUNT = re.compile(
+    r"(?P<sign>[▲△+\-−])?\s*(?P<man>\d[\d,]*(?:\.\d+)?)万(?:(?P<sen>\d[\d,]*(?:\.\d+)?)千)?(?P<unit>円|台)?"
+)
+_RE_JP_SEN_AMOUNT = re.compile(
+    r"(?P<sign>[▲△+\-−])?\s*(?P<sen>\d[\d,]*(?:\.\d+)?)千(?P<unit>円|台)?"
+)
 
 _DEFAULT_LLAMA_CPP_REPO = "ggerganov/llama.cpp"
 _DEFAULT_LLAMA_CPP_ASSET_SUFFIX = "bin-ubuntu-vulkan-x64.tar.gz"
@@ -87,10 +121,248 @@ def _translategemma_lang_codes(output_language: OutputLanguage) -> tuple[str, st
     return "en", "ja"
 
 
+def _parse_decimal(value: str) -> Decimal | None:
+    if not value:
+        return None
+    try:
+        return Decimal(value.replace(",", ""))
+    except InvalidOperation:
+        return None
+
+
+def _format_number_with_commas(value: Decimal) -> str:
+    sign = "-" if value < 0 else ""
+    value = abs(value)
+    try:
+        if value == value.to_integral():
+            return f"{sign}{int(value):,}"
+    except (InvalidOperation, ValueError):
+        return f"{sign}0"
+
+    text = format(value.normalize(), "f")
+    int_part, _, frac_part = text.partition(".")
+    int_part_with_commas = f"{int(int_part):,}"
+    frac_part = frac_part.rstrip("0")
+    if frac_part:
+        return f"{sign}{int_part_with_commas}.{frac_part}"
+    return f"{sign}{int_part_with_commas}"
+
+
+def _format_japanese_yen_amount(yen_amount: Decimal) -> str:
+    sign_prefix = "-" if yen_amount < 0 else ""
+    yen_amount = abs(yen_amount)
+    try:
+        yen_total = int(yen_amount.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    except (InvalidOperation, ValueError):
+        return f"{sign_prefix}0円"
+
+    unit_chou = 1_000_000_000_000
+    unit_oku = 100_000_000
+    unit_man = 10_000
+
+    chou = yen_total // unit_chou
+    yen_total %= unit_chou
+    oku = yen_total // unit_oku
+    yen_total %= unit_oku
+    man = yen_total // unit_man
+    yen = yen_total % unit_man
+
+    parts: list[str] = []
+    if chou:
+        parts.append(f"{chou}兆")
+    if oku:
+        parts.append(f"{oku:,}億")
+    if man:
+        if yen:
+            parts.append(f"{man:,}万")
+        else:
+            parts.append(f"{man:,}万円")
+    if yen:
+        parts.append(f"{yen:,}円")
+
+    if not parts:
+        parts.append("0円")
+    elif not parts[-1].endswith("円"):
+        parts[-1] = f"{parts[-1]}円"
+
+    return f"{sign_prefix}{''.join(parts)}"
+
+
+def _format_oku_to_japanese_cho_oku(oku_amount: Decimal, *, include_yen: bool) -> str:
+    sign_prefix = "-" if oku_amount < 0 else ""
+    oku_amount = abs(oku_amount)
+
+    if oku_amount == oku_amount.to_integral():
+        oku_int = int(oku_amount)
+        cho = oku_int // 10_000
+        oku = oku_int % 10_000
+        if cho and oku:
+            base = f"{cho}兆{oku:,}億"
+        elif cho:
+            base = f"{cho}兆"
+        else:
+            base = f"{oku_int:,}億"
+        return f"{sign_prefix}{base}{'円' if include_yen else ''}"
+
+    text = format(oku_amount.normalize(), "f")
+    int_part, _, frac_part = text.partition(".")
+    int_part_with_commas = f"{int(int_part):,}"
+    frac_part = frac_part.rstrip("0")
+    base = (
+        f"{int_part_with_commas}.{frac_part}億" if frac_part else f"{int_part_with_commas}億"
+    )
+    return f"{sign_prefix}{base}{'円' if include_yen else ''}"
+
+
+def _normalize_en_units_to_japanese(text: str) -> str:
+    if not text:
+        return text
+
+    def repl_small(match: re.Match[str]) -> str:
+        prefix = match.group("prefix") or ""
+        number_str = match.group("number") or ""
+        suffix = match.group("suffix") or ""
+        unit = (match.group("unit") or "").lower()
+        yen_word = match.group("yen") or ""
+
+        number = _parse_decimal(number_str)
+        if number is None:
+            return match.group(0)
+
+        has_yen = bool(yen_word) or ("¥" in prefix or "￥" in prefix)
+        prefix = prefix.replace("¥", "").replace("￥", "")
+
+        multiplier = Decimal("1000") if unit == "thousand" else Decimal("1000000")
+        amount = number * multiplier
+        if has_yen:
+            return f"{prefix}{_format_japanese_yen_amount(amount)}{suffix}"
+        return f"{prefix}{_format_number_with_commas(amount)}{suffix}"
+
+    def repl_large(match: re.Match[str]) -> str:
+        prefix = match.group("prefix") or ""
+        number_str = match.group("number") or ""
+        suffix = match.group("suffix") or ""
+        unit = (match.group("unit") or "").lower()
+        yen_word = match.group("yen") or ""
+
+        number = _parse_decimal(number_str)
+        if number is None:
+            return match.group(0)
+
+        has_yen = bool(yen_word) or ("¥" in prefix or "￥" in prefix)
+        prefix = prefix.replace("¥", "").replace("￥", "")
+
+        unit_key = "billion" if unit == "bn" else unit
+        if unit_key == "trllion":
+            unit_key = "trillion"
+        multiplier = Decimal("10") if unit_key == "billion" else Decimal("10000")
+        oku_amount = number * multiplier
+        jp_amount = _format_oku_to_japanese_cho_oku(oku_amount, include_yen=has_yen)
+        return f"{prefix}{jp_amount}{suffix}"
+
+    fixed = text
+    fixed = _RE_EN_NUMBER_WITH_SMALL_UNIT.sub(repl_small, fixed)
+    fixed = _RE_EN_NUMBER_WITH_LARGE_UNIT.sub(repl_large, fixed)
+    return fixed
+
+
+def _normalize_jp_units_to_english(text: str) -> str:
+    if not text:
+        return text
+
+    def repl_oku_chou(match: re.Match[str]) -> str:
+        sign_marker = (match.group("sign") or "").strip()
+        is_negative = sign_marker in {"▲", "△", "-", "−"}
+        sign = -1 if is_negative else 1
+        has_yen = bool(match.group("yen"))
+
+        trillion_str = match.group("trillion") or ""
+        oku_str = match.group("oku") or ""
+        oku_only_str = match.group("oku_only") or ""
+
+        if trillion_str:
+            trillion = _parse_decimal(trillion_str)
+            if trillion is None:
+                return match.group(0)
+            oku_part = _parse_decimal(oku_str) if oku_str else Decimal(0)
+            if oku_part is None:
+                return match.group(0)
+            value = (trillion + (oku_part / Decimal("10000"))) * Decimal(sign)
+            value = value.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+            formatted = _format_number_with_commas(value)
+            unit = "trillion yen" if has_yen else "trillion"
+            if sign < 0:
+                return f"({formatted.lstrip('-')} {unit})"
+            return f"{formatted} {unit}"
+
+        oku_only = _parse_decimal(oku_only_str)
+        if oku_only is None:
+            return match.group(0)
+        value = (oku_only / Decimal("10")) * Decimal(sign)
+        value = value.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+        formatted = _format_number_with_commas(value)
+        unit = "billion yen" if has_yen else "billion"
+        if sign < 0:
+            return f"({formatted.lstrip('-')} {unit})"
+        return f"{formatted} {unit}"
+
+    man_sen_spans: list[tuple[int, int]] = []
+
+    def repl_man_sen(match: re.Match[str]) -> str:
+        raw = match.group(0) or ""
+        man_sen_spans.append(match.span())
+
+        sign_marker = (match.group("sign") or "").strip()
+        sign = -1 if sign_marker in {"▲", "△", "-", "−"} else 1
+        man = _parse_decimal(match.group("man") or "")
+        if man is None:
+            return raw
+        sen = _parse_decimal(match.group("sen") or "") or Decimal(0)
+        k_value = (man * Decimal("10") + sen) * Decimal(sign)
+        formatted = _format_number_with_commas(k_value)
+        unit = (match.group("unit") or "").strip()
+        suffix = " yen" if unit == "円" else (" units" if unit == "台" else "")
+        if sign < 0:
+            return f"({formatted.lstrip('-')}k{suffix})"
+        return f"{formatted}k{suffix}"
+
+    def inside_man_sen(start: int) -> bool:
+        return any(s <= start < e for s, e in man_sen_spans)
+
+    def repl_sen(match: re.Match[str]) -> str:
+        raw = match.group(0) or ""
+        if inside_man_sen(match.start()):
+            return raw
+        sign_marker = (match.group("sign") or "").strip()
+        sign = -1 if sign_marker in {"▲", "△", "-", "−"} else 1
+        sen = _parse_decimal(match.group("sen") or "")
+        if sen is None:
+            return raw
+        k_value = sen * Decimal(sign)
+        formatted = _format_number_with_commas(k_value)
+        unit = (match.group("unit") or "").strip()
+        suffix = " yen" if unit == "円" else (" units" if unit == "台" else "")
+        if sign < 0:
+            return f"({formatted.lstrip('-')}k{suffix})"
+        return f"{formatted}k{suffix}"
+
+    fixed = _RE_JP_OKU_CHOU_AMOUNT.sub(repl_oku_chou, text)
+    fixed = _RE_JP_MAN_SEN_AMOUNT.sub(repl_man_sen, fixed)
+    fixed = _RE_JP_SEN_AMOUNT.sub(repl_sen, fixed)
+    return fixed
+
+
+def _pre_normalize_numeric_units(text: str, *, output_language: OutputLanguage) -> str:
+    if output_language == "en":
+        return _normalize_jp_units_to_english(text)
+    return _normalize_en_units_to_japanese(text)
+
+
 def _build_translategemma_messages(
     text: str, *, output_language: OutputLanguage
 ) -> list[dict[str, object]]:
     source, target = _translategemma_lang_codes(output_language)
+    text = _pre_normalize_numeric_units(text, output_language=output_language)
     return [
         {
             "role": "user",
@@ -729,6 +1001,7 @@ class GGUFTranslator:
         if not cleaned:
             return ""
 
+        cleaned = _pre_normalize_numeric_units(cleaned, output_language=output_language)
         max_new_tokens = max(1, int(self._config.max_new_tokens))
         prompt = _build_gguf_prompt(cleaned, output_language=output_language)
         runtime = self._get_runtime()
@@ -892,6 +1165,7 @@ class LlamaCppPythonTranslator:
                 "・医ョ繝舌ャ繧ｰ逕ｨ騾斐〒 CPU 繧定ｨｱ蜿ｯ縺吶ｋ蝣ｴ蜷医・ YAKULINGO_SPACES_ALLOW_CPU=1・峨・"
             )
 
+        cleaned = _pre_normalize_numeric_units(cleaned, output_language=output_language)
         prompt = _build_gguf_prompt(cleaned, output_language=output_language)
         max_new_tokens = max(1, int(self._config.max_new_tokens))
         temperature = float(self._config.temperature)
@@ -997,6 +1271,7 @@ class TransformersTranslator:
         if not cleaned:
             return ""
 
+        cleaned = _pre_normalize_numeric_units(cleaned, output_language=output_language)
         if not _cuda_visible() and not _env_bool("YAKULINGO_SPACES_ALLOW_CPU", False):
             raise RuntimeError(
                 "GPU が利用できません（ZeroGPU が割り当てられていない可能性があります）。"

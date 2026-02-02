@@ -107,34 +107,27 @@ _CSS = """
 }
 
 /* Textareas */
-#input_text textarea,
-#output_text textarea {
-  border-radius: 12px !important;
-  border-color: var(--md-sys-color-outline-variant) !important;
-  font-size: 18px !important;
-  line-height: 1.5;
+/* Textboxes (Gradio Textbox):
+   Make the component wrapper the single white, rounded underlay so that
+   the "grey squares" around rounded corners don't show up. */
+#input_text,
+#output_text {
   background: var(--md-sys-color-surface) !important;
   border: 1px solid var(--md-sys-color-outline-variant) !important;
+  border-radius: 12px !important;
+  overflow: hidden;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
 }
 
-/* Remove the extra white rectangle around textareas (Gradio Textbox container) */
-#input_text,
-#output_text,
+/* Gradio wrapper variations (keep scope under elem_id) */
 #input_text > div,
 #output_text > div,
 #input_text .wrap,
 #output_text .wrap,
 #input_text .container,
-#output_text .container {
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  padding: 0 !important;
-  margin: 0 !important;
-  border-radius: 0 !important;
-}
-
-/* More aggressive: Gradio v4 wrapper variations (keep scope under elem_id) */
+#output_text .container,
 #input_text .gr-block,
 #output_text .gr-block,
 #input_text .gr-box,
@@ -148,41 +141,17 @@ _CSS = """
   box-shadow: none !important;
   padding: 0 !important;
   margin: 0 !important;
-  border-radius: 0 !important;
+  border-radius: inherit !important;
 }
 
-/* Nuclear option: clear any remaining underlay inside the Textbox component (restore textarea afterwards) */
-#input_text *,
-#output_text * {
-  background: transparent !important;
-  box-shadow: none !important;
-  border-color: transparent !important;
-  border-style: none !important;
-  outline: none !important;
-  border-radius: 0 !important;
-}
-
-#input_text textarea,
-#output_text textarea {
-  background: var(--md-sys-color-surface) !important;
-  border: 1px solid var(--md-sys-color-outline-variant) !important;
-  border-radius: 12px !important;
-}
-
-/* Hide card background showing through textarea rounded corners by framing the whole Textbox */
-#input_text,
-#output_text {
-  background: var(--md-sys-color-surface) !important;
-  border: 1px solid var(--md-sys-color-outline-variant) !important;
-  border-radius: 12px !important;
-  overflow: hidden;
-}
-
+/* Actual textarea */
 #input_text textarea,
 #output_text textarea {
   background: transparent !important;
   border: none !important;
   border-radius: 0 !important;
+  font-size: 18px !important;
+  line-height: 1.5;
   padding: 12px 14px !important;
 }
 

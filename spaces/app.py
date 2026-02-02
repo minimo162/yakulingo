@@ -146,12 +146,19 @@ _CSS = """
 }
 
 .yak-details-row {
-  width: min(920px, 100%);
-  margin: 10px auto 0;
+  display: block !important;
+  width: min(560px, 100%);
+  margin: 10px 0 0 0;
 }
 
 .yak-details-row > * {
   width: 100%;
+}
+
+#details_accordion {
+  width: 100%;
+  max-width: 560px;
+  margin: 0;
 }
 
 @media (max-width: 1100px) {

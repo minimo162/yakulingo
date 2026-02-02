@@ -377,7 +377,8 @@ with gr.Blocks(title="YakuLingo", css=_CSS) as demo:
         with gr.Column(scale=1, min_width=520, elem_classes=["yak-card"]):
             gr.Markdown("## 入力")
             input_text = gr.Textbox(
-                label="入力テキスト",
+                label="",
+                show_label=False,
                 lines=18,
                 placeholder="日本語または英語を入力してください",
                 elem_id="input_text",
@@ -389,8 +390,13 @@ with gr.Blocks(title="YakuLingo", css=_CSS) as demo:
 
         with gr.Column(scale=1, min_width=520, elem_classes=["yak-card"]):
             gr.Markdown("## 翻訳結果")
+            output_text = gr.Textbox(
+                label="",
+                show_label=False,
+                lines=18,
+                elem_id="output_text",
+            )
             result_meta = gr.Markdown(elem_id="result_meta")
-            output_text = gr.Textbox(label="翻訳結果", lines=18, elem_id="output_text")
             status = gr.Markdown()
 
             with gr.Accordion("詳細", open=False):

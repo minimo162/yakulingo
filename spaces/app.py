@@ -111,6 +111,8 @@ _CSS = """
 #output_text textarea {
   border-radius: 12px !important;
   border-color: var(--md-sys-color-outline-variant) !important;
+  font-size: 18px !important;
+  line-height: 1.5;
 }
 
 /* Main layout: keep the centerline between the two cards at the screen center */

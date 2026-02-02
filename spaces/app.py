@@ -109,6 +109,25 @@ _CSS = """
   border-radius: 12px !important;
   border-color: var(--md-sys-color-outline-variant) !important;
 }
+
+/* Main layout: keep the centerline between the two cards at the screen center */
+.yak-main-row {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+  width: 100%;
+}
+
+.yak-main-row > * {
+  min-width: 0;
+}
+
+@media (max-width: 1100px) {
+  .yak-main-row {
+    grid-template-columns: 1fr;
+  }
+}
 """
 
 
@@ -348,7 +367,7 @@ def _server_port() -> int:
 with gr.Blocks(title="YakuLingo", css=_CSS) as demo:
     gr.Markdown("# YakuLingo", elem_classes=["yak-title"])
 
-    with gr.Row():
+    with gr.Row(elem_classes=["yak-main-row"]):
         with gr.Column(scale=1, min_width=520, elem_classes=["yak-card"]):
             gr.Markdown("## 入力")
             input_text = gr.Textbox(

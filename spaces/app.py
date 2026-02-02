@@ -28,6 +28,8 @@ _DEFAULT_GGUF_REPO_ID = "mradermacher/translategemma-27b-it-i1-GGUF"
 _DEFAULT_GGUF_FILENAME = "translategemma-27b-it.i1-Q4_K_M.gguf"
 _DEFAULT_ZEROGPU_SIZE = "large"
 _DEFAULT_ZEROGPU_DURATION_S = 120
+_DEFAULT_PLAMO_BASE_URL = "https://platform.preferredai.jp/api/completion/v1"
+_DEFAULT_PLAMO_MODEL = "plamo-2.2-prime"
 
 _CSS = """
 :root {
@@ -307,6 +309,26 @@ def _gguf_filename() -> str:
     ).strip()
 
 
+def _has_plamo_api_key() -> bool:
+    return bool(
+        (
+            os.environ.get("YAKULINGO_SPACES_PLAMO_API_KEY")
+            or os.environ.get("PLAMO_API_KEY")
+            or ""
+        ).strip()
+    )
+
+
+def _plamo_base_url() -> str:
+    return (
+        os.environ.get("YAKULINGO_SPACES_PLAMO_BASE_URL") or _DEFAULT_PLAMO_BASE_URL
+    ).strip()
+
+
+def _plamo_model() -> str:
+    return (os.environ.get("YAKULINGO_SPACES_PLAMO_MODEL") or _DEFAULT_PLAMO_MODEL).strip()
+
+
 def _quant_label() -> str:
     match = re.search(r"-(Q[^.]+)\.gguf$", _gguf_filename(), re.IGNORECASE)
     return match.group(1) if match else "unknown"
@@ -348,6 +370,12 @@ def _backend_status_lines(translator: object) -> str:
         load_in_4bit = (os.environ.get("YAKULINGO_SPACES_HF_LOAD_IN_4BIT") or "").strip()
         load_in_4bit = load_in_4bit if load_in_4bit else "1"
         return f"- hf_model: `{model_id}`\n- hf_load_in_4bit: `{load_in_4bit}`"
+    if backend == "plamo":
+        return (
+            f"- plamo_base_url: `{_plamo_base_url()}`\n"
+            f"- plamo_model: `{_plamo_model()}`\n"
+            f"- plamo_api_key: `{('set' if _has_plamo_api_key() else 'not set')}`"
+        )
     engine = _translator_engine_label(translator)
     engine_line = f"\n- gguf_engine: `{engine}`" if engine != "unknown" else ""
     return f"- gguf_repo: `{_gguf_repo_id()}`\n- gguf_file: `{_gguf_filename()}`{engine_line}"
@@ -456,6 +484,13 @@ def _zerogpu_gpu_decorator():  # type: ignore[no-untyped-def]
 
 def _error_hint(message: str) -> str:
     lowered = message.lower()
+    if "plamo" in lowered:
+        if "未設定" in message or "api キー" in lowered:
+            return "Spaces の Secret に `YAKULINGO_SPACES_PLAMO_API_KEY` を設定してください。"
+        if "401" in lowered or "unauthorized" in lowered or "認証" in message:
+            return "PLaMo API の認証に失敗しています。`YAKULINGO_SPACES_PLAMO_API_KEY` を確認してください。"
+        if "接続できません" in message or "url" in lowered:
+            return "PLaMo API の接続先を確認してください（`YAKULINGO_SPACES_PLAMO_BASE_URL`）。"
     if "gpu が利用できません" in lowered:
         return "Space の Hardware を ZeroGPU に設定してください（またはデバッグ用途で `YAKULINGO_SPACES_ALLOW_CPU=1`）。"
     if "401" in lowered or "unauthorized" in lowered or "gated" in lowered:
@@ -613,6 +648,7 @@ with gr.Blocks(title="YakuLingo", css=_CSS) as demo:
                     f"- gguf_repo: `{_gguf_repo_id()}`  \n"
                     f"- gguf_file: `{_gguf_filename()}`  \n"
                     f"- ZeroGPU: size=`{_zerogpu_size()}` duration=`{_zerogpu_duration_seconds()}s`  \n"
+                    f"- PLaMo: base_url=`{_plamo_base_url()}` model=`{_plamo_model()}` api_key=`{('set' if _has_plamo_api_key() else 'not set')}`  \n"
                     f"- HF_TOKEN: `{('set' if _has_hf_token() else 'not set')}`",
                 )
 

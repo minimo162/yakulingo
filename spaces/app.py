@@ -51,7 +51,9 @@ _CSS = """
 .gradio-container {
   background: var(--md-sys-color-surface);
   color: var(--md-sys-color-on-surface);
-  max-width: 1680px;
+  /* HF Spaces / Gradio の既定 max-width を確実に上書き */
+  max-width: none !important;
+  width: 100% !important;
   margin: 0 auto;
   padding: 0 16px;
 }
@@ -117,7 +119,8 @@ _CSS = """
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 18px;
   align-items: start;
-  width: 100%;
+  width: min(1680px, 100%);
+  margin: 0 auto;
 }
 
 .yak-main-row > * {

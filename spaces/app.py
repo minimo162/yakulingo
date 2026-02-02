@@ -290,10 +290,10 @@ def _error_hint(message: str) -> str:
 
 
 @_zerogpu_gpu_decorator()
-def _translate(text: str) -> tuple[str, str, str, str]:
+def _translate(text: str) -> tuple[str, str, str]:
     cleaned = (text or "").strip()
     if not cleaned:
-        return "", "", "", ""
+        return "", "", ""
 
     translator = get_translator()
     output_language, label = _detect_direction(cleaned)
@@ -304,7 +304,6 @@ def _translate(text: str) -> tuple[str, str, str, str]:
                 label, translator=translator, device="unknown", elapsed_s=None
             ),
             f"入力が長すぎます（{len(cleaned)}文字）。{_max_chars()}文字以内に短縮してください。",
-            cleaned,
         )
 
     start = time.monotonic()
@@ -325,7 +324,7 @@ def _translate(text: str) -> tuple[str, str, str, str]:
             f"{detail}\n\n"
             f"{_backend_status_lines(translator)}"
         )
-        return "", meta, status, cleaned
+        return "", meta, status
 
     elapsed_s = time.monotonic() - start
     action = "英訳しました" if output_language == "en" else "和訳しました"
@@ -336,7 +335,7 @@ def _translate(text: str) -> tuple[str, str, str, str]:
         elapsed_s=elapsed_s,
     )
     status = f"**{action}**"
-    return translated, meta, status, cleaned
+    return translated, meta, status
 
 
 def _server_port() -> int:
@@ -366,7 +365,6 @@ with gr.Blocks(title="YakuLingo", css=_CSS) as demo:
         with gr.Column(scale=1, min_width=520, elem_classes=["yak-card"]):
             gr.Markdown("## 翻訳結果")
             result_meta = gr.Markdown(elem_id="result_meta")
-            source_text = gr.Textbox(label="原文", lines=6, interactive=False)
             output_text = gr.Textbox(label="翻訳結果", lines=18, elem_id="output_text")
             status = gr.Markdown()
 
@@ -382,11 +380,11 @@ with gr.Blocks(title="YakuLingo", css=_CSS) as demo:
     translate_btn.click(
         _translate,
         inputs=[input_text],
-        outputs=[output_text, result_meta, status, source_text],
+        outputs=[output_text, result_meta, status],
     )
     clear_btn.click(
-        lambda: ("", "", "", "", ""),
-        outputs=[input_text, output_text, result_meta, status, source_text],
+        lambda: ("", "", "", ""),
+        outputs=[input_text, output_text, result_meta, status],
     )
 
 

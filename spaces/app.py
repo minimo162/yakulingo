@@ -127,6 +127,26 @@ _CSS = """
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+}
+
+/* More aggressive: Gradio v4 wrapper variations (keep scope under elem_id) */
+#input_text .gr-block,
+#output_text .gr-block,
+#input_text .gr-box,
+#output_text .gr-box,
+#input_text .gr-panel,
+#output_text .gr-panel,
+#input_text .gr-form,
+#output_text .gr-form {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
 }
 
 /* Main layout: keep the centerline between the two cards at the screen center */

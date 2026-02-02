@@ -115,6 +115,20 @@ _CSS = """
   line-height: 1.5;
 }
 
+/* Remove the extra white rectangle around textareas (Gradio Textbox container) */
+#input_text,
+#output_text,
+#input_text > div,
+#output_text > div,
+#input_text .wrap,
+#output_text .wrap,
+#input_text .container,
+#output_text .container {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
 /* Main layout: keep the centerline between the two cards at the screen center */
 .yak-main-row {
   display: grid !important;

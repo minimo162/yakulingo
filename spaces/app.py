@@ -100,6 +100,42 @@ _CSS = """
   background: var(--yak-surface) !important;
 }
 
+/* Remove any leftover block/padded background for language row elements */
+.yak-lang-row,
+.yak-lang-row > * {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+#source_lang,
+#target_lang,
+#swap_btn {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  --block-background-fill: transparent;
+  --block-border-width: 0px;
+  --block-padding: 0px;
+  --block-radius: 0px;
+}
+
+#source_lang.padded,
+#target_lang.padded {
+  padding: 0 !important;
+}
+
+#source_lang::before,
+#target_lang::before,
+#source_lang::after,
+#target_lang::after {
+  background: transparent !important;
+}
+
 /* 2ペイン */
 .yak-panels {
   display: grid !important;
@@ -342,14 +378,19 @@ def _ui_dropdown(  # type: ignore[no-untyped-def]
             elem_id=elem_id,
             elem_classes=elem_classes,
         )
-    return Dropdown(
-        choices=choices,
-        value=value,
-        label="",
-        show_label=False,
-        elem_id=elem_id,
-        elem_classes=elem_classes,
-    )
+    kwargs = {
+        "choices": choices,
+        "value": value,
+        "label": "",
+        "show_label": False,
+        "elem_id": elem_id,
+        "elem_classes": elem_classes,
+    }
+    # Gradio の block/padded 下地を避ける（対応していない版では TypeError になる）
+    try:
+        return Dropdown(container=False, **kwargs)
+    except TypeError:
+        return Dropdown(**kwargs)
 
 
 def _zerogpu_size() -> str:

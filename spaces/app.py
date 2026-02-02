@@ -360,6 +360,20 @@ def _swap_langs(source: str, target: str) -> tuple[str, str]:
     return target, source
 
 
+def _swap_langs_and_move_text(
+    source: str,
+    target: str,
+    input_text: str,
+    output_text: str,
+) -> tuple[str, str, str, str]:
+    new_source, new_target = _swap_langs(source, target)
+    moved = (output_text or "").strip()
+    # 出力を次の入力に持っていく（出力欄はクリアして次の翻訳が分かりやすいようにする）
+    if moved:
+        return moved, "", new_source, new_target
+    return (input_text or ""), (output_text or ""), new_source, new_target
+
+
 def _ui_dropdown(  # type: ignore[no-untyped-def]
     *,
     choices: list[str],
@@ -591,9 +605,9 @@ with gr.Blocks(title="YakuLingo", css=_CSS) as demo:
         outputs=[output_text, result_meta, status],
     )
     swap_btn.click(
-        _swap_langs,
-        inputs=[source_lang, target_lang],
-        outputs=[source_lang, target_lang],
+        _swap_langs_and_move_text,
+        inputs=[source_lang, target_lang, input_text, output_text],
+        outputs=[input_text, output_text, source_lang, target_lang],
     )
     clear_btn.click(
         lambda: ("", "", "", "", "言語を検出する", "自動"),

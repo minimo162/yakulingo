@@ -398,7 +398,7 @@ def default_config() -> TranslationConfig:
         gguf_filename=os.environ.get(
             "YAKULINGO_SPACES_GGUF_FILENAME", "translategemma-27b-it.i1-Q4_K_M.gguf"
         ),
-        max_new_tokens=_env_int("YAKULINGO_SPACES_MAX_NEW_TOKENS", 256),
+        max_new_tokens=_env_int("YAKULINGO_SPACES_MAX_NEW_TOKENS", 1024),
         n_ctx=_env_int("YAKULINGO_SPACES_N_CTX", 4096),
         n_gpu_layers=_env_int("YAKULINGO_SPACES_N_GPU_LAYERS", -1),
         temperature=_env_float("YAKULINGO_SPACES_TEMPERATURE", 0.0),
@@ -1283,7 +1283,7 @@ class TransformersTranslator:
             return self._translate_translategemma(cleaned, output_language=output_language)
 
         prompt = _build_prompt(cleaned, output_language=output_language)
-        max_new_tokens = max(1, int(_env_int("YAKULINGO_SPACES_MAX_NEW_TOKENS", 256)))
+        max_new_tokens = max(1, int(_env_int("YAKULINGO_SPACES_MAX_NEW_TOKENS", 1024)))
         temperature = float(_env_float("YAKULINGO_SPACES_TEMPERATURE", 0.0))
 
         model, tokenizer = self._get_model_and_tokenizer(model_id=model_id)
@@ -1347,7 +1347,7 @@ class TransformersTranslator:
         return f"<bos><start_of_turn>user\n{prompt}<end_of_turn>\n<start_of_turn>model\n"
 
     def _translate_translategemma(self, text: str, *, output_language: OutputLanguage) -> str:
-        max_new_tokens = max(1, int(_env_int("YAKULINGO_SPACES_MAX_NEW_TOKENS", 256)))
+        max_new_tokens = max(1, int(_env_int("YAKULINGO_SPACES_MAX_NEW_TOKENS", 1024)))
         temperature = float(_env_float("YAKULINGO_SPACES_TEMPERATURE", 0.0))
         do_sample = temperature > 0.0
         model_id = _env_str("YAKULINGO_SPACES_HF_MODEL_ID", "google/translategemma-27b-it")

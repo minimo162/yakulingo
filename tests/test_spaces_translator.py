@@ -63,7 +63,7 @@ def test_default_config_reads_env(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_default_config_invalid_int_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("YAKULINGO_SPACES_MAX_NEW_TOKENS", "not-an-int")
     cfg = default_config()
-    assert cfg.max_new_tokens == 256
+    assert cfg.max_new_tokens == 1024
 
 
 def test_translator_fails_when_cuda_unavailable_by_default(

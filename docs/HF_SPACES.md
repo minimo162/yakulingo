@@ -80,7 +80,7 @@ Space の Variables/Secrets に以下を設定します。
 PLaMo（OpenAI 互換の Chat Completion API）を使う場合は、翻訳バックエンドを `plamo` に切り替えます。
 
 - `YAKULINGO_SPACES_BACKEND=plamo`
-- `YAKULINGO_SPACES_PLAMO_API_KEY`（Secret: 必須）
+- `YAKULINGO_SPACES_PLAMO_API_KEY`（Secret: 必須、互換: `PLAMO_API_KEY`）
 - `YAKULINGO_SPACES_PLAMO_BASE_URL`（任意、既定: `https://platform.preferredai.jp/api/completion/v1`）
 - `YAKULINGO_SPACES_PLAMO_MODEL`（任意、既定: `plamo-2.2-prime`）
 - `YAKULINGO_SPACES_PLAMO_TIMEOUT_S`（任意、既定: `60`）

@@ -76,6 +76,18 @@ Space の Variables/Secrets に以下を設定します。
 - `YAKULINGO_SPACES_GGUF_REPO_ID`（既定: `mradermacher/translategemma-27b-it-i1-GGUF`）
 - `YAKULINGO_SPACES_GGUF_FILENAME`（既定: `translategemma-27b-it.i1-Q4_K_M.gguf`）
 
+### 任意（PLaMo API バックエンド）
+PLaMo（OpenAI 互換の Chat Completion API）を使う場合は、翻訳バックエンドを `plamo` に切り替えます。
+
+- `YAKULINGO_SPACES_BACKEND=plamo`
+- `YAKULINGO_SPACES_PLAMO_API_KEY`（Secret: 必須、互換: `PLAMO_API_KEY`）
+- `YAKULINGO_SPACES_PLAMO_BASE_URL`（任意、既定: `https://platform.preferredai.jp/api/completion/v1`）
+- `YAKULINGO_SPACES_PLAMO_MODEL`（任意、既定: `plamo-2.2-prime`）
+- `YAKULINGO_SPACES_PLAMO_TIMEOUT_S`（任意、既定: `60`）
+- `YAKULINGO_SPACES_PLAMO_MAX_RETRIES`（任意、既定: `2`）
+- `YAKULINGO_SPACES_PLAMO_MAX_TOKENS`（任意、既定: `1024`）
+- `YAKULINGO_SPACES_PLAMO_TEMPERATURE`（任意、既定: `0.0`）
+
 ### 任意（CUDA 推奨: Transformers バックエンド）
 ZeroGPU で **CUDA を使いたい場合**は、llama.cpp（Linux 事前ビルドは Vulkan 前提）ではなく、PyTorch/Transformers 経由で実行します。
 

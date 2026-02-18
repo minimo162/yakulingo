@@ -181,6 +181,86 @@ def test_ensure_ready_does_not_scan_ports_when_reuse_succeeds(
     assert manager.ensure_ready(settings) == reuse_runtime
 
 
+def test_ensure_ready_stops_stale_process_on_runtime_policy_mismatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings_model_path = tmp_path / "settings_model.gguf"
+    settings_model_path.write_bytes(b"dummy")
+
+    server_dir = tmp_path / "llama_cpp"
+    generic_dir = server_dir / "generic"
+    generic_dir.mkdir(parents=True)
+    (generic_dir / "llama-server.exe").write_bytes(b"exe")
+
+    state_path = tmp_path / "state.json"
+    lls._atomic_write_json(
+        state_path,
+        {
+            "pid": 12345,
+            "runtime_policy_version": "legacy-policy",
+        },
+    )
+
+    settings = AppSettings(
+        local_ai_model_path=str(settings_model_path),
+        local_ai_server_dir=str(server_dir),
+        local_ai_port_base=4891,
+        local_ai_port_max=4893,
+    )
+
+    manager = lls.LocalLlamaServerManager()
+    monkeypatch.setattr(
+        lls.LocalLlamaServerManager,
+        "get_state_path",
+        staticmethod(lambda: state_path),
+    )
+    monkeypatch.setattr(
+        lls.LocalLlamaServerManager,
+        "get_log_path",
+        staticmethod(lambda: tmp_path / "local_ai_server.log"),
+    )
+
+    reuse_expected_policy: list[str | None] = []
+    stop_calls: list[tuple[int | None, float]] = []
+
+    def fake_try_reuse(state: dict, **kwargs):
+        _ = state
+        reuse_expected_policy.append(kwargs.get("expected_runtime_policy"))
+        return None
+
+    def fake_stop_by_state_if_safe(saved_state: dict, *, timeout_s: float):
+        stop_calls.append((saved_state.get("pid"), timeout_s))
+
+    def fake_start_new_server(**kwargs):
+        host = kwargs["host"]
+        port = kwargs["port"]
+        return lls.LocalAIServerRuntime(
+            host=host,
+            port=port,
+            base_url=f"http://{host}:{port}",
+            model_id=None,
+            server_exe_path=kwargs["server_exe_path"],
+            server_variant=str(kwargs["server_variant"]),
+            model_path=kwargs["model_path"],
+        )
+
+    monkeypatch.setattr(manager, "_try_reuse", fake_try_reuse)
+    monkeypatch.setattr(manager, "_stop_by_state_if_safe", fake_stop_by_state_if_safe)
+    monkeypatch.setattr(
+        manager, "_find_free_port", lambda host, port_base, port_max: port_base
+    )
+    monkeypatch.setattr(manager, "_start_new_server", fake_start_new_server)
+
+    runtime = manager.ensure_ready(settings)
+
+    assert runtime.host == "127.0.0.1"
+    assert runtime.port == 4891
+    assert reuse_expected_policy == [lls._RUNTIME_POLICY_VERSION]
+    assert stop_calls == [(12345, 2.0)]
+    saved_state = lls._safe_read_json(state_path) or {}
+    assert saved_state.get("runtime_policy_version") == lls._RUNTIME_POLICY_VERSION
+
+
 def test_try_reuse_skips_psutil_when_state_not_recent_and_port_not_ready(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -668,9 +748,7 @@ def test_resolve_model_path_falls_back_to_previous_default_when_default_missing(
     manager = lls.LocalLlamaServerManager()
     _patch_app_base_dir(tmp_path, monkeypatch)
 
-    previous = (
-        tmp_path / "local_ai" / "models" / "shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf"
-    )
+    previous = tmp_path / Path(lls._PREVIOUS_DEFAULT_MODEL_PATH)
     previous.parent.mkdir(parents=True, exist_ok=True)
     previous.write_bytes(b"previous")
 
@@ -678,9 +756,7 @@ def test_resolve_model_path_falls_back_to_previous_default_when_default_missing(
     legacy.parent.mkdir(parents=True, exist_ok=True)
     legacy.write_bytes(b"legacy")
 
-    settings = AppSettings(
-        local_ai_model_path="local_ai/models/translategemma-4b-it.i1-IQ4_XS.gguf"
-    )
+    settings = AppSettings(local_ai_model_path=lls._DEFAULT_MODEL_PATH)
     caplog.set_level(logging.WARNING, logger="yakulingo.services.local_llama_server")
     resolved = manager._resolve_model_path(settings)
 
@@ -781,6 +857,103 @@ def test_build_server_args_adds_batch_flags_when_available(
     assert args[args.index("--threads-batch") + 1] == "12"
     assert "--mlock" in args
     assert "--no-mmap" in args
+
+
+def test_build_server_args_disables_reasoning_when_supported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = lls.LocalLlamaServerManager()
+    server_exe_path = tmp_path / "llama-server.exe"
+    server_exe_path.write_bytes(b"exe")
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"model")
+
+    help_text = "\n".join(
+        [
+            "-m, --model",
+            "--threads",
+            "--temp",
+            "--n-predict",
+            "--reasoning-budget",
+            "--chat-template-kwargs",
+            "--reasoning-format",
+        ]
+    )
+
+    class DummyCompleted:
+        def __init__(self, stdout: str) -> None:
+            self.stdout = stdout
+
+    def fake_run(*args, **kwargs):
+        return DummyCompleted(help_text)
+
+    monkeypatch.setattr(lls.subprocess, "run", fake_run)
+
+    settings = AppSettings()
+    settings._validate()
+
+    args = manager._build_server_args(
+        server_exe_path=server_exe_path,
+        server_variant="generic",
+        model_path=model_path,
+        host="127.0.0.1",
+        port=4891,
+        settings=settings,
+    )
+
+    assert "--reasoning-budget" in args
+    assert args[args.index("--reasoning-budget") + 1] == "0"
+    assert "--chat-template-kwargs" in args
+    assert (
+        args[args.index("--chat-template-kwargs") + 1]
+        == '{"enable_thinking":false}'
+    )
+    assert "--reasoning-format" in args
+    assert args[args.index("--reasoning-format") + 1] == "deepseek"
+
+
+def test_build_server_args_skips_reasoning_flags_without_help(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = lls.LocalLlamaServerManager()
+    server_exe_path = tmp_path / "llama-server.exe"
+    server_exe_path.write_bytes(b"exe")
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"model")
+
+    help_text = "\n".join(
+        [
+            "-m, --model",
+            "--threads",
+            "--temp",
+            "--n-predict",
+        ]
+    )
+
+    class DummyCompleted:
+        def __init__(self, stdout: str) -> None:
+            self.stdout = stdout
+
+    def fake_run(*args, **kwargs):
+        return DummyCompleted(help_text)
+
+    monkeypatch.setattr(lls.subprocess, "run", fake_run)
+
+    settings = AppSettings()
+    settings._validate()
+
+    args = manager._build_server_args(
+        server_exe_path=server_exe_path,
+        server_variant="generic",
+        model_path=model_path,
+        host="127.0.0.1",
+        port=4891,
+        settings=settings,
+    )
+
+    assert "--reasoning-budget" not in args
+    assert "--chat-template-kwargs" not in args
+    assert "--reasoning-format" not in args
 
 
 def test_build_server_args_adds_gpu_flags_when_available(

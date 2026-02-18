@@ -1,32 +1,32 @@
 ﻿{
-    "generated_at":  "2026-01-29T13:19:43.3005191+09:00",
+    "generated_at":  "2026-02-18T20:51:29.5032197+09:00",
     "llama_cpp":  {
                       "repo":  "ggerganov/llama.cpp",
-                      "release_tag":  "b7867",
-                      "asset_name":  "llama-b7867-bin-win-vulkan-x64.zip",
-                      "download_url":  "https://github.com/ggml-org/llama.cpp/releases/download/b7867/llama-b7867-bin-win-vulkan-x64.zip",
-                      "server_exe_sha256":  "10938E830A5D70DF83862BAABEEFC484C35207DD5472A56BD7BFFE2BBA970719",
+                      "release_tag":  "b8089",
+                      "asset_name":  "llama-b8089-bin-win-vulkan-x64.zip",
+                      "download_url":  "https://github.com/ggml-org/llama.cpp/releases/download/b8089/llama-b8089-bin-win-vulkan-x64.zip",
+                      "server_exe_sha256":  "8C3FBC74A34EE42B100771002A5426C51A227DAFF0DE8BD8D133750177D09797",
                       "variant":  "vulkan"
                   },
     "model":  {
-                  "repo":  "mradermacher/translategemma-4b-it-i1-GGUF",
+                  "repo":  "mmnga-o/NVIDIA-Nemotron-Nano-9B-v2-Japanese-gguf",
                   "revision":  "main",
-                  "file":  "translategemma-4b-it.i1-IQ4_XS.gguf",
-                  "download_url":  "https://huggingface.co/mradermacher/translategemma-4b-it-i1-GGUF/resolve/main/translategemma-4b-it.i1-IQ4_XS.gguf",
-                  "sha256":  null,
+                  "file":  "NVIDIA-Nemotron-Nano-9B-v2-Japanese-IQ4_XS.gguf",
+                  "download_url":  "https://huggingface.co/mmnga-o/NVIDIA-Nemotron-Nano-9B-v2-Japanese-gguf/resolve/main/NVIDIA-Nemotron-Nano-9B-v2-Japanese-IQ4_XS.gguf",
+                  "sha256":  "76C7C577EC976D8DF6533345BFCE30AFEDB85DCC7FAAA48EBB77C66746371063",
                   "skipped":  false,
                   "source":  {
                                  "kind":  "gguf",
-                                 "repo":  "mradermacher/translategemma-4b-it-i1-GGUF",
+                                 "repo":  "mmnga-o/NVIDIA-Nemotron-Nano-9B-v2-Japanese-gguf",
                                  "revision":  "main",
-                                 "file":  "translategemma-4b-it.i1-IQ4_XS.gguf",
-                                 "download_url":  "https://huggingface.co/mradermacher/translategemma-4b-it-i1-GGUF/resolve/main/translategemma-4b-it.i1-IQ4_XS.gguf"
+                                 "file":  "NVIDIA-Nemotron-Nano-9B-v2-Japanese-IQ4_XS.gguf",
+                                 "download_url":  "https://huggingface.co/mmnga-o/NVIDIA-Nemotron-Nano-9B-v2-Japanese-gguf/resolve/main/NVIDIA-Nemotron-Nano-9B-v2-Japanese-IQ4_XS.gguf"
                              },
                   "output":  {
                                  "kind":  "gguf",
-                                 "path":  "local_ai/models/translategemma-4b-it.i1-IQ4_XS.gguf",
-                                 "path_resolved":  "C:\\Users\\m242054\\yakulingo\\local_ai\\models\\translategemma-4b-it.i1-IQ4_XS.gguf",
-                                 "sha256":  null
+                                 "path":  "local_ai/models/NVIDIA-Nemotron-Nano-9B-v2-Japanese-IQ4_XS.gguf",
+                                 "path_resolved":  "C:\\Users\\Administrator\\Desktop\\yakulingo\\local_ai\\models\\NVIDIA-Nemotron-Nano-9B-v2-Japanese-IQ4_XS.gguf",
+                                 "sha256":  "76C7C577EC976D8DF6533345BFCE30AFEDB85DCC7FAAA48EBB77C66746371063"
                              }
               }
 }

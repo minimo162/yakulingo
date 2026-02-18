@@ -17,6 +17,7 @@ def test_local_text_options_streams_translation(monkeypatch) -> None:
     def fake_translate_single_with_cancel(
         text, prompt, reference_files=None, on_chunk=None
     ):
+        _ = text, prompt, reference_files
         if on_chunk:
             on_chunk("H")
             on_chunk("el")
@@ -31,7 +32,7 @@ def test_local_text_options_streams_translation(monkeypatch) -> None:
 
     result = service.translate_text_with_options(
         "dummy",
-        pre_detected_language="日本語",
+        pre_detected_language="\u65e5\u672c\u8a9e",
         on_chunk=on_chunk,
     )
 
@@ -52,6 +53,7 @@ def test_local_text_style_comparison_streams_translation(monkeypatch) -> None:
     def fake_translate_single_with_cancel(
         text, prompt, reference_files=None, on_chunk=None
     ):
+        _ = text, prompt, reference_files
         if on_chunk:
             on_chunk("H")
             on_chunk("el")
@@ -66,7 +68,7 @@ def test_local_text_style_comparison_streams_translation(monkeypatch) -> None:
 
     result = service.translate_text_with_style_comparison(
         "dummy",
-        pre_detected_language="日本語",
+        pre_detected_language="\u65e5\u672c\u8a9e",
         on_chunk=on_chunk,
     )
 
@@ -92,6 +94,7 @@ def test_local_streaming_throttle_still_emits_final(monkeypatch) -> None:
     def fake_translate_single_with_cancel(
         text, prompt, reference_files=None, on_chunk=None
     ):
+        _ = text, prompt, reference_files
         if on_chunk:
             on_chunk("H")
             on_chunk("el")
@@ -110,7 +113,7 @@ def test_local_streaming_throttle_still_emits_final(monkeypatch) -> None:
 
     result = service.translate_text_with_options(
         "dummy",
-        pre_detected_language="“ú–{Śę",
+        pre_detected_language="\u65e5\u672c\u8a9e",
         on_chunk=on_chunk,
     )
 
@@ -120,7 +123,7 @@ def test_local_streaming_throttle_still_emits_final(monkeypatch) -> None:
     assert "Hello" in received[-1]
 
 
-def test_local_streaming_aborts_early_on_output_language_mismatch_and_retries(
+def test_local_streaming_aborts_early_on_output_language_mismatch_without_retry(
     monkeypatch,
 ) -> None:
     settings = AppSettings(translation_backend="local")
@@ -138,14 +141,9 @@ def test_local_streaming_aborts_early_on_output_language_mismatch_and_retries(
         nonlocal calls
         _ = text, prompt, reference_files
         calls += 1
-        if calls == 1:
-            if on_chunk:
-                on_chunk("漢")
-            raise AssertionError("streaming guard did not abort on output mismatch")
         if on_chunk:
-            on_chunk("H")
-            on_chunk("ello")
-        return "Hello"
+            on_chunk("\u732b")
+        raise AssertionError("streaming guard did not abort on output mismatch")
 
     monkeypatch.setattr(
         service,
@@ -155,11 +153,13 @@ def test_local_streaming_aborts_early_on_output_language_mismatch_and_retries(
 
     result = service.translate_text_with_options(
         "dummy",
-        pre_detected_language="日本語",
+        pre_detected_language="\u65e5\u672c\u8a9e",
         on_chunk=on_chunk,
     )
 
-    assert calls == 2
-    assert result.options
-    assert result.options[0].text == "Hello"
-    assert not any("漢" in chunk for chunk in received)
+    assert calls == 1
+    assert not result.options
+    assert result.error_message
+    metadata = result.metadata or {}
+    assert metadata.get("output_language_mismatch") is True
+    assert not any("\u732b" in chunk for chunk in received)

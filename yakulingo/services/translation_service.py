@@ -6067,39 +6067,6 @@ class TranslationService:
 
             style = _normalize_text_style(style)
 
-            first = self._translate_text_with_options_local(
-                text=text,
-                reference_files=reference_files,
-                style=style,
-                detected_language=detected_language,
-                output_language=output_language,
-                on_chunk=on_chunk,
-                raw_output=True,
-                force_simple_prompt=True,
-            )
-            retry_reasons: list[str] = []
-            if first.error_message:
-                if "出力言語ガード" in first.error_message:
-                    retry_reasons.append("output_language")
-                if "「...」のみ" in first.error_message:
-                    retry_reasons.append("ellipsis")
-                if "プレースホルダーのみ" in first.error_message:
-                    retry_reasons.append("placeholder")
-
-            if first.options:
-                translated = first.options[0].text
-                if _looks_untranslated(text, translated):
-                    retry_reasons.append("untranslated")
-                if _is_text_output_language_mismatch(translated, output_language):
-                    retry_reasons.append("output_language")
-                if _is_ellipsis_only_translation(text, translated):
-                    retry_reasons.append("ellipsis")
-                if _is_placeholder_only_translation(text, translated):
-                    retry_reasons.append("placeholder")
-
-            if not retry_reasons:
-                return first
-
             base_prompt = self.prompt_builder.build_simple_prompt(
                 text,
                 output_language=output_language,
@@ -6109,26 +6076,21 @@ class TranslationService:
                 if output_language == "en"
                 else _SIMPLE_PROMPT_RETRY_INSTRUCTION_JP
             )
-            retry_prompt = _insert_extra_instruction_into_simple_prompt(base_prompt, strict)
+            strict_prompt = _insert_extra_instruction_into_simple_prompt(
+                base_prompt, strict
+            )
 
-            retry = self._translate_text_with_options_local(
+            return self._translate_text_with_options_local(
                 text=text,
                 reference_files=reference_files,
                 style=style,
                 detected_language=detected_language,
                 output_language=output_language,
-                on_chunk=None,
+                on_chunk=on_chunk,
                 raw_output=False,
                 force_simple_prompt=True,
-                override_prompt=retry_prompt,
+                override_prompt=strict_prompt,
             )
-            metadata = dict(retry.metadata) if retry.metadata else {}
-            metadata["output_language_retry"] = True
-            metadata["output_language_retry_reasons"] = sorted(set(retry_reasons))
-            if retry.error_message:
-                metadata["output_language_retry_failed"] = True
-            retry.metadata = metadata
-            return retry
 
         except TranslationCancelledError:
             logger.info("Text translation with options cancelled")

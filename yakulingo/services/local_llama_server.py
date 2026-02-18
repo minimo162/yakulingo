@@ -50,10 +50,12 @@ _AUTO_DEVICE_CACHE: dict[
     tuple[str, int, int], tuple[Optional[str], Optional[str], float]
 ] = {}
 _AUTO_DEVICE_CACHE_LOCK = threading.Lock()
-_DEFAULT_MODEL_PATH = "local_ai/models/translategemma-4b-it.i1-IQ4_XS.gguf"
-_PREVIOUS_DEFAULT_MODEL_PATH = "local_ai/models/shisa-v2.1-qwen3-8B-UD-Q4_K_XL.gguf"
+_DEFAULT_MODEL_PATH = "local_ai/models/NVIDIA-Nemotron-Nano-9B-v2-Japanese-IQ4_XS.gguf"
+_PREVIOUS_DEFAULT_MODEL_PATH = "local_ai/models/translategemma-4b-it.i1-IQ4_XS.gguf"
 _LEGACY_DEFAULT_MODEL_PATH = "local_ai/models/HY-MT1.5-7B.i1-Q6_K.gguf"
 _OLDER_LEGACY_DEFAULT_MODEL_PATH = "local_ai/models/HY-MT1.5-1.8B.IQ4_XS.gguf"
+_RUNTIME_POLICY_VERSION = "reasoning-off-v1"
+_CHAT_TEMPLATE_KWARGS_REASONING_OFF = '{"enable_thinking":false}'
 
 
 def _utc_now_iso() -> str:
@@ -643,6 +645,12 @@ class LocalLlamaServerManager:
 
         state_path = self.get_state_path()
         saved_state = _safe_read_json(state_path) or {}
+        saved_runtime_policy = saved_state.get("runtime_policy_version")
+        runtime_policy_mismatch = (
+            isinstance(saved_state.get("pid"), int)
+            and int(saved_state.get("pid", 0)) > 0
+            and saved_runtime_policy != _RUNTIME_POLICY_VERSION
+        )
 
         model_size, model_mtime = _file_fingerprint(model_path)
         expected_exe_norm = _normalize_path_text(server_exe_path)
@@ -655,6 +663,7 @@ class LocalLlamaServerManager:
             expected_model_norm=expected_model_norm,
             expected_model_size=model_size,
             expected_model_mtime=model_mtime,
+            expected_runtime_policy=_RUNTIME_POLICY_VERSION,
         )
         if reuse_candidate is not None:
             pid_create_time: Optional[float] = None
@@ -683,6 +692,7 @@ class LocalLlamaServerManager:
                     "model_size": model_size,
                     "model_mtime": model_mtime,
                     "last_ok_at": _utc_now_iso(),
+                    "runtime_policy_version": _RUNTIME_POLICY_VERSION,
                     "app_version": _get_app_version_text(),
                 },
             )
@@ -697,6 +707,14 @@ class LocalLlamaServerManager:
                 server_variant=server_variant,
                 model_path=model_path,
             )
+
+        if runtime_policy_mismatch:
+            logger.info(
+                "Local AI runtime policy changed (%s -> %s); stopping stale process before restart",
+                saved_runtime_policy,
+                _RUNTIME_POLICY_VERSION,
+            )
+            self._stop_by_state_if_safe(saved_state, timeout_s=2.0)
 
         free_port = self._find_free_port(host, port_base, port_max)
         if free_port is None:
@@ -790,6 +808,7 @@ class LocalLlamaServerManager:
                 "model_mtime": model_mtime,
                 "started_at": _utc_now_iso(),
                 "last_ok_at": _utc_now_iso(),
+                "runtime_policy_version": _RUNTIME_POLICY_VERSION,
                 "app_version": _get_app_version_text(),
             },
         )
@@ -1016,6 +1035,7 @@ class LocalLlamaServerManager:
         expected_model_norm: str,
         expected_model_size: int,
         expected_model_mtime: int,
+        expected_runtime_policy: Optional[str] = None,
     ) -> Optional[LocalAIServerRuntime]:
         host = state.get("host")
         port = state.get("port")
@@ -1027,6 +1047,9 @@ class LocalLlamaServerManager:
             return None
         if not isinstance(pid, int) or pid <= 0:
             return None
+        if expected_runtime_policy is not None:
+            if state.get("runtime_policy_version") != expected_runtime_policy:
+                return None
 
         exe_path = state.get("server_exe_path_resolved")
         model_path = state.get("model_path_resolved")
@@ -1425,6 +1448,18 @@ class LocalLlamaServerManager:
                 args += ["--n-predict", str(int(settings.local_ai_max_tokens))]
             elif help_text and has_short("-n"):
                 args += ["-n", str(int(settings.local_ai_max_tokens))]
+
+        if help_text and has_long("--reasoning-budget"):
+            args += ["--reasoning-budget", "0"]
+
+        if help_text and has_long("--chat-template-kwargs"):
+            args += [
+                "--chat-template-kwargs",
+                _CHAT_TEMPLATE_KWARGS_REASONING_OFF,
+            ]
+
+        if help_text and has_long("--reasoning-format"):
+            args += ["--reasoning-format", "deepseek"]
 
         batch_size = settings.local_ai_batch_size
         if help_text and batch_size is not None and batch_size > 0:

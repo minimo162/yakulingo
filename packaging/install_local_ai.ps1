@@ -139,6 +139,47 @@ try {
         throw "Download failed: $url"
     }
 
+    function Get-HttpStatusCodeFromError([object]$errorRecord) {
+        if (-not $errorRecord) { return $null }
+        $ex = $errorRecord.Exception
+        if (-not $ex) { return $null }
+
+        try {
+            if ($ex.Response -and $ex.Response.StatusCode) {
+                $statusCode = $ex.Response.StatusCode
+                try { return [int]$statusCode.value__ } catch { }
+                try { return [int]$statusCode } catch { }
+            }
+        } catch {
+        }
+
+        $msg = [string]$ex.Message
+        $m = [regex]::Match($msg, '\b(?<code>\d{3})\b')
+        if ($m.Success) {
+            try { return [int]$m.Groups['code'].Value } catch { }
+        }
+        return $null
+    }
+
+    function Invoke-DownloadOptionalMetadata([string]$url, [string]$outFile, [string]$label) {
+        try {
+            if ($useProxy) {
+                Invoke-WebRequest -Uri $url -OutFile $outFile -UseBasicParsing -Headers $httpHeaders -Proxy $proxy -ProxyCredential $cred -TimeoutSec 120 | Out-Null
+            } else {
+                Invoke-WebRequest -Uri $url -OutFile $outFile -UseBasicParsing -Headers $httpHeaders -TimeoutSec 120 | Out-Null
+            }
+            return $true
+        } catch {
+            $statusCode = Get-HttpStatusCodeFromError $_
+            if ($statusCode -eq 404) {
+                Write-Host "[INFO] ${label} not found (404). Skipping."
+                return $false
+            }
+            Write-Host "[WARNING] Failed to download ${label}: $($_.Exception.Message)"
+            return $false
+        }
+    }
+
     function Stop-LocalLlamaProcesses([string]$llamaBaseDir) {
         $stopped = @()
         $baseFull = $null
@@ -308,8 +349,8 @@ try {
 
     # Default model (fixed):
     # Always use a prebuilt GGUF downloaded from Hugging Face.
-    $defaultModelRepo = 'mradermacher/translategemma-4b-it-i1-GGUF'
-    $defaultModelFile = 'translategemma-4b-it.i1-IQ4_XS.gguf'
+    $defaultModelRepo = 'mmnga-o/NVIDIA-Nemotron-Nano-9B-v2-Japanese-gguf'
+    $defaultModelFile = 'NVIDIA-Nemotron-Nano-9B-v2-Japanese-IQ4_XS.gguf'
     $defaultModelRevision = 'main'
 
     # Model selection is fixed (manifest/env overrides are ignored).
@@ -527,7 +568,7 @@ try {
         }
     }
 
-    try { Invoke-Download $licenseUrl (Join-Path $modelsDir 'LICENSE') 120 } catch { Write-Host "[WARNING] Failed to download model LICENSE: $($_.Exception.Message)" }
+    $null = Invoke-DownloadOptionalMetadata $licenseUrl (Join-Path $modelsDir 'LICENSE') 'model LICENSE'
     try { Invoke-Download $readmeUrl (Join-Path $modelsDir 'README.md') 120 } catch { Write-Host "[WARNING] Failed to download model README: $($_.Exception.Message)" }
 
     $serverHash = $currentHash

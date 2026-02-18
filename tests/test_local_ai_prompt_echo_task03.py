@@ -1,4 +1,4 @@
-from yakulingo.services.local_ai_client import strip_prompt_echo
+﻿from yakulingo.services.local_ai_client import strip_prompt_echo
 
 
 def _make_prompt(text: str) -> str:
@@ -13,11 +13,22 @@ def _make_prompt(text: str) -> str:
 
 
 def test_strip_prompt_echo_removes_full_prompt() -> None:
-    prompt = _make_prompt("こんにちは")
+    prompt = _make_prompt("source")
     assert strip_prompt_echo(prompt, prompt) == ""
 
 
 def test_strip_prompt_echo_removes_prompt_prefix() -> None:
-    prompt = _make_prompt("こんにちは")
+    prompt = _make_prompt("source")
     raw = f"{prompt}\n\nHello."
     assert strip_prompt_echo(raw, prompt) == "Hello."
+
+
+def test_strip_prompt_echo_removes_leading_think_block() -> None:
+    prompt = _make_prompt("source")
+    raw = f"{prompt}<think>\ninternal reasoning\n</think>\n\nHello."
+    assert strip_prompt_echo(raw, prompt) == "Hello."
+
+
+def test_strip_prompt_echo_drops_unclosed_leading_think_block() -> None:
+    raw = "<think>\ninternal reasoning only"
+    assert strip_prompt_echo(raw, None) == ""

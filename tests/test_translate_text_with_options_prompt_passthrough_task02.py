@@ -4,7 +4,12 @@ from pathlib import Path
 
 from yakulingo.config.settings import AppSettings
 from yakulingo.services.local_ai_prompt_builder import LocalPromptBuilder
-from yakulingo.services.translation_service import TranslationService
+from yakulingo.services.translation_service import (
+    TranslationService,
+    _SIMPLE_PROMPT_RETRY_INSTRUCTION_EN,
+    _SIMPLE_PROMPT_RETRY_INSTRUCTION_JP,
+    _insert_extra_instruction_into_simple_prompt,
+)
 
 
 class RecordingLocalClient:
@@ -42,55 +47,49 @@ def _make_service(local: RecordingLocalClient) -> TranslationService:
     return service
 
 
-def test_translate_text_with_options_passes_raw_prompt_en() -> None:
+def test_translate_text_with_options_passes_strict_prompt_en() -> None:
     local = RecordingLocalClient("ok")
     service = _make_service(local)
-    text = "こんにちは"
+    text = "\u3053\u3093\u306b\u3061\u306f"
 
     result = service.translate_text_with_options(
         text,
-        pre_detected_language="日本語",
+        pre_detected_language="\u65e5\u672c\u8a9e",
     )
 
     assert result.output_language == "en"
-    expected = service.prompt_builder.build_simple_prompt(text, output_language="en")
-    assert local.last_prompt == expected
-    assert (
-        "Translate the Japanese text into English suitable for financial statements."
-        in expected
+    base = service.prompt_builder.build_simple_prompt(text, output_language="en")
+    expected = _insert_extra_instruction_into_simple_prompt(
+        base,
+        _SIMPLE_PROMPT_RETRY_INSTRUCTION_EN,
     )
-    assert "Translate every sentence/clause; do not omit or summarize." in expected
-    assert "Do not echo or repeat the input text." in expected
+    assert local.last_prompt == expected
     assert "Output must be English only." in expected
+    assert "Do NOT output Korean (Hangul) characters." in expected
     assert expected.startswith("<bos><start_of_turn>user\n")
     assert "===INPUT_TEXT===" in expected
     assert "===END_INPUT_TEXT===" in expected
-    assert "Instruction:" not in expected
-    assert "Important Terminology:" not in expected
 
 
-def test_translate_text_with_options_passes_raw_prompt_jp() -> None:
-    local = RecordingLocalClient("テスト")
+def test_translate_text_with_options_passes_strict_prompt_jp() -> None:
+    local = RecordingLocalClient("\u30c6\u30b9\u30c8")
     service = _make_service(local)
     text = "Hello"
 
     result = service.translate_text_with_options(
         text,
-        pre_detected_language="英語",
+        pre_detected_language="\u82f1\u8a9e",
     )
 
     assert result.output_language == "jp"
-    expected = service.prompt_builder.build_simple_prompt(text, output_language="jp")
-    assert local.last_prompt == expected
-    assert (
-        "Translate the text into Japanese suitable for financial statements."
-        in expected
+    base = service.prompt_builder.build_simple_prompt(text, output_language="jp")
+    expected = _insert_extra_instruction_into_simple_prompt(
+        base,
+        _SIMPLE_PROMPT_RETRY_INSTRUCTION_JP,
     )
-    assert "Translate every sentence/clause; do not omit or summarize." in expected
-    assert "Do not echo or repeat the input text." in expected
+    assert local.last_prompt == expected
     assert "Output must be Japanese only." in expected
+    assert "Do NOT output Chinese (Simplified/Traditional) text." in expected
     assert expected.startswith("<bos><start_of_turn>user\n")
     assert "===INPUT_TEXT===" in expected
     assert "===END_INPUT_TEXT===" in expected
-    assert "Instruction:" not in expected
-    assert "Important Terminology:" not in expected

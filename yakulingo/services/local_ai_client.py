@@ -52,6 +52,7 @@ _SSE_DELTA_COALESCE_MAX_INTERVAL_SEC = 0.18
 _PROMPT_REPEAT_SEPARATOR = "\n\n"
 _PROMPT_ECHO_PREFIX_MIN = 120
 _PROMPT_ECHO_PREFIX_SCAN_LIMIT = 4000
+_RAW_PROMPT_END_MARKER = "<end_of_turn>"
 
 
 def _repeat_prompt_twice(prompt: str) -> str:
@@ -91,8 +92,28 @@ def _is_hy_mt_model(runtime: LocalAIServerRuntime) -> bool:
     return False
 
 
+def _is_nemotron_model(runtime: LocalAIServerRuntime) -> bool:
+    """Detect Nemotron family models (reasoning-capable chat template)."""
+
+    candidates = [runtime.model_id, runtime.model_path.name]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        lowered = str(candidate).strip().lower()
+        if not lowered:
+            continue
+        if "nemotron" in lowered:
+            return True
+    return False
+
+
 _RE_CODE_FENCE = re.compile(r"^\s*```(?:json)?\s*$", re.IGNORECASE)
 _RE_TRAILING_COMMAS = re.compile(r",(\s*[}\]])")
+_RE_LEADING_THINK_BLOCK = re.compile(
+    r"^\s*<think>\s*.*?</think>\s*",
+    re.IGNORECASE | re.DOTALL,
+)
+_RE_LEADING_THINK_CLOSE = re.compile(r"^\s*</think>\s*", re.IGNORECASE)
 _RE_ID_MARKER_BLOCK = re.compile(
     r"\[\[ID:(\d+)\]\]\s*(.+?)(?=\[\[ID:\d+\]\]|$)", re.DOTALL
 )
@@ -273,22 +294,47 @@ def _strip_code_fences(text: str) -> str:
     return "\n".join(lines).strip()
 
 
+def _strip_leading_thinking_content(text: str) -> str:
+    """Best-effort removal of leaked `<think>...</think>` blocks from model output."""
+    if not text:
+        return ""
+    cleaned = text.replace("\r\n", "\n").replace("\r", "\n")
+
+    # Remove complete leading think blocks (may appear repeatedly).
+    while True:
+        updated = _RE_LEADING_THINK_BLOCK.sub("", cleaned, count=1)
+        if updated == cleaned:
+            break
+        cleaned = updated
+
+    cleaned = _RE_LEADING_THINK_CLOSE.sub("", cleaned, count=1)
+    stripped = cleaned.lstrip()
+    if stripped.lower().startswith("<think>"):
+        # Missing closing tag: keep content after a hard separator if present.
+        body = stripped[len("<think>") :]
+        sep = body.find("\n\n")
+        if sep != -1:
+            return body[sep + 2 :].strip()
+        return ""
+    return cleaned.strip()
+
+
 def strip_prompt_echo(raw_content: str, prompt: str | None) -> str:
     cleaned = _strip_code_fences(raw_content or "")
     cleaned = cleaned.replace("\r\n", "\n").replace("\r", "\n").strip()
     if not cleaned:
         return ""
     if not prompt:
-        return cleaned
+        return _strip_leading_thinking_content(cleaned)
     prompt_clean = _strip_code_fences(prompt)
     prompt_clean = prompt_clean.replace("\r\n", "\n").replace("\r", "\n").strip()
     if not prompt_clean:
-        return cleaned
+        return _strip_leading_thinking_content(cleaned)
 
     idx = cleaned.find(prompt_clean)
     if idx != -1:
         stripped = (cleaned[:idx] + cleaned[idx + len(prompt_clean) :]).strip()
-        return stripped
+        return _strip_leading_thinking_content(stripped)
 
     limit = min(len(cleaned), len(prompt_clean), _PROMPT_ECHO_PREFIX_SCAN_LIMIT)
     prefix_len = 0
@@ -297,8 +343,9 @@ def strip_prompt_echo(raw_content: str, prompt: str | None) -> str:
             break
         prefix_len += 1
     if prefix_len >= _PROMPT_ECHO_PREFIX_MIN:
-        return cleaned[prefix_len:].lstrip()
-    return cleaned
+        cleaned = cleaned[prefix_len:].lstrip()
+
+    return _strip_leading_thinking_content(cleaned)
 
 
 def _make_diagnostic_snippet(
@@ -913,6 +960,27 @@ class LocalAIClient:
     def _is_raw_prompt(prompt: str) -> bool:
         return (prompt or "").startswith(_RAW_PROMPT_MARKER)
 
+    @staticmethod
+    def _extract_user_prompt_from_raw_prompt(prompt: str) -> str:
+        text = (prompt or "").replace("\r\n", "\n").replace("\r", "\n")
+        if not text.startswith(_RAW_PROMPT_MARKER):
+            return prompt or ""
+        body = text[len(_RAW_PROMPT_MARKER) :]
+        end_idx = body.find(_RAW_PROMPT_END_MARKER)
+        if end_idx >= 0:
+            body = body[:end_idx]
+        extracted = body.strip()
+        return extracted if extracted else (prompt or "")
+
+    @staticmethod
+    def _should_force_chat_completions(
+        runtime: LocalAIServerRuntime, prompt: str
+    ) -> bool:
+        # Nemotron requires chat template controls (enable_thinking=false).
+        return _is_nemotron_model(runtime) and (prompt or "").startswith(
+            _RAW_PROMPT_MARKER
+        )
+
     def _build_chat_payload(
         self,
         runtime: LocalAIServerRuntime,
@@ -925,15 +993,26 @@ class LocalAIClient:
         repeat_prompt: bool = False,
     ) -> dict[str, object]:
         original_prompt = prompt or ""
+        if self._should_force_chat_completions(runtime, original_prompt):
+            original_prompt = self._extract_user_prompt_from_raw_prompt(original_prompt)
         user_prompt = _sent_prompt(original_prompt, repeat=repeat_prompt)
         messages: list[dict[str, str]] = [{"role": "user", "content": user_prompt}]
+        disable_nemotron_thinking = _is_nemotron_model(runtime)
+        effective_include_sampling_params = include_sampling_params
+        temperature = float(self._settings.local_ai_temperature)
+        if disable_nemotron_thinking:
+            # Nemotron defaults to reasoning mode; explicitly disable it and use greedy.
+            temperature = 0.0
+            effective_include_sampling_params = False
         payload: dict[str, object] = {
             "model": runtime.model_id or runtime.model_path.name,
             "messages": messages,
             "stream": stream,
-            "temperature": float(self._settings.local_ai_temperature),
+            "temperature": temperature,
         }
-        if include_sampling_params:
+        if disable_nemotron_thinking:
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
+        if effective_include_sampling_params:
             top_p = self._settings.local_ai_top_p
             top_k = self._settings.local_ai_top_k
             if _is_hy_mt_model(runtime):
@@ -978,13 +1057,20 @@ class LocalAIClient:
     ) -> dict[str, object]:
         original_prompt = prompt or ""
         sent_prompt = _sent_prompt(original_prompt, repeat=repeat_prompt)
+        disable_nemotron_thinking = _is_nemotron_model(runtime)
+        effective_include_sampling_params = include_sampling_params
+        temperature = float(self._settings.local_ai_temperature)
+        if disable_nemotron_thinking:
+            # Keep raw prompt path deterministic for Nemotron as well.
+            temperature = 0.0
+            effective_include_sampling_params = False
         payload: dict[str, object] = {
             "model": runtime.model_id or runtime.model_path.name,
             "prompt": sent_prompt,
             "stream": stream,
-            "temperature": float(self._settings.local_ai_temperature),
+            "temperature": temperature,
         }
-        if include_sampling_params:
+        if effective_include_sampling_params:
             top_p = self._settings.local_ai_top_p
             top_k = self._settings.local_ai_top_k
             if _is_hy_mt_model(runtime):
@@ -1197,7 +1283,9 @@ class LocalAIClient:
 
         t1 = time.perf_counter()
         repeat_used = False
-        use_completions = self._is_raw_prompt(prompt)
+        use_completions = self._is_raw_prompt(prompt) and not self._should_force_chat_completions(
+            runtime, prompt
+        )
         if on_chunk is None:
             result = (
                 self._completions(runtime, prompt, timeout=timeout, repeat_prompt=False)
@@ -1266,9 +1354,12 @@ class LocalAIClient:
 
         t1 = time.perf_counter()
         repeat_used = False
+        use_completions = self._is_raw_prompt(prompt) and not self._should_force_chat_completions(
+            runtime, prompt
+        )
         result = (
             self._completions(runtime, prompt, timeout=timeout, repeat_prompt=False)
-            if self._is_raw_prompt(prompt)
+            if use_completions
             else self._chat_completions(runtime, prompt, timeout=timeout, repeat_prompt=False)
         )
         parsed = parse_batch_translations(
@@ -1281,7 +1372,7 @@ class LocalAIClient:
         t_req = time.perf_counter() - t1
         logger.debug(
             "[TIMING] LocalAI %s: %.2fs (prompt_chars=%d repeated=%s items=%d)",
-            "completions" if self._is_raw_prompt(prompt) else "chat_completions",
+            "completions" if use_completions else "chat_completions",
             t_req,
             _sent_prompt_len(prompt, repeat=repeat_used),
             repeat_used,

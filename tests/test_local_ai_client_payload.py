@@ -31,6 +31,18 @@ def _make_hy_mt_runtime() -> LocalAIServerRuntime:
     )
 
 
+def _make_nemotron_runtime() -> LocalAIServerRuntime:
+    return LocalAIServerRuntime(
+        host="127.0.0.1",
+        port=1,
+        base_url="http://127.0.0.1:1",
+        model_id="NVIDIA-Nemotron-Nano-9B-v2-Japanese-IQ4_XS.gguf",
+        server_exe_path=Path("server.exe"),
+        server_variant="direct",
+        model_path=Path("NVIDIA-Nemotron-Nano-9B-v2-Japanese-IQ4_XS.gguf"),
+    )
+
+
 def test_build_chat_payload_includes_json_response_format() -> None:
     client = LocalAIClient(AppSettings())
     runtime = _make_runtime()
@@ -285,3 +297,133 @@ def test_build_chat_payload_omits_sampling_params_when_none() -> None:
     assert payload["temperature"] == 0.7
     for key in ("top_p", "top_k", "min_p", "repeat_penalty"):
         assert key not in payload
+
+
+def test_build_chat_payload_disables_nemotron_thinking_with_greedy() -> None:
+    client = LocalAIClient(AppSettings())
+    runtime = _make_nemotron_runtime()
+    payload = client._build_chat_payload(
+        runtime, "prompt", stream=False, enforce_json=False
+    )
+    assert payload["messages"] == [{"role": "user", "content": "prompt"}]
+    assert payload["chat_template_kwargs"] == {"enable_thinking": False}
+    assert payload["temperature"] == 0.0
+    for key in ("top_p", "top_k", "min_p", "repeat_penalty"):
+        assert key not in payload
+
+
+def test_build_completions_payload_uses_greedy_for_nemotron() -> None:
+    client = LocalAIClient(AppSettings())
+    runtime = _make_nemotron_runtime()
+    payload = client._build_completions_payload(
+        runtime, "prompt", stream=False
+    )
+    assert payload["prompt"] == "prompt"
+    assert payload["temperature"] == 0.0
+    for key in ("top_p", "top_k", "min_p", "repeat_penalty"):
+        assert key not in payload
+
+
+def test_build_chat_payload_extracts_raw_prompt_for_nemotron() -> None:
+    client = LocalAIClient(AppSettings())
+    runtime = _make_nemotron_runtime()
+    raw_prompt = (
+        "<bos><start_of_turn>user\n"
+        "Translate this text.\n"
+        "===INPUT_TEXT===\n"
+        "こんにちは\n"
+        "===END_INPUT_TEXT===<end_of_turn>\n"
+        "<start_of_turn>model\n"
+    )
+
+    payload = client._build_chat_payload(
+        runtime, raw_prompt, stream=False, enforce_json=False
+    )
+
+    assert payload["messages"] == [
+        {
+            "role": "user",
+            "content": "Translate this text.\n===INPUT_TEXT===\nこんにちは\n===END_INPUT_TEXT===",
+        }
+    ]
+    assert payload["chat_template_kwargs"] == {"enable_thinking": False}
+
+
+def test_translate_single_forces_chat_completions_for_nemotron_raw_prompt() -> None:
+    client = LocalAIClient(AppSettings())
+    runtime = _make_nemotron_runtime()
+    raw_prompt = (
+        "<bos><start_of_turn>user\n"
+        "Translate this text.\n"
+        "===INPUT_TEXT===\n"
+        "こんにちは\n"
+        "===END_INPUT_TEXT===<end_of_turn>\n"
+        "<start_of_turn>model\n"
+    )
+    called = {"chat": 0, "completions": 0}
+
+    client._ensure_warmed = lambda *args, **kwargs: None  # type: ignore[method-assign]
+
+    def fake_chat(*args, **kwargs) -> LocalAIRequestResult:
+        _ = args, kwargs
+        called["chat"] += 1
+        return LocalAIRequestResult(content="Hello", model_id=None)
+
+    def fake_completions(*args, **kwargs) -> LocalAIRequestResult:
+        _ = args, kwargs
+        called["completions"] += 1
+        raise AssertionError("nemotron raw prompt should not use completions path")
+
+    client._chat_completions = fake_chat  # type: ignore[method-assign]
+    client._completions = fake_completions  # type: ignore[method-assign]
+
+    result = client.translate_single(
+        text="ignored",
+        prompt=raw_prompt,
+        runtime=runtime,
+        timeout=1,
+    )
+
+    assert result == "Hello"
+    assert called == {"chat": 1, "completions": 0}
+
+
+def test_translate_sync_forces_chat_completions_for_nemotron_raw_prompt() -> None:
+    client = LocalAIClient(AppSettings())
+    runtime = _make_nemotron_runtime()
+    raw_prompt = (
+        "<bos><start_of_turn>user\n"
+        'Return JSON only: {"items":[{"id":1,"translation":"Hello"}]}\n'
+        "<end_of_turn>\n"
+        "<start_of_turn>model\n"
+    )
+    called = {"chat": 0, "completions": 0}
+
+    client._ensure_warmed = lambda *args, **kwargs: None  # type: ignore[method-assign]
+
+    def fake_chat(*args, **kwargs) -> LocalAIRequestResult:
+        _ = args, kwargs
+        called["chat"] += 1
+        return LocalAIRequestResult(
+            content='{"items":[{"id":1,"translation":"Hello"}]}',
+            model_id=None,
+            parsed_json={"items": [{"id": 1, "translation": "Hello"}]},
+        )
+
+    def fake_completions(*args, **kwargs) -> LocalAIRequestResult:
+        _ = args, kwargs
+        called["completions"] += 1
+        raise AssertionError("nemotron raw prompt should not use completions path")
+
+    client._chat_completions = fake_chat  # type: ignore[method-assign]
+    client._completions = fake_completions  # type: ignore[method-assign]
+
+    result = client.translate_sync(
+        texts=["こんにちは"],
+        prompt=raw_prompt,
+        runtime=runtime,
+        timeout=1,
+    )
+
+    assert result == ["Hello"]
+    assert called == {"chat": 1, "completions": 0}

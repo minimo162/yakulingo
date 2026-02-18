@@ -146,3 +146,106 @@ def test_streaming_preview_flush_forces_final_update(monkeypatch) -> None:
         assert rendered[-1] == "second"
     finally:
         loop.close()
+
+
+def test_streaming_preview_emits_small_tail_update_without_stall(monkeypatch) -> None:
+    app = YakuLingoApp()
+    app.state.text_translating = True
+    app._shutdown_requested = False
+
+    monkeypatch.setattr(app, "_is_local_streaming_preview_enabled", lambda: True)
+    monkeypatch.setattr(app, "_normalize_streaming_preview_text", lambda text: text)
+
+    rendered: list[str] = []
+
+    def fake_render(
+        _client: object,
+        preview_text: str,
+        *,
+        refresh_tabs_on_first_chunk: bool,
+        scroll_to_bottom: bool,
+        force_follow_on_first_chunk: bool,
+    ) -> None:
+        _ = refresh_tabs_on_first_chunk, scroll_to_bottom, force_follow_on_first_chunk
+        rendered.append(preview_text)
+
+    monkeypatch.setattr(app, "_render_text_streaming_preview", fake_render)
+
+    client = SimpleNamespace(has_socket_connection=True)
+    loop = asyncio.new_event_loop()
+    try:
+        handler = app._create_text_streaming_preview_on_chunk(
+            loop=loop,
+            client_supplier=lambda: client,
+            trace_id="tail",
+            update_interval_seconds=0.05,
+            scroll_interval_seconds=999.0,
+            scroll_to_bottom=False,
+        )
+
+        first = "a" * 300
+        second = "a" * 301
+
+        handler(first)
+        loop.run_until_complete(asyncio.sleep(0))
+        assert rendered and rendered[-1] == first
+
+        handler(second)
+        loop.run_until_complete(asyncio.sleep(0))
+        assert rendered[-1] == first
+
+        loop.run_until_complete(asyncio.sleep(0.08))
+        assert rendered[-1] == second
+    finally:
+        loop.close()
+
+
+def test_streaming_preview_does_not_regress_on_shorter_truncated_update(
+    monkeypatch,
+) -> None:
+    app = YakuLingoApp()
+    app.state.text_translating = True
+    app._shutdown_requested = False
+
+    monkeypatch.setattr(app, "_is_local_streaming_preview_enabled", lambda: True)
+    monkeypatch.setattr(app, "_normalize_streaming_preview_text", lambda text: text)
+
+    rendered: list[str] = []
+
+    def fake_render(
+        _client: object,
+        preview_text: str,
+        *,
+        refresh_tabs_on_first_chunk: bool,
+        scroll_to_bottom: bool,
+        force_follow_on_first_chunk: bool,
+    ) -> None:
+        _ = refresh_tabs_on_first_chunk, scroll_to_bottom, force_follow_on_first_chunk
+        rendered.append(preview_text)
+
+    monkeypatch.setattr(app, "_render_text_streaming_preview", fake_render)
+
+    client = SimpleNamespace(has_socket_connection=True)
+    loop = asyncio.new_event_loop()
+    try:
+        handler = app._create_text_streaming_preview_on_chunk(
+            loop=loop,
+            client_supplier=lambda: client,
+            trace_id="digits",
+            update_interval_seconds=0.01,
+            scroll_interval_seconds=999.0,
+            scroll_to_bottom=False,
+        )
+
+        full = "売上高 2,238,463"
+        truncated = "売上高 2,238,46"
+
+        handler(full)
+        loop.run_until_complete(asyncio.sleep(0.02))
+        assert rendered and rendered[-1] == full
+
+        handler(truncated)
+        loop.run_until_complete(asyncio.sleep(0.02))
+        assert rendered[-1] == full
+    finally:
+        loop.close()

@@ -3654,6 +3654,28 @@ class YakuLingoApp:
                 )
                 schedule_apply()
 
+            def flush_preview() -> None:
+                nonlocal last_preview_update, latest_preview_text
+                if not self._is_local_streaming_preview_enabled():
+                    return
+                if not latest_preview_text:
+                    return
+                last_preview_update = time.monotonic()
+                preview_text = (
+                    self._normalize_streaming_preview_text(latest_preview_text) or ""
+                )
+                buffer.publish(
+                    {
+                        "state": {
+                            "text_streaming_preview": preview_text,
+                        },
+                        "streaming": True,
+                    }
+                )
+                schedule_apply()
+
+            setattr(on_chunk, "flush", flush_preview)
+
             stream_handler = (
                 on_chunk if self._is_local_streaming_preview_enabled() else None
             )
@@ -3664,6 +3686,16 @@ class YakuLingoApp:
                 effective_detected_language,
                 stream_handler,
             )
+            flush = getattr(stream_handler, "flush", None) if stream_handler else None
+            if callable(flush):
+                try:
+                    flush()
+                except Exception:
+                    logger.debug(
+                        "Hotkey translation [%s] streaming preview flush failed",
+                        trace_id,
+                        exc_info=True,
+                    )
             if result:
                 result.detected_language = detected_language
             buffer.publish(
@@ -7149,6 +7181,10 @@ class YakuLingoApp:
         if self._translate_button is None:
             return
 
+        default_tooltip = (
+            "翻訳を実行" if self.state.current_tab == Tab.TEXT else "翻訳する"
+        )
+
         if self.state.is_translating():
             # Show loading spinner and disable
             self._translate_button.props("loading disable")
@@ -7177,6 +7213,8 @@ class YakuLingoApp:
                 reason = "テキストを入力してください"
             elif self.state.current_tab == Tab.FILE and self.state.file_state != FileState.SELECTED:
                 reason = "翻訳するファイルを選択してください"
+            if not reason:
+                reason = default_tooltip
             try:
                 self._translate_button.tooltip(reason)
             except Exception:
@@ -7185,7 +7223,7 @@ class YakuLingoApp:
             # Enable the button
             self._translate_button.props(":loading=false :disable=false")
             try:
-                self._translate_button.tooltip("")
+                self._translate_button.tooltip(default_tooltip)
             except Exception:
                 pass
 
@@ -8203,21 +8241,11 @@ class YakuLingoApp:
         dirty = False
         update_scheduled = False
         last_ui_update = 0.0
-        last_rendered_len = 0
         last_scroll_time = 0.0
-
-        def _min_preview_delta_chars(current_len: int) -> int:
-            if current_len < 256:
-                return 1
-            if current_len < 1024:
-                return 24
-            if current_len < 4096:
-                return 64
-            return 128
 
         def _apply_update(*, force: bool = False) -> None:
             nonlocal dirty, update_scheduled, last_ui_update, latest_preview_text
-            nonlocal last_rendered_len, last_scroll_time
+            nonlocal last_scroll_time
             if not self.state.text_translating or self._shutdown_requested:
                 with lock:
                     dirty = False
@@ -8228,29 +8256,6 @@ class YakuLingoApp:
             elapsed = now - last_ui_update
             if not force and elapsed < update_interval_seconds:
                 delay = update_interval_seconds - elapsed
-                try:
-                    loop.call_later(delay, _apply_update)
-                except Exception:
-                    with lock:
-                        dirty = False
-                        update_scheduled = False
-                return
-
-            with lock:
-                raw_len = len(latest_preview_text)
-                pending = dirty
-
-            max_stale_seconds = max(update_interval_seconds * 3, 0.35)
-            min_delta = _min_preview_delta_chars(raw_len)
-            delta_len = raw_len - last_rendered_len
-            if (
-                not force
-                and last_rendered_len > 0
-                and pending
-                and delta_len < min_delta
-                and elapsed < max_stale_seconds
-            ):
-                delay = max(0.01, max_stale_seconds - elapsed)
                 try:
                     loop.call_later(delay, _apply_update)
                 except Exception:
@@ -8290,7 +8295,6 @@ class YakuLingoApp:
                 self._normalize_streaming_preview_text(raw_text_to_show) or ""
             )
             last_ui_update = time.monotonic()
-            last_rendered_len = len(raw_text_to_show)
             should_scroll = False
             if scroll_to_bottom:
                 should_scroll = (
@@ -8336,6 +8340,14 @@ class YakuLingoApp:
                 else partial_text
             )
             with lock:
+                # Some backends may transiently emit a shorter candidate during streaming.
+                # Keep the longer preview to avoid visible digit/text truncation flicker.
+                if (
+                    latest_preview_text
+                    and len(preview_text) < len(latest_preview_text)
+                    and latest_preview_text.startswith(preview_text)
+                ):
+                    preview_text = latest_preview_text
                 latest_preview_text = preview_text
                 dirty = True
                 if update_scheduled:

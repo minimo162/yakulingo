@@ -6,7 +6,7 @@ from yakulingo.config.settings import AppSettings
 from yakulingo.services.translation_service import TranslationService
 
 
-def test_local_style_comparison_returns_error_on_output_language_mismatch() -> None:
+def test_local_style_comparison_keeps_output_without_language_guard() -> None:
     settings = AppSettings(translation_backend="local", copilot_enabled=False)
     service = TranslationService(config=settings, prompts_dir=Path("prompts"))
     call_count = 0
@@ -30,8 +30,9 @@ def test_local_style_comparison_returns_error_on_output_language_mismatch() -> N
     )
 
     assert call_count == 1
-    assert result.error_message
-    assert not result.options
+    assert result.error_message is None
+    assert result.options
+    assert result.options[0].text == '{"translation":"汉语测试","explanation":""}'
     metadata = result.metadata or {}
-    assert metadata.get("output_language_mismatch") is True
+    assert metadata.get("output_language_mismatch") is None
     assert metadata.get("output_language_retry") is None

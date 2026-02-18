@@ -16,7 +16,7 @@ from yakulingo.services.translation_service import (
 def test_prompt_builder_pre_normalizes_jp_cho_oku_to_en_billion() -> None:
     source_text = "売上高は2兆2,385億円となりました。"
     normalized = PromptBuilder.normalize_input_text(source_text, output_language="en")
-    assert "¥2,238.5 billion" in normalized
+    assert normalized == source_text
 
 
 @pytest.mark.parametrize(

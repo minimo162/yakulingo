@@ -279,10 +279,10 @@ def test_local_batch_retries_when_numeric_rules_violated() -> None:
 
     assert copilot.calls == 1
     assert copilot.texts_per_call
-    assert "¥2,238.5 billion" in copilot.texts_per_call[0][0]
-    assert "2兆2,385億円" not in copilot.texts_per_call[0][0]
-    assert "¥155.4 billion" in copilot.texts_per_call[0][1]
-    assert "1,554億円" not in copilot.texts_per_call[0][1]
+    assert "2兆2,385億円" in copilot.texts_per_call[0][0]
+    assert "1,554億円" in copilot.texts_per_call[0][1]
+    assert "¥2,238.5 billion" not in copilot.texts_per_call[0][0]
+    assert "¥155.4 billion" not in copilot.texts_per_call[0][1]
     assert result.untranslated_block_ids == []
     assert result.translations["b1"] == "Revenue was ¥2,238.5 billion."
     assert (

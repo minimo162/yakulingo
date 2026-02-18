@@ -6,7 +6,7 @@ from yakulingo.config.settings import AppSettings
 from yakulingo.services.translation_service import TranslationService
 
 
-def test_local_style_comparison_retries_when_translation_is_too_short(
+def test_local_style_comparison_keeps_short_translation_without_error(
     monkeypatch,
 ) -> None:
     settings = AppSettings(translation_backend="local", copilot_enabled=False)
@@ -46,7 +46,7 @@ def test_local_style_comparison_retries_when_translation_is_too_short(
     assert (result.metadata or {}).get("incomplete_translation") is None
 
 
-def test_local_style_comparison_returns_error_when_retry_still_too_short(
+def test_local_style_comparison_keeps_short_translation_without_retry(
     monkeypatch,
 ) -> None:
     settings = AppSettings(translation_backend="local", copilot_enabled=False)
@@ -101,10 +101,10 @@ def test_local_style_comparison_retries_when_numeric_rules_violated(
         _ = source_text, reference_files, on_chunk
         calls += 1
         if calls == 1:
-            assert "¥2,238.5 billion" in prompt
-            assert "¥155.4 billion" in prompt
-            assert "2兆2,385億円" not in prompt
-            assert "1,554億円" not in prompt
+            assert "2兆2,385億円" in prompt
+            assert "1,554億円" in prompt
+            assert "¥2,238.5 billion" not in prompt
+            assert "¥155.4 billion" not in prompt
             return "Revenue was ¥2,238.5 billion, down by ¥155.4 billion year on year."
         raise AssertionError("called too many times")
 

@@ -13,17 +13,7 @@ def test_to_en_converts_cho_oku_to_trillion_billion_correctly() -> None:
     )
 
     normalized = PromptBuilder.normalize_input_text(source_text, output_language="en")
-    assert "¥2,238.5 billion" in normalized
-    for expected in (
-        "¥155.4 billion",
-        "¥53.9 billion",
-        "¥103.0 billion",
-        "¥21.3 billion",
-        "¥83.5 billion",
-        "¥45.3 billion",
-        "¥35.3 billion",
-    ):
-        assert expected in normalized
+    assert normalized == source_text
 
 
 def test_to_en_fixes_cho_oku_when_model_treats_cho_as_1000_oku() -> None:
@@ -37,16 +27,7 @@ def test_to_en_fixes_cho_oku_when_model_treats_cho_as_1000_oku() -> None:
     )
 
     normalized = PromptBuilder.normalize_input_text(source_text, output_language="en")
-    assert "¥4,027.9 billion" in normalized
-    for expected in (
-        "¥62.2 billion",
-        "¥10.8 billion",
-        "¥2,269.3 billion",
-        "¥1,758.6 billion",
-        "¥51.4 billion",
-        "¥45.3 billion",
-    ):
-        assert expected in normalized
+    assert normalized == source_text
 
 
 def test_to_en_fixes_cho_oku_when_model_outputs_concatenated_decimal_billion() -> None:
@@ -62,14 +43,4 @@ def test_to_en_fixes_cho_oku_when_model_outputs_concatenated_decimal_billion() -
     )
 
     normalized = PromptBuilder.normalize_input_text(source_text, output_language="en")
-    assert "¥1,053.3 billion" in normalized
-    for expected in (
-        "¥52.3 billion",
-        "¥96.9 billion",
-        "¥802.1 billion",
-        "¥251.2 billion",
-        "¥43.6 billion",
-        "¥197.9 billion",
-        "¥50.7 billion",
-    ):
-        assert expected in normalized
+    assert normalized == source_text

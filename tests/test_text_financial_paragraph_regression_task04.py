@@ -20,10 +20,10 @@ def test_style_comparison_financial_paragraph_auto_corrects_numeric_units(
         nonlocal calls
         _ = text, reference_files, on_chunk
         calls += 1
-        assert "¥2,238.5 billion" in prompt
-        assert "¥155.4 billion" in prompt
-        assert "2兆2,385億円" not in prompt
-        assert "1,554億円" not in prompt
+        assert "2兆2,385億円" in prompt
+        assert "1,554億円" in prompt
+        assert "¥2,238.5 billion" not in prompt
+        assert "¥155.4 billion" not in prompt
         return "Revenue was ¥2,238.5 billion, down by ¥155.4 billion year on year."
 
     monkeypatch.setattr(

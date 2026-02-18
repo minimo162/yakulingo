@@ -832,36 +832,9 @@ def _apply_safe_raw_text_fixes(
     output_language: str,
     metadata: dict,
 ) -> str:
-    """Apply safe fixes even when returning raw model output."""
-    fixed_text = translated_text or ""
-    if not fixed_text:
-        return ""
-
-    if output_language != "en":
-        return fixed_text
-
-    fixed_text, fixed = _fix_to_en_negative_parens_if_possible(
-        source_text=source_text,
-        translated_text=fixed_text,
-    )
-    if fixed:
-        metadata["to_en_negative_correction"] = True
-
-    fixed_text, fixed = _fix_to_en_k_notation_if_possible(
-        source_text=source_text,
-        translated_text=fixed_text,
-    )
-    if fixed:
-        metadata["to_en_k_notation_correction"] = True
-
-    fixed_text, fixed = _fix_to_en_month_abbrev_if_possible(
-        source_text=source_text,
-        translated_text=fixed_text,
-    )
-    if fixed:
-        metadata["to_en_month_abbrev_correction"] = True
-
-    return fixed_text
+    """Keep raw model output as-is (post-translation fixes disabled)."""
+    _ = source_text, output_language, metadata
+    return translated_text or ""
 
 
 def _fix_to_en_k_notation_if_possible(
@@ -2939,7 +2912,7 @@ class BatchTranslator:
                     else:
                         unique_translations = unique_translations[: len(unique_texts)]
 
-            post_check_enabled = not is_local_backend
+            post_check_enabled = False
             cleaned_unique_translations = []
             hangul_indices: list[int] = []
             output_language_mismatch_indices: list[int] = []
@@ -2986,7 +2959,7 @@ class BatchTranslator:
                     output_language,
                 )
 
-            if not is_local_backend:
+            if False:
                 # Treat ellipsis-only outputs ("..." / "…") as invalid translations and fall back.
                 ellipsis_only_indices = [
                     idx
@@ -4334,26 +4307,6 @@ class TranslationService:
                     )
 
                 if output_language == "en":
-                    if _is_text_output_language_mismatch(merged, "en"):
-                        metadata["output_language_mismatch"] = True
-                        return TextTranslationResult(
-                            source_text=text,
-                            source_char_count=len(text),
-                            output_language=output_language,
-                            detected_language=detected_language,
-                            error_message="翻訳結果が英語ではありませんでした（出力言語ガード）",
-                            metadata=metadata,
-                        )
-                    if _looks_incomplete_translation_to_en(text, merged):
-                        metadata["incomplete_translation"] = True
-                        return TextTranslationResult(
-                            source_text=text,
-                            source_char_count=len(text),
-                            output_language=output_language,
-                            detected_language=detected_language,
-                            error_message="翻訳結果が不完全でした（短すぎます）。",
-                            metadata=metadata,
-                        )
                     return TextTranslationResult(
                         source_text=text,
                         source_char_count=len(text),
@@ -4365,16 +4318,6 @@ class TranslationService:
                         metadata=metadata,
                     )
 
-                if _is_text_output_language_mismatch(merged, "jp"):
-                    metadata["output_language_mismatch"] = True
-                    return TextTranslationResult(
-                        source_text=text,
-                        source_char_count=len(text),
-                        output_language=output_language,
-                        detected_language=detected_language,
-                        error_message="翻訳結果が日本語ではありませんでした（出力言語ガード）",
-                        metadata=metadata,
-                    )
                 return TextTranslationResult(
                     source_text=text,
                     source_char_count=len(text),
@@ -4412,7 +4355,7 @@ class TranslationService:
                     )
                 stream_handler = _wrap_local_streaming_on_chunk(
                     on_chunk,
-                    expected_output_language=output_language,
+                    expected_output_language=None,
                     parse_json=False,
                     prompt=prompt,
                 )
@@ -4474,77 +4417,10 @@ class TranslationService:
                         metadata=metadata,
                     )
 
-                needs_output_language_retry = _is_text_output_language_mismatch(
-                    translation, "en"
-                )
-                needs_ellipsis_retry = _is_ellipsis_only_translation(text, translation)
-                needs_placeholder_retry = _is_placeholder_only_translation(
-                    text, translation
-                )
+                needs_output_language_retry = False
+                needs_ellipsis_retry = False
+                needs_placeholder_retry = False
                 if simple_prompt_mode:
-                    if needs_output_language_retry:
-                        metadata["output_language_mismatch"] = True
-                        return TextTranslationResult(
-                            source_text=text,
-                            source_char_count=len(text),
-                            output_language=output_language,
-                            detected_language=detected_language,
-                            error_message="翻訳結果が英語ではありませんでした（出力言語ガード）",
-                            metadata=metadata,
-                        )
-                    if needs_ellipsis_retry:
-                        return TextTranslationResult(
-                            source_text=text,
-                            source_char_count=len(text),
-                            output_language=output_language,
-                            detected_language=detected_language,
-                            error_message=(
-                                "ローカルAIの出力が「...」のみでした。モデル/設定を確認してください。"
-                            ),
-                            metadata=metadata,
-                        )
-                    if needs_placeholder_retry:
-                        return TextTranslationResult(
-                            source_text=text,
-                            source_char_count=len(text),
-                            output_language=output_language,
-                            detected_language=detected_language,
-                            error_message=(
-                                "ローカルAIの出力がプレースホルダーのみでした。モデル/設定を確認してください。"
-                            ),
-                            metadata=metadata,
-                        )
-                    if _looks_incomplete_translation_to_en(text, translation):
-                        metadata["incomplete_translation"] = True
-                        return TextTranslationResult(
-                            source_text=text,
-                            source_char_count=len(text),
-                            output_language=output_language,
-                            detected_language=detected_language,
-                            error_message="翻訳結果が不完全でした（短すぎます）。",
-                            metadata=metadata,
-                        )
-                    fixed_text, fixed = _fix_to_en_negative_parens_if_possible(
-                        source_text=text,
-                        translated_text=translation,
-                    )
-                    if fixed:
-                        translation = fixed_text
-                        metadata["to_en_negative_correction"] = True
-                    fixed_text, fixed = _fix_to_en_k_notation_if_possible(
-                        source_text=text,
-                        translated_text=translation,
-                    )
-                    if fixed:
-                        translation = fixed_text
-                        metadata["to_en_k_correction"] = True
-                    fixed_text, fixed = _fix_to_en_month_abbrev_if_possible(
-                        source_text=text,
-                        translated_text=translation,
-                    )
-                    if fixed:
-                        translation = fixed_text
-                        metadata["to_en_month_abbrev_correction"] = True
                     return TextTranslationResult(
                         source_text=text,
                         source_char_count=len(text),
@@ -4559,53 +4435,12 @@ class TranslationService:
                         detected_language=detected_language,
                         metadata=metadata,
                     )
-                if (
-                    not needs_output_language_retry
-                    and not needs_ellipsis_retry
-                    and not needs_placeholder_retry
-                    and _looks_incomplete_translation_to_en(text, translation)
-                ):
-                    metadata["incomplete_translation"] = True
-                    return TextTranslationResult(
-                        source_text=text,
-                        source_char_count=len(text),
-                        output_language=output_language,
-                        detected_language=detected_language,
-                        error_message="翻訳結果が不完全でした（短すぎます）。",
-                        metadata=metadata,
-                    )
-
-                if not needs_output_language_retry:
-                    fixed_text, fixed = _fix_to_en_negative_parens_if_possible(
-                        source_text=text,
-                        translated_text=translation,
-                    )
-                    if fixed:
-                        translation = fixed_text
-                        metadata["to_en_negative_correction"] = True
-
-                    fixed_text, fixed = _fix_to_en_k_notation_if_possible(
-                        source_text=text,
-                        translated_text=translation,
-                    )
-                    if fixed:
-                        translation = fixed_text
-                        metadata["to_en_k_correction"] = True
-
-                    fixed_text, fixed = _fix_to_en_month_abbrev_if_possible(
-                        source_text=text,
-                        translated_text=translation,
-                    )
-                    if fixed:
-                        translation = fixed_text
-                        metadata["to_en_month_abbrev_correction"] = True
-
                 needs_length_retry = False
                 length_limit = 0
                 length_ratio = 0.0
                 length_source_count = len((text or "").strip())
                 length_translation_count = len((translation or "").strip())
-                if not needs_output_language_retry and detected_language == "日本語":
+                if False and detected_language == "日本語":
                     (
                         needs_length_retry,
                         length_limit,
@@ -4790,53 +4625,6 @@ class TranslationService:
                             len(text or ""),
                         )
 
-                if _is_text_output_language_mismatch(translation, "en"):
-                    metadata["output_language_mismatch"] = True
-                    if metadata.get("output_language_retry"):
-                        metadata["output_language_retry_failed"] = True
-                    return TextTranslationResult(
-                        source_text=text,
-                        source_char_count=len(text),
-                        output_language=output_language,
-                        detected_language=detected_language,
-                        error_message="翻訳結果が英語ではありませんでした（出力言語ガード）",
-                        metadata=metadata,
-                    )
-                if _looks_incomplete_translation_to_en(text, translation):
-                    metadata["incomplete_translation"] = True
-                    return TextTranslationResult(
-                        source_text=text,
-                        source_char_count=len(text),
-                        output_language=output_language,
-                        detected_language=detected_language,
-                        error_message="翻訳結果が不完全でした（短すぎます）。",
-                        metadata=metadata,
-                    )
-
-                fixed_text, fixed = _fix_to_en_negative_parens_if_possible(
-                    source_text=text,
-                    translated_text=translation,
-                )
-                if fixed:
-                    translation = fixed_text
-                    metadata["to_en_negative_correction"] = True
-
-                fixed_text, fixed = _fix_to_en_k_notation_if_possible(
-                    source_text=text,
-                    translated_text=translation,
-                )
-                if fixed:
-                    translation = fixed_text
-                    metadata["to_en_k_correction"] = True
-
-                fixed_text, fixed = _fix_to_en_month_abbrev_if_possible(
-                    source_text=text,
-                    translated_text=translation,
-                )
-                if fixed:
-                    translation = fixed_text
-                    metadata["to_en_month_abbrev_correction"] = True
-
                 if metadata.get("to_en_rule_retry"):
                     remaining = _collect_to_en_rule_retry_reasons(text, translation)
                     if remaining:
@@ -4850,7 +4638,7 @@ class TranslationService:
                             error_message="翻訳結果が翻訳ルールに従っていませんでした（k/負数/月略称）",
                             metadata=metadata,
                         )
-                if detected_language == "日本語":
+                if False and detected_language == "日本語":
                     (
                         needs_length_retry_final,
                         length_limit_final,
@@ -4928,7 +4716,7 @@ class TranslationService:
                 )
             stream_handler = _wrap_local_streaming_on_chunk(
                 on_chunk,
-                expected_output_language=output_language,
+                expected_output_language=None,
                 parse_json=False,
                 prompt=prompt,
             )
@@ -4981,46 +4769,10 @@ class TranslationService:
                     error_message="ローカルAIの応答が空でした（プレーンテキスト）",
                     metadata=metadata,
                 )
-            needs_ellipsis_retry = _is_ellipsis_only_translation(text, translation)
-            needs_placeholder_retry = _is_placeholder_only_translation(
-                text, translation
-            )
-            needs_output_language_retry = _is_text_output_language_mismatch(
-                translation, "jp"
-            )
+            needs_ellipsis_retry = False
+            needs_placeholder_retry = False
+            needs_output_language_retry = False
             if simple_prompt_mode:
-                if needs_output_language_retry:
-                    metadata["output_language_mismatch"] = True
-                    return TextTranslationResult(
-                        source_text=text,
-                        source_char_count=len(text),
-                        output_language=output_language,
-                        detected_language=detected_language,
-                        error_message="翻訳結果が日本語ではありませんでした（出力言語ガード）",
-                        metadata=metadata,
-                    )
-                if needs_ellipsis_retry:
-                    return TextTranslationResult(
-                        source_text=text,
-                        source_char_count=len(text),
-                        output_language=output_language,
-                        detected_language=detected_language,
-                        error_message=(
-                            "ローカルAIの出力が「...」のみでした。モデル/設定を確認してください。"
-                        ),
-                        metadata=metadata,
-                    )
-                if needs_placeholder_retry:
-                    return TextTranslationResult(
-                        source_text=text,
-                        source_char_count=len(text),
-                        output_language=output_language,
-                        detected_language=detected_language,
-                        error_message=(
-                            "ローカルAIの出力がプレースホルダーのみでした。モデル/設定を確認してください。"
-                        ),
-                        metadata=metadata,
-                    )
                 return TextTranslationResult(
                     source_text=text,
                     source_char_count=len(text),
@@ -5262,45 +5014,6 @@ class TranslationService:
             result = parse_compare_result(raw_result)
 
             if result:
-                if result.output_language == "en" and result.options:
-                    translation = result.options[0].text
-
-                    fixed_text, fixed = _fix_to_en_negative_parens_if_possible(
-                        source_text=text,
-                        translated_text=translation,
-                    )
-                    if fixed:
-                        metadata = dict(result.metadata) if result.metadata else {}
-                        metadata.setdefault("backend", "local")
-                        metadata["to_en_negative_correction"] = True
-                        result.metadata = metadata
-                        translation = fixed_text
-
-                    fixed_text, fixed = _fix_to_en_k_notation_if_possible(
-                        source_text=text,
-                        translated_text=translation,
-                    )
-                    if fixed:
-                        metadata = dict(result.metadata) if result.metadata else {}
-                        metadata.setdefault("backend", "local")
-                        metadata["to_en_k_correction"] = True
-                        result.metadata = metadata
-                        translation = fixed_text
-
-                    fixed_text, fixed = _fix_to_en_month_abbrev_if_possible(
-                        source_text=text,
-                        translated_text=translation,
-                    )
-                    if fixed:
-                        metadata = dict(result.metadata) if result.metadata else {}
-                        metadata.setdefault("backend", "local")
-                        metadata["to_en_month_abbrev_correction"] = True
-                        result.metadata = metadata
-                        translation = fixed_text
-
-                    if translation != result.options[0].text:
-                        result.options[0].text = translation
-                        result.options[0].explanation = ""
                 return attach_backend_telemetry(result)
 
             logger.warning("Empty response received from backend")

@@ -24,7 +24,7 @@ if "!STEP7_FROM_INSTALL_DEPS!"=="0" (
 
 echo.
 echo [6/6] Installing Local AI runtime (llama.cpp + fixed Nemotron model)...
-echo [INFO] Model is fixed: mmnga-o/NVIDIA-Nemotron-Nano-9B-v2-Japanese-gguf/NVIDIA-Nemotron-Nano-9B-v2-Japanese-IQ4_XS.gguf
+echo [INFO] Model is fixed: mmnga-o/NVIDIA-Nemotron-Nano-9B-v2-Japanese-gguf/NVIDIA-Nemotron-Nano-9B-v2-Japanese-Q4_K_M.gguf
 echo [INFO] This step may download large files (llama.cpp + model; a few GB).
 
 echo.

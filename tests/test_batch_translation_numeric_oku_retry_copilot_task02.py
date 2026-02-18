@@ -75,6 +75,6 @@ def test_batch_translator_copilot_falls_back_when_numeric_fix_not_possible() -> 
     assert len(copilot.calls) == 1
     for call in copilot.calls:
         assert "Follow numeric conversion rules strictly" not in str(call["prompt"])
-    assert "¥2,238.5 billion" in str(copilot.calls[0]["prompt"])
-    assert "22,385億円" not in str(copilot.calls[0]["prompt"])
+    assert "22,385億円" in str(copilot.calls[0]["prompt"])
+    assert "¥2,238.5 billion" not in str(copilot.calls[0]["prompt"])
     assert result.translations["b1"] == "Net sales were ¥2,238.5 billion."

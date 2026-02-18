@@ -7181,51 +7181,18 @@ class YakuLingoApp:
         if self._translate_button is None:
             return
 
-        default_tooltip = (
-            "翻訳を実行" if self.state.current_tab == Tab.TEXT else "翻訳する"
-        )
-
         if self.state.is_translating():
             # Show loading spinner and disable
             self._translate_button.props("loading disable")
-            try:
-                self._translate_button.tooltip("翻訳中...")
-            except Exception:
-                pass
         elif self.state.local_ai_state == LocalAIState.WARMING_UP:
             # Startup warmup gate: show loading to make the reason obvious.
             self._translate_button.props("loading disable")
-            try:
-                self._translate_button.tooltip("ウォームアップ中です（完了まで翻訳できません）")
-            except Exception:
-                pass
         elif not self.state.can_translate():
             # Disable but no loading (e.g., no text entered / no file selected / not ready)
             self._translate_button.props(":loading=false disable")
-            reason = ""
-            if self.state.local_ai_state == LocalAIState.STARTING:
-                reason = "ローカルAIを起動中です"
-            elif self.state.local_ai_state == LocalAIState.NOT_INSTALLED:
-                reason = "ローカルAIが未インストールです"
-            elif self.state.local_ai_state == LocalAIState.ERROR:
-                reason = "ローカルAIでエラーが発生しました"
-            elif self.state.current_tab == Tab.TEXT and not self.state.source_text.strip():
-                reason = "テキストを入力してください"
-            elif self.state.current_tab == Tab.FILE and self.state.file_state != FileState.SELECTED:
-                reason = "翻訳するファイルを選択してください"
-            if not reason:
-                reason = default_tooltip
-            try:
-                self._translate_button.tooltip(reason)
-            except Exception:
-                pass
         else:
             # Enable the button
             self._translate_button.props(":loading=false :disable=false")
-            try:
-                self._translate_button.tooltip(default_tooltip)
-            except Exception:
-                pass
 
     def _start_new_translation(self):
         """Reset both text and file state and return to text translation."""

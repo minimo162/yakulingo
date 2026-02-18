@@ -350,7 +350,7 @@ try {
     # Default model (fixed):
     # Always use a prebuilt GGUF downloaded from Hugging Face.
     $defaultModelRepo = 'mmnga-o/NVIDIA-Nemotron-Nano-9B-v2-Japanese-gguf'
-    $defaultModelFile = 'NVIDIA-Nemotron-Nano-9B-v2-Japanese-IQ4_XS.gguf'
+    $defaultModelFile = 'NVIDIA-Nemotron-Nano-9B-v2-Japanese-Q4_K_M.gguf'
     $defaultModelRevision = 'main'
 
     # Model selection is fixed (manifest/env overrides are ignored).
@@ -645,4 +645,3 @@ try {
     if ($_.ScriptStackTrace) { Write-Host $_.ScriptStackTrace }
     exit 1
 }
-

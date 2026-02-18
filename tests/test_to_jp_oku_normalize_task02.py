@@ -8,17 +8,17 @@ from yakulingo.services.prompt_builder import PromptBuilder
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
-        ("450 billion", "4,500億"),
-        ("450 billion yen", "4,500億円"),
-        ("2,238.5 billion yen", "2兆2,385億円"),
-        ("(450) billion yen", "(4,500億円)"),
-        ("▲450 billion", "▲4,500億"),
-        ("450bn", "4,500億"),
-        ("450 Bn Yen", "4,500億円"),
-        ("4,500 oku yen", "4,500億円"),
+        ("450 billion", "450 billion"),
+        ("450 billion yen", "450 billion yen"),
+        ("2,238.5 billion yen", "2,238.5 billion yen"),
+        ("(450) billion yen", "(450) billion yen"),
+        ("▲450 billion", "▲450 billion"),
+        ("450bn", "450bn"),
+        ("450 Bn Yen", "450 Bn Yen"),
+        ("4,500 oku yen", "4,500 oku yen"),
     ],
 )
-def test_fix_to_jp_oku_numeric_unit_if_possible_rewrites(
+def test_fix_to_jp_oku_numeric_unit_if_possible_keeps_source_text(
     text: str,
     expected: str,
 ) -> None:

@@ -123,7 +123,7 @@ def test_local_streaming_throttle_still_emits_final(monkeypatch) -> None:
     assert "Hello" in received[-1]
 
 
-def test_local_streaming_aborts_early_on_output_language_mismatch_without_retry(
+def test_local_streaming_keeps_output_without_language_guard(
     monkeypatch,
 ) -> None:
     settings = AppSettings(translation_backend="local")
@@ -143,7 +143,7 @@ def test_local_streaming_aborts_early_on_output_language_mismatch_without_retry(
         calls += 1
         if on_chunk:
             on_chunk("\u732b")
-        raise AssertionError("streaming guard did not abort on output mismatch")
+        return "\u732b"
 
     monkeypatch.setattr(
         service,
@@ -158,8 +158,9 @@ def test_local_streaming_aborts_early_on_output_language_mismatch_without_retry(
     )
 
     assert calls == 1
-    assert not result.options
-    assert result.error_message
+    assert result.options
+    assert result.options[0].text == "\u732b"
+    assert result.error_message is None
     metadata = result.metadata or {}
-    assert metadata.get("output_language_mismatch") is True
-    assert not any("\u732b" in chunk for chunk in received)
+    assert metadata.get("output_language_mismatch") is None
+    assert any("\u732b" in chunk for chunk in received)

@@ -513,7 +513,6 @@ def _create_large_input_panel(
                                         'no-caps aria-label="翻訳を実行" data-feedback="翻訳を実行" data-testid="translate-button"'
                                     )
                                 )
-                                btn.tooltip("翻訳を実行")
                                 btn.on(
                                     "click",
                                     handle_translate_click,

@@ -50,7 +50,7 @@ def _make_service(local: SequencedLocalClient) -> TranslationService:
     return service
 
 
-def test_text_style_comparison_retries_when_output_language_mismatched() -> None:
+def test_text_style_comparison_keeps_output_when_language_mismatched() -> None:
     first = "これは日本語です。"
     second = "This is a test."
     local = SequencedLocalClient([first, second])
@@ -63,14 +63,15 @@ def test_text_style_comparison_retries_when_output_language_mismatched() -> None
 
     assert local.translate_single_calls == 1
     assert result.output_language == "en"
-    assert not result.options
-    assert result.error_message
+    assert result.options
+    assert result.options[0].text == first
+    assert result.error_message is None
     metadata = result.metadata or {}
-    assert metadata.get("output_language_mismatch") is True
+    assert metadata.get("output_language_mismatch") is None
     assert metadata.get("output_language_retry") is None
 
 
-def test_text_options_ignores_requested_style_and_retries_on_output_language_mismatch() -> (
+def test_text_options_keeps_output_when_language_mismatched() -> (
     None
 ):
     first = "これは日本語です。"
@@ -86,14 +87,15 @@ def test_text_options_ignores_requested_style_and_retries_on_output_language_mis
 
     assert local.translate_single_calls == 1
     assert result.output_language == "en"
-    assert not result.options
-    assert result.error_message
+    assert result.options
+    assert result.options[0].text == first
+    assert result.error_message is None
     metadata = result.metadata or {}
-    assert metadata.get("output_language_mismatch") is True
+    assert metadata.get("output_language_mismatch") is None
     assert metadata.get("output_language_retry") is None
 
 
-def test_text_style_comparison_retries_when_translation_is_ellipsis_only() -> None:
+def test_text_style_comparison_keeps_ellipsis_only_translation() -> None:
     first = "..."
     second = "This is a test."
     local = SequencedLocalClient([first, second])
@@ -106,13 +108,14 @@ def test_text_style_comparison_retries_when_translation_is_ellipsis_only() -> No
 
     assert local.translate_single_calls == 1
     assert result.output_language == "en"
-    assert not result.options
-    assert result.error_message
+    assert result.options
+    assert result.options[0].text == first
+    assert result.error_message is None
     metadata = result.metadata or {}
     assert metadata.get("output_language_retry") is None
 
 
-def test_text_style_comparison_errors_when_translation_stays_ellipsis_only() -> None:
+def test_text_style_comparison_keeps_ellipsis_only_translation_without_error() -> None:
     first = "..."
     second = "..."
     local = SequencedLocalClient([first, second])
@@ -124,17 +127,15 @@ def test_text_style_comparison_errors_when_translation_stays_ellipsis_only() -> 
     )
 
     assert local.translate_single_calls == 1
-    assert not result.options
-    assert (
-        result.error_message
-        == "ローカルAIの出力が「...」のみでした。モデル/設定を確認してください。"
-    )
+    assert result.options
+    assert result.options[0].text == first
+    assert result.error_message is None
     metadata = result.metadata or {}
     assert metadata.get("output_language_retry") is None
     assert metadata.get("output_language_retry_failed") is None
 
 
-def test_text_style_comparison_retries_when_translation_is_placeholder_only() -> None:
+def test_text_style_comparison_keeps_placeholder_only_translation() -> None:
     first = "<TRANSLATION>"
     second = "This is a test."
     local = SequencedLocalClient([first, second])
@@ -147,13 +148,14 @@ def test_text_style_comparison_retries_when_translation_is_placeholder_only() ->
 
     assert local.translate_single_calls == 1
     assert result.output_language == "en"
-    assert not result.options
-    assert result.error_message
+    assert result.options
+    assert result.options[0].text == first
+    assert result.error_message is None
     metadata = result.metadata or {}
     assert metadata.get("output_language_retry") is None
 
 
-def test_text_style_comparison_errors_when_translation_stays_placeholder_only() -> None:
+def test_text_style_comparison_keeps_placeholder_only_translation_without_error() -> None:
     first = "<TRANSLATION>"
     second = "<TRANSLATION>"
     local = SequencedLocalClient([first, second])
@@ -165,17 +167,15 @@ def test_text_style_comparison_errors_when_translation_stays_placeholder_only() 
     )
 
     assert local.translate_single_calls == 1
-    assert not result.options
-    assert (
-        result.error_message
-        == "ローカルAIの出力がプレースホルダーのみでした。モデル/設定を確認してください。"
-    )
+    assert result.options
+    assert result.options[0].text == first
+    assert result.error_message is None
     metadata = result.metadata or {}
     assert metadata.get("output_language_retry") is None
     assert metadata.get("output_language_retry_failed") is None
 
 
-def test_text_options_retries_when_translation_is_placeholder_only_for_jp() -> None:
+def test_text_options_keeps_placeholder_only_translation_for_jp() -> None:
     first = "<TRANSLATION>"
     second = "これはテストです。"
     local = SequencedLocalClient([first, second])
@@ -189,8 +189,9 @@ def test_text_options_retries_when_translation_is_placeholder_only_for_jp() -> N
 
     assert local.translate_single_calls == 1
     assert result.output_language == "jp"
-    assert not result.options
-    assert result.error_message
+    assert result.options
+    assert result.options[0].text == first
+    assert result.error_message is None
     metadata = result.metadata or {}
     assert metadata.get("output_language_retry") is None
 
@@ -256,8 +257,8 @@ def test_text_style_comparison_skips_numeric_retry_when_auto_fixable() -> None:
 
     assert local.translate_single_calls == 1
     assert local.prompts
-    assert "¥2,238.5 billion" in local.prompts[0]
-    assert "2兆2,385億円" not in local.prompts[0]
+    assert "2兆2,385億円" in local.prompts[0]
+    assert "¥2,238.5 billion" not in local.prompts[0]
     assert result.output_language == "en"
     assert [option.style for option in result.options] == ["standard"]
     assert result.options[0].text == expected
@@ -279,10 +280,10 @@ def test_text_style_comparison_skips_numeric_retry_when_auto_fixable_by_conversi
 
     assert local.translate_single_calls == 1
     assert local.prompts
-    assert "¥2,238.5 billion" in local.prompts[0]
-    assert "¥155.4 billion" in local.prompts[0]
-    assert "2兆2,385億円" not in local.prompts[0]
-    assert "1,554億円" not in local.prompts[0]
+    assert "2兆2,385億円" in local.prompts[0]
+    assert "1,554億円" in local.prompts[0]
+    assert "¥2,238.5 billion" not in local.prompts[0]
+    assert "¥155.4 billion" not in local.prompts[0]
 
     assert result.output_language == "en"
     assert [option.style for option in result.options] == ["standard"]
@@ -314,7 +315,7 @@ def test_text_style_comparison_does_not_retry_when_output_keeps_jp_numeric_units
     assert metadata.get("output_language_retry") is None
 
 
-def test_user_report_financial_text_retries_when_first_output_echoes_input() -> None:
+def test_user_report_financial_text_keeps_first_output_echo() -> None:
     input_text = """１．2026年３月期第２四半期（中間期）の連結業績（2025年４月１日～2025年９月30日）
 （１）連結経営成績(累計) (％表示は、対前年中間期増減率)
 売上高 営業利益 経常利益 親会社株主に帰属
@@ -331,11 +332,12 @@ def test_user_report_financial_text_retries_when_first_output_echoes_input() -> 
 
     assert local.translate_single_calls == 1
     assert result.output_language == "en"
-    assert not result.options
-    assert result.error_message
+    assert result.options
+    assert result.options[0].text == input_text
+    assert result.error_message is None
 
     metadata = result.metadata or {}
-    assert metadata.get("output_language_mismatch") is True
+    assert metadata.get("output_language_mismatch") is None
     assert metadata.get("output_language_retry") is None
 
 

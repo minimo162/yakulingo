@@ -353,9 +353,8 @@ def _normalize_jp_units_to_english(text: str) -> str:
 
 
 def _pre_normalize_numeric_units(text: str, *, output_language: OutputLanguage) -> str:
-    if output_language == "en":
-        return _normalize_jp_units_to_english(text)
-    return _normalize_en_units_to_japanese(text)
+    _ = output_language
+    return text
 
 
 def _build_translategemma_messages(

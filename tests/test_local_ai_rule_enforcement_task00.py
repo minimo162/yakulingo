@@ -50,7 +50,7 @@ def _make_service(local: SequencedLocalClient) -> TranslationService:
     return service
 
 
-def test_text_style_comparison_retries_when_k_rule_violated() -> None:
+def test_text_style_comparison_keeps_raw_output_when_k_rule_violated() -> None:
     first = "Pay: 220,000 yen."
     local = SequencedLocalClient([first])
     service = _make_service(local)
@@ -63,12 +63,12 @@ def test_text_style_comparison_retries_when_k_rule_violated() -> None:
     assert local.translate_single_calls == 1
     assert result.output_language == "en"
     assert result.options
-    assert result.options[0].text == "Pay: 220k yen."
+    assert result.options[0].text == first
     metadata = result.metadata or {}
-    assert metadata.get("to_en_k_notation_correction") is True
+    assert metadata.get("to_en_k_correction") is None
 
 
-def test_text_style_comparison_retries_when_negative_triangle_rule_violated() -> None:
+def test_text_style_comparison_keeps_raw_output_when_negative_triangle_rule_violated() -> None:
     first = "YoY: ▲50."
     local = SequencedLocalClient([first])
     service = _make_service(local)
@@ -81,9 +81,9 @@ def test_text_style_comparison_retries_when_negative_triangle_rule_violated() ->
     assert local.translate_single_calls == 1
     assert result.output_language == "en"
     assert result.options
-    assert result.options[0].text == "YoY: (50)."
+    assert result.options[0].text == first
     metadata = result.metadata or {}
-    assert metadata.get("to_en_negative_correction") is True
+    assert metadata.get("to_en_negative_correction") is None
 
 
 def test_text_style_comparison_auto_corrects_negative_sign_after_retry_still_violates() -> (
@@ -101,8 +101,8 @@ def test_text_style_comparison_auto_corrects_negative_sign_after_retry_still_vio
 
     assert local.translate_single_calls == 1
     assert local.prompts
-    assert "-¥49.6 billion" in local.prompts[0]
-    assert "▲496億円" not in local.prompts[0]
+    assert "▲496億円" in local.prompts[0]
+    assert "-¥49.6 billion" not in local.prompts[0]
     assert result.output_language == "en"
     assert result.error_message is None
     assert result.options
@@ -111,7 +111,7 @@ def test_text_style_comparison_auto_corrects_negative_sign_after_retry_still_vio
     assert metadata.get("to_en_numeric_rule_retry") is None
 
 
-def test_text_style_comparison_auto_corrects_month_abbrev_after_retry_still_violates() -> (
+def test_text_style_comparison_keeps_raw_month_name_after_retry_still_violates() -> (
     None
 ):
     first = "January"
@@ -127,12 +127,12 @@ def test_text_style_comparison_auto_corrects_month_abbrev_after_retry_still_viol
     assert result.output_language == "en"
     assert result.error_message is None
     assert result.options
-    assert result.options[0].text == "Jan."
+    assert result.options[0].text == first
     metadata = result.metadata or {}
-    assert metadata.get("to_en_month_abbrev_correction") is True
+    assert metadata.get("to_en_month_abbrev_correction") is None
 
 
-def test_text_style_comparison_retries_when_month_abbreviation_rule_violated() -> None:
+def test_text_style_comparison_keeps_raw_month_name_when_month_abbreviation_rule_violated() -> None:
     first = "January"
     local = SequencedLocalClient([first])
     service = _make_service(local)
@@ -145,10 +145,10 @@ def test_text_style_comparison_retries_when_month_abbreviation_rule_violated() -
     assert local.translate_single_calls == 1
     assert result.output_language == "en"
     assert result.options
-    assert result.options[0].text == "Jan."
+    assert result.options[0].text == first
 
 
-def test_text_style_comparison_auto_corrects_man_unit_without_retry() -> None:
+def test_text_style_comparison_keeps_raw_man_unit_without_retry() -> None:
     first = "Pay: 22 man yen."
     local = SequencedLocalClient([first])
     service = _make_service(local)
@@ -161,9 +161,9 @@ def test_text_style_comparison_auto_corrects_man_unit_without_retry() -> None:
     assert local.translate_single_calls == 1
     assert result.output_language == "en"
     assert result.options
-    assert result.options[0].text == "Pay: 220k yen."
+    assert result.options[0].text == first
     metadata = result.metadata or {}
-    assert metadata.get("to_en_k_notation_correction") is True
+    assert metadata.get("to_en_k_correction") is None
 
 
 def test_text_style_comparison_still_retries_when_k_rule_unfixable() -> None:

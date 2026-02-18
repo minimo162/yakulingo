@@ -167,7 +167,7 @@ if errorlevel 1 (
 call :ShowProgress 1 "Copying folders..."
 
 echo        Copying .venv, .uv-python, yakulingo, prompts, config, local_ai...
-set "FIXED_MODEL_GGUF=NVIDIA-Nemotron-Nano-9B-v2-Japanese-IQ4_XS.gguf"
+set "FIXED_MODEL_GGUF=NVIDIA-Nemotron-Nano-9B-v2-Japanese-Q4_K_M.gguf"
 
 :: Copy folders using robocopy
 :: Exit codes: 0=no change, 1=copied, 2-7=warnings, 8+=errors

@@ -50,8 +50,8 @@ _AUTO_DEVICE_CACHE: dict[
     tuple[str, int, int], tuple[Optional[str], Optional[str], float]
 ] = {}
 _AUTO_DEVICE_CACHE_LOCK = threading.Lock()
-_DEFAULT_MODEL_PATH = "local_ai/models/NVIDIA-Nemotron-Nano-9B-v2-Japanese-IQ4_XS.gguf"
-_PREVIOUS_DEFAULT_MODEL_PATH = "local_ai/models/translategemma-4b-it.i1-IQ4_XS.gguf"
+_DEFAULT_MODEL_PATH = "local_ai/models/NVIDIA-Nemotron-Nano-9B-v2-Japanese-Q4_K_M.gguf"
+_PREVIOUS_DEFAULT_MODEL_PATH = "local_ai/models/NVIDIA-Nemotron-Nano-9B-v2-Japanese-Q8_0.gguf"
 _LEGACY_DEFAULT_MODEL_PATH = "local_ai/models/HY-MT1.5-7B.i1-Q6_K.gguf"
 _OLDER_LEGACY_DEFAULT_MODEL_PATH = "local_ai/models/HY-MT1.5-1.8B.IQ4_XS.gguf"
 _RUNTIME_POLICY_VERSION = "reasoning-off-v1"

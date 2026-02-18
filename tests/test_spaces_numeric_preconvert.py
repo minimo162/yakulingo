@@ -4,12 +4,12 @@ import pytest
 @pytest.mark.parametrize(
     "text, output_language, expected_substrings",
     [
-        ("売上は4,500億円です。", "en", ["450 billion yen"]),
-        ("売上は4兆279億円です。", "en", ["4.0279 trillion yen"]),
-        ("価格は22万円です。", "en", ["220k yen"]),
-        ("It costs ¥12 thousand yen.", "ja", ["1万2,000円"]),
-        ("Revenue is 3.2 billion.", "ja", ["32億"]),
-        ("We have 1.2 million users.", "ja", ["1,200,000 users"]),
+        ("売上は4,500億円です。", "en", ["4,500億円"]),
+        ("売上は4兆279億円です。", "en", ["4兆279億円"]),
+        ("価格は22万円です。", "en", ["22万円"]),
+        ("It costs ¥12 thousand yen.", "ja", ["¥12 thousand yen"]),
+        ("Revenue is 3.2 billion.", "ja", ["3.2 billion"]),
+        ("We have 1.2 million users.", "ja", ["1.2 million users"]),
     ],
 )
 def test_spaces_pre_normalize_numeric_units(
@@ -24,4 +24,3 @@ def test_spaces_pre_normalize_numeric_units(
     )
     for expected in expected_substrings:
         assert expected in fixed
-

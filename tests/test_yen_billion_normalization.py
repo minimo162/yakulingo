@@ -25,24 +25,19 @@ class RecordingLocalClient:
         return self._response
 
 
-def test_prompt_builder_normalizes_yen_billion_expression_for_jp() -> None:
-    normalized = PromptBuilder.normalize_input_text(
-        "Revenue was ¥2,238.5billion in FY2024.",
-        output_language="jp",
-    )
-    assert "2兆2,385億円" in normalized
-    assert "¥2,238.5billion" not in normalized
+def test_prompt_builder_normalizes_yen_billion_expression_for_jp_is_disabled() -> None:
+    source = "Revenue was ¥2,238.5billion in FY2024."
+    normalized = PromptBuilder.normalize_input_text(source, output_language="jp")
+    assert normalized == source
 
 
-def test_prompt_builder_normalizes_yen_bn_expression_for_jp() -> None:
-    normalized = PromptBuilder.normalize_input_text(
-        "Revenue was ¥1.2bn in FY2024.",
-        output_language="jp",
-    )
-    assert "12億円" in normalized
+def test_prompt_builder_normalizes_yen_bn_expression_for_jp_is_disabled() -> None:
+    source = "Revenue was ¥1.2bn in FY2024."
+    normalized = PromptBuilder.normalize_input_text(source, output_language="jp")
+    assert normalized == source
 
 
-def test_translate_text_with_options_includes_normalized_amount_in_prompt() -> None:
+def test_translate_text_with_options_keeps_source_amount_in_prompt() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     prompts_dir = repo_root / "prompts"
     local = RecordingLocalClient("テスト")
@@ -66,9 +61,9 @@ def test_translate_text_with_options_includes_normalized_amount_in_prompt() -> N
 
     assert result.output_language == "jp"
     assert local.last_prompt is not None
-    assert "2兆2,385億円" in local.last_prompt
+    assert "¥2,238.5billion" in local.last_prompt
 
     prompt_input = local.last_prompt.split("<source>", 1)[-1]
     prompt_input = prompt_input.split("</source>", 1)[0]
-    assert "2兆2,385億円" in prompt_input
-    assert "¥2,238.5billion" not in prompt_input
+    assert "¥2,238.5billion" in prompt_input
+    assert "2兆2,385億円" not in prompt_input

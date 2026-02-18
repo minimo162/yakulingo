@@ -583,28 +583,13 @@ class PromptBuilder:
         if not input_text:
             return input_text
         if output_language == "jp":
-            lowered = input_text.lower()
-            if (
-                (
-                    "thousand" in lowered
-                    or "million" in lowered
-                    or "billion" in lowered
-                    or "trillion" in lowered
-                    or "trllion" in lowered
-                    or "bn" in lowered
-                )
-                or ("oku" in lowered)
-                or ("¥" in input_text or "￥" in input_text)
-            ):
-                return _normalize_en_financial_expressions_to_japanese(input_text)
+            # Keep source text as-is for EN→JP; do not pre-convert
+            # numeric units (thousand/million/billion/trillion/oku/¥) before translation.
             return input_text
         if output_language == "en":
-            fixed = input_text
-            if "万" in fixed or "千" in fixed:
-                fixed = _normalize_jp_man_sen_expressions_to_english(fixed)
-            if "兆" in fixed or "億" in fixed:
-                fixed = _normalize_jp_financial_expressions_to_english(fixed)
-            return fixed
+            # Keep source text as-is for JP→EN; do not pre-convert
+            # Japanese numeric units (兆/億/万/千) before translation.
+            return input_text
         return input_text
 
     @staticmethod

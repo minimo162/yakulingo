@@ -11,8 +11,6 @@ from yakulingo.services.local_ai_client import (
     loads_json_loose,
     parse_batch_translations,
     parse_text_single_translation,
-    parse_text_to_en_style_subset,
-    parse_text_to_en_3style,
 )
 
 
@@ -109,68 +107,6 @@ def test_parse_batch_translations_logs_diagnostics_on_failure(
     with pytest.raises(RuntimeError):
         parse_batch_translations("not json", expected_count=1)
     assert "LocalAI parse failure: kind=batch" in caplog.text
-
-
-def test_parse_text_to_en_3style_reads_options_json() -> None:
-    raw = """```json
-{"options":[
-  {"style":"standard","translation":"A","explanation":"standard rationale"},
-  {"style":"concise","translation":"B","explanation":"concise rationale"},
-  {"style":"minimal","translation":"C","explanation":"minimal rationale"}
-]}
-```"""
-    by_style = parse_text_to_en_3style(raw)
-    assert by_style["standard"] == ("A", "standard rationale")
-    assert by_style["concise"] == ("B", "concise rationale")
-    assert by_style["minimal"] == ("C", "minimal rationale")
-
-
-def test_parse_text_to_en_3style_keeps_legacy_explanation_key_compatible() -> None:
-    raw = """{"options":[{"style":"standard","translation":"A","explanation":"e1"}]}"""
-    by_style = parse_text_to_en_3style(raw)
-    assert by_style["standard"] == ("A", "e1")
-
-
-def test_parse_text_to_en_3style_normalizes_style_labels() -> None:
-    raw = """{"options":[
-  {"style":" Standard ","translation":"A"},
-  {"style":"簡潔","translation":"B"},
-  {"style":"MINIMAL","translation":"C"}
-]}"""
-    by_style = parse_text_to_en_3style(raw)
-    assert by_style["standard"] == ("A", "")
-    assert by_style["concise"] == ("B", "")
-    assert by_style["minimal"] == ("C", "")
-
-
-def test_parse_text_to_en_3style_assigns_missing_style_by_index() -> None:
-    raw = """{"options":[
-  {"style":"","translation":"A"},
-  {"style":"?","translation":"B"},
-  {"translation":"C"}
-]}"""
-    by_style = parse_text_to_en_3style(raw)
-    assert by_style["standard"] == ("A", "")
-    assert by_style["concise"] == ("B", "")
-    assert by_style["minimal"] == ("C", "")
-
-
-def test_parse_text_to_en_style_subset_assigns_in_requested_order() -> None:
-    raw = """{"options":[
-  {"translation":"B"},
-  {"translation":"C"}
-]}"""
-    by_style = parse_text_to_en_style_subset(raw, ["concise", "minimal"])
-    assert by_style["concise"] == ("B", "")
-    assert by_style["minimal"] == ("C", "")
-
-
-def test_parse_text_to_en_style_subset_normalizes_style_labels() -> None:
-    raw = """{"options":[
-  {"style":"MINIMAL","translation":"C"}
-]}"""
-    by_style = parse_text_to_en_style_subset(raw, ["minimal"])
-    assert by_style["minimal"] == ("C", "")
 
 
 def test_parse_text_single_translation_reads_json() -> None:

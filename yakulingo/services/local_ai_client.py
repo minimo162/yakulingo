@@ -11,7 +11,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable, Literal, Optional, Sequence
+from typing import Callable, Iterable, Literal, Optional
 
 from yakulingo.config.settings import AppSettings
 from yakulingo.services.local_llama_server import (
@@ -209,35 +209,6 @@ _RESPONSE_FORMAT_OPTIONS_SCHEMA: dict[str, object] = {
     },
     "strict": True,
 }
-_RESPONSE_FORMAT_OPTIONS_3STYLE_SCHEMA: dict[str, object] = {
-    "name": "yakulingo_text_style_options_3style_response",
-    "schema": {
-        "type": "object",
-        "required": ["options"],
-        "properties": {
-            "options": {
-                "type": "array",
-                "minItems": 3,
-                "maxItems": 3,
-                "items": {
-                    "type": "object",
-                    "required": ["style", "translation"],
-                    "properties": {
-                        "style": {
-                            "type": "string",
-                            "enum": ["standard", "concise", "minimal"],
-                        },
-                        "translation": {"type": "string", "minLength": 1},
-                        "explanation": {"type": "string"},
-                    },
-                    "additionalProperties": True,
-                },
-            }
-        },
-        "additionalProperties": True,
-    },
-    "strict": True,
-}
 _RESPONSE_FORMAT_JSON_OBJECT_PAYLOAD: dict[str, object] = {"type": "json_object"}
 
 
@@ -245,8 +216,6 @@ def _select_json_schema(prompt: str) -> dict[str, object]:
     lowered = (prompt or "").lower()
     if "items_json" in lowered:
         return _RESPONSE_FORMAT_ITEMS_SCHEMA
-    if "options must contain exactly these 3 styles" in lowered:
-        return _RESPONSE_FORMAT_OPTIONS_3STYLE_SCHEMA
     if '"options"' in lowered or "options" in lowered:
         return _RESPONSE_FORMAT_OPTIONS_SCHEMA
     return _RESPONSE_FORMAT_SINGLE_SCHEMA
@@ -267,10 +236,7 @@ def _expected_json_root_key(prompt: str) -> str | None:
     lowered = (prompt or "").casefold()
     if '{"items"' in lowered or "items_json" in lowered:
         return "items"
-    if (
-        '{"options"' in lowered
-        or "options must contain exactly these 3 styles" in lowered
-    ):
+    if '{"options"' in lowered:
         return "options"
     if '{"translation"' in lowered:
         return "translation"
@@ -705,123 +671,6 @@ def parse_batch_translations(
     raise RuntimeError(
         "ローカルAIの応答(JSON)を解析できませんでした（詳細はログを確認してください）"
     )
-
-
-_TEXT_STYLE_ORDER = ("standard", "concise", "minimal")
-
-
-def _normalize_text_style(style: Optional[str]) -> Optional[str]:
-    if not isinstance(style, str):
-        return None
-    cleaned = style.strip().casefold()
-    if not cleaned:
-        return None
-    if cleaned in _TEXT_STYLE_ORDER:
-        return cleaned
-    if any(token in cleaned for token in ("standard", "std", "normal", "default")):
-        return "standard"
-    if any(token in cleaned for token in ("concise", "brief", "short", "compact")):
-        return "concise"
-    if any(token in cleaned for token in ("minimal", "minimum", "min", "mini")):
-        return "minimal"
-    if "標準" in style or "通常" in style:
-        return "standard"
-    if "簡潔" in style or "短" in style:
-        return "concise"
-    if "最簡潔" in style or "最小" in style or "極小" in style:
-        return "minimal"
-    return None
-
-
-def _parse_text_style_options(
-    raw_content: str,
-) -> list[tuple[Optional[str], str, str]]:
-    obj = loads_json_loose(raw_content)
-    if not isinstance(obj, dict):
-        return []
-    options = obj.get("options")
-    if not isinstance(options, list):
-        return []
-
-    items: list[tuple[Optional[str], str, str]] = []
-    for opt in options:
-        if not isinstance(opt, dict):
-            continue
-        translation = opt.get("translation")
-        if not isinstance(translation, str):
-            continue
-        style = _normalize_text_style(opt.get("style"))
-        explanation = opt.get("explanation")
-        items.append(
-            (style, translation, explanation if isinstance(explanation, str) else "")
-        )
-    return items
-
-
-def parse_text_to_en_3style(raw_content: str) -> dict[str, tuple[str, str]]:
-    items = _parse_text_style_options(raw_content)
-    if not items:
-        translation, explanation = parse_text_single_translation(raw_content)
-        if not translation:
-            return {}
-        return {"minimal": (translation, explanation or "")}
-
-    by_style: dict[str, tuple[str, str]] = {}
-    used_indexes: set[int] = set()
-    for idx, (style, translation, explanation) in enumerate(items):
-        if style in _TEXT_STYLE_ORDER and style not in by_style:
-            by_style[style] = (translation, explanation)
-            used_indexes.add(idx)
-
-    remaining_styles = [s for s in _TEXT_STYLE_ORDER if s not in by_style]
-    if remaining_styles:
-        for idx, (style, translation, explanation) in enumerate(items):
-            if idx in used_indexes:
-                continue
-            if not remaining_styles:
-                break
-            next_style = remaining_styles.pop(0)
-            by_style[next_style] = (translation, explanation)
-            used_indexes.add(idx)
-
-    return by_style
-
-
-def parse_text_to_en_style_subset(
-    raw_content: str,
-    styles: Sequence[str],
-) -> dict[str, tuple[str, str]]:
-    allowed = [s for s in styles if s in _TEXT_STYLE_ORDER]
-    if not allowed:
-        return {}
-
-    items = _parse_text_style_options(raw_content)
-    if not items:
-        translation, explanation = parse_text_single_translation(raw_content)
-        if not translation:
-            return {}
-        target_style = "minimal" if "minimal" in allowed else allowed[0]
-        return {target_style: (translation, explanation or "")}
-
-    by_style: dict[str, tuple[str, str]] = {}
-    used_indexes: set[int] = set()
-    for idx, (style, translation, explanation) in enumerate(items):
-        if style in allowed and style not in by_style:
-            by_style[style] = (translation, explanation)
-            used_indexes.add(idx)
-
-    remaining_styles = [s for s in allowed if s not in by_style]
-    if remaining_styles:
-        for idx, (style, translation, explanation) in enumerate(items):
-            if idx in used_indexes:
-                continue
-            if not remaining_styles:
-                break
-            next_style = remaining_styles.pop(0)
-            by_style[next_style] = (translation, explanation)
-            used_indexes.add(idx)
-
-    return by_style
 
 
 def parse_text_single_translation(

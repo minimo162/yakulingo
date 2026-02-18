@@ -24,8 +24,6 @@ _TIMING_ENABLED = os.environ.get("YAKULINGO_LOCAL_AI_TIMING") == "1"
 _LOCAL_JSON_TEMPLATES = frozenset(
     {
         "local_text_translate_to_en_single_json.txt",
-        "local_text_translate_to_en_3style_json.txt",
-        "local_text_translate_to_en_missing_styles_json.txt",
         "local_text_translate_to_jp_json.txt",
         "local_batch_translate_to_en_json.txt",
         "local_batch_translate_to_jp_json.txt",
@@ -1292,27 +1290,6 @@ class LocalPromptBuilder:
         translation_style: str = "concise",
         include_item_ids: bool = False,
         reference_files: Optional[Sequence[Path]] = None,
-    ) -> str:
-        raise RuntimeError(_LOCAL_JSON_DISABLED_MESSAGE)
-
-    def build_text_to_en_3style(
-        self,
-        text: str,
-        *,
-        reference_files: Optional[Sequence[Path]] = None,
-        detected_language: str = "日本語",
-        extra_instruction: str | None = None,
-    ) -> str:
-        raise RuntimeError(_LOCAL_JSON_DISABLED_MESSAGE)
-
-    def build_text_to_en_missing_styles(
-        self,
-        text: str,
-        *,
-        styles: Sequence[str],
-        reference_files: Optional[Sequence[Path]] = None,
-        detected_language: str = "日本語",
-        extra_instruction: str | None = None,
     ) -> str:
         raise RuntimeError(_LOCAL_JSON_DISABLED_MESSAGE)
 

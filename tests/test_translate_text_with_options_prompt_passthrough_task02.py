@@ -64,11 +64,10 @@ def test_translate_text_with_options_passes_strict_prompt_en() -> None:
         _SIMPLE_PROMPT_RETRY_INSTRUCTION_EN,
     )
     assert local.last_prompt == expected
-    assert "Output must be English only." in expected
-    assert "Do NOT output Korean (Hangul) characters." in expected
+    assert "English only; no Japanese/Chinese/Korean characters" in expected
     assert expected.startswith("<bos><start_of_turn>user\n")
-    assert "===INPUT_TEXT===" in expected
-    assert "===END_INPUT_TEXT===" in expected
+    assert "<T>\n" in expected
+    assert "<end_of_turn>" in expected
 
 
 def test_translate_text_with_options_passes_strict_prompt_jp() -> None:
@@ -88,8 +87,7 @@ def test_translate_text_with_options_passes_strict_prompt_jp() -> None:
         _SIMPLE_PROMPT_RETRY_INSTRUCTION_JP,
     )
     assert local.last_prompt == expected
-    assert "Output must be Japanese only." in expected
-    assert "Do NOT output Chinese (Simplified/Traditional) text." in expected
+    assert "Japanese only (natural Japanese); no Chinese text or English sentences." in expected
     assert expected.startswith("<bos><start_of_turn>user\n")
-    assert "===INPUT_TEXT===" in expected
-    assert "===END_INPUT_TEXT===" in expected
+    assert "<T>\n" in expected
+    assert "<end_of_turn>" in expected

@@ -56,30 +56,6 @@ class DummyLocalPromptBuilder:
     def _wrap_input(self, text: str) -> str:
         return f"===INPUT_TEXT===\n{text}\n===END_INPUT_TEXT==="
 
-    def build_text_to_en_3style(
-        self,
-        text: str,
-        *,
-        reference_files: list[Path] | None,
-        detected_language: str,
-    ) -> str:
-        _ = reference_files
-        _ = detected_language
-        return f"LOCAL_TO_EN_3STYLE\n{self._wrap_input(text)}"
-
-    def build_text_to_en_missing_styles(
-        self,
-        text: str,
-        *,
-        styles: list[str],
-        reference_files: list[Path] | None,
-        detected_language: str,
-    ) -> str:
-        _ = styles
-        _ = reference_files
-        _ = detected_language
-        return f"LOCAL_TO_EN_MISSING\n{self._wrap_input(text)}"
-
     def build_text_to_en_single(
         self,
         text: str,

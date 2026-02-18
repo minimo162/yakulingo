@@ -11,8 +11,6 @@ from yakulingo.services.prompt_builder import PromptBuilder
 
 _LOCAL_TEMPLATES = [
     "local_text_translate_to_en_single_json.txt",
-    "local_text_translate_to_en_3style_json.txt",
-    "local_text_translate_to_en_missing_styles_json.txt",
     "local_text_translate_to_jp_json.txt",
     "local_batch_translate_to_en_json.txt",
     "local_batch_translate_to_jp_json.txt",
@@ -55,14 +53,6 @@ def test_local_prompt_builder_prompt_methods_raise() -> None:
     with pytest.raises(RuntimeError, match="disabled"):
         builder.build_text_to_jp(
             "sample", reference_files=None, detected_language="英語"
-        )
-    with pytest.raises(RuntimeError, match="disabled"):
-        builder.build_text_to_en_3style("sample", reference_files=None)
-    with pytest.raises(RuntimeError, match="disabled"):
-        builder.build_text_to_en_missing_styles(
-            "sample",
-            styles=["minimal"],
-            reference_files=None,
         )
     with pytest.raises(RuntimeError, match="disabled"):
         builder.build_batch(

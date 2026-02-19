@@ -55,7 +55,7 @@ def _loop_text() -> str:
     return unit * 6
 
 
-def test_text_options_blocks_repetitive_loop_output_for_en() -> None:
+def test_text_options_allows_repetitive_loop_output_for_en() -> None:
     service, local = _make_service(_loop_text())
 
     result = service.translate_text_with_options(
@@ -64,14 +64,15 @@ def test_text_options_blocks_repetitive_loop_output_for_en() -> None:
     )
 
     assert local.translate_single_calls == 1
-    assert result.error_message is not None
-    assert "繰り返し" in result.error_message
-    assert not result.options
+    assert result.output_language == "en"
+    assert result.error_message is None
+    assert result.options
+    assert result.options[0].text == _loop_text().rstrip()
     metadata = result.metadata or {}
-    assert metadata.get("repetitive_output_detected") is True
+    assert metadata.get("repetitive_output_detected") is None
 
 
-def test_text_options_blocks_repetitive_loop_output_for_jp() -> None:
+def test_text_options_allows_repetitive_loop_output_for_jp() -> None:
     service, local = _make_service(_loop_text())
 
     result = service.translate_text_with_options(
@@ -80,11 +81,12 @@ def test_text_options_blocks_repetitive_loop_output_for_jp() -> None:
     )
 
     assert local.translate_single_calls == 1
-    assert result.error_message is not None
-    assert "繰り返し" in result.error_message
-    assert not result.options
+    assert result.output_language == "jp"
+    assert result.error_message is None
+    assert result.options
+    assert result.options[0].text == _loop_text().rstrip()
     metadata = result.metadata or {}
-    assert metadata.get("repetitive_output_detected") is True
+    assert metadata.get("repetitive_output_detected") is None
 
 
 def test_text_options_keeps_non_repetitive_output() -> None:

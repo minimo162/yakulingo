@@ -308,6 +308,7 @@ def test_build_chat_payload_disables_nemotron_thinking_with_greedy() -> None:
     assert payload["messages"] == [{"role": "user", "content": "prompt"}]
     assert payload["chat_template_kwargs"] == {"enable_thinking": False}
     assert payload["temperature"] == 0.0
+    assert payload["max_tokens"] == 1024
     for key in ("top_p", "top_k", "min_p", "repeat_penalty"):
         assert key not in payload
 
@@ -315,13 +316,22 @@ def test_build_chat_payload_disables_nemotron_thinking_with_greedy() -> None:
 def test_build_completions_payload_uses_greedy_for_nemotron() -> None:
     client = LocalAIClient(AppSettings())
     runtime = _make_nemotron_runtime()
-    payload = client._build_completions_payload(
-        runtime, "prompt", stream=False
-    )
+    payload = client._build_completions_payload(runtime, "prompt", stream=False)
     assert payload["prompt"] == "prompt"
     assert payload["temperature"] == 0.0
+    assert payload["max_tokens"] == 1024
     for key in ("top_p", "top_k", "min_p", "repeat_penalty"):
         assert key not in payload
+
+
+def test_build_chat_payload_keeps_configured_max_tokens_for_nemotron_json_mode() -> None:
+    client = LocalAIClient(AppSettings())
+    runtime = _make_nemotron_runtime()
+    payload = client._build_chat_payload(
+        runtime, 'Return JSON only: {"translation": ""}', stream=False, enforce_json=True
+    )
+    assert payload["chat_template_kwargs"] == {"enable_thinking": False}
+    assert payload["max_tokens"] == 1024
 
 
 def test_build_chat_payload_extracts_raw_prompt_for_nemotron() -> None:

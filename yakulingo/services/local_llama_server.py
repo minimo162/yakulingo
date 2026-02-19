@@ -54,7 +54,7 @@ _DEFAULT_MODEL_PATH = "local_ai/models/NVIDIA-Nemotron-Nano-9B-v2-Japanese-Q4_K_
 _PREVIOUS_DEFAULT_MODEL_PATH = "local_ai/models/NVIDIA-Nemotron-Nano-9B-v2-Japanese-Q8_0.gguf"
 _LEGACY_DEFAULT_MODEL_PATH = "local_ai/models/HY-MT1.5-7B.i1-Q6_K.gguf"
 _OLDER_LEGACY_DEFAULT_MODEL_PATH = "local_ai/models/HY-MT1.5-1.8B.IQ4_XS.gguf"
-_RUNTIME_POLICY_VERSION = "reasoning-off-v1"
+_RUNTIME_POLICY_VERSION = "reasoning-off-v2"
 _CHAT_TEMPLATE_KWARGS_REASONING_OFF = '{"enable_thinking":false}'
 
 

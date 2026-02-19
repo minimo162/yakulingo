@@ -912,6 +912,54 @@ def test_build_server_args_disables_reasoning_when_supported(
     assert args[args.index("--reasoning-format") + 1] == "deepseek"
 
 
+def test_build_server_args_sets_nemotron_reasoning_budget_when_supported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = lls.LocalLlamaServerManager()
+    server_exe_path = tmp_path / "llama-server.exe"
+    server_exe_path.write_bytes(b"exe")
+    model_path = tmp_path / "NVIDIA-Nemotron-Nano-9B-v2-Japanese.gguf"
+    model_path.write_bytes(b"model")
+
+    help_text = "\n".join(
+        [
+            "-m, --model",
+            "--threads",
+            "--temp",
+            "--n-predict",
+            "--reasoning-budget",
+            "--chat-template-kwargs",
+            "--reasoning-format",
+        ]
+    )
+
+    class DummyCompleted:
+        def __init__(self, stdout: str) -> None:
+            self.stdout = stdout
+
+    def fake_run(*args, **kwargs):
+        return DummyCompleted(help_text)
+
+    monkeypatch.setattr(lls.subprocess, "run", fake_run)
+
+    settings = AppSettings()
+    settings._validate()
+
+    args = manager._build_server_args(
+        server_exe_path=server_exe_path,
+        server_variant="generic",
+        model_path=model_path,
+        host="127.0.0.1",
+        port=4891,
+        settings=settings,
+    )
+
+    assert "--reasoning-budget" in args
+    assert args[args.index("--reasoning-budget") + 1] == "0"
+    assert "--chat-template-kwargs" in args
+    assert "--reasoning-format" in args
+
+
 def test_build_server_args_skips_reasoning_flags_without_help(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

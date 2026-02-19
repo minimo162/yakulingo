@@ -11,7 +11,6 @@ import logging
 import os
 import threading
 import time
-from collections import Counter
 from contextlib import contextmanager, nullcontext
 from decimal import Decimal, InvalidOperation
 from functools import lru_cache
@@ -95,15 +94,6 @@ _TEXT_TO_EN_NEGATIVE_RULE_INSTRUCTION = (
     "Do not output ▲ or a leading minus."
 )
 
-# Simple prompt strict retry instructions (used for text translation retry in task-01)
-_SIMPLE_PROMPT_RETRY_INSTRUCTION_EN = """CRITICAL:
-- English only; no Japanese/Chinese/Korean characters or Japanese punctuation.
-- Translation only (no labels/explanations); do not echo input.
-"""
-_SIMPLE_PROMPT_RETRY_INSTRUCTION_JP = """CRITICAL:
-- Japanese only (natural Japanese); no Chinese text or English sentences.
-- Translation only (no labels/explanations); do not echo input.
-"""
 # Pre-compiled regex patterns for performance
 # Support both half-width (:) and full-width (：) colons, and markdown bold (**訳文:**)
 _RE_STYLE_SECTION = re.compile(
@@ -1317,11 +1307,6 @@ def _looks_incomplete_translation_to_en(source_text: str, translated_text: str) 
 _RE_ELLIPSIS_ONLY = re.compile(r"^[.\u2026\u22ef]+$")
 _RE_PLACEHOLDER_TOKEN = re.compile(r"^<\s*([^<>]+)\s*>$")
 _RE_PLACEHOLDER_INNER = re.compile(r"^(?:translation|style|\.{3}|…)$", re.IGNORECASE)
-_RE_LOOP_OUTPUT_WS = re.compile(r"\s+")
-_RE_LOOP_OUTPUT_SENTENCE_SPLIT = re.compile(r"(?<=[。.!?！？])\s+")
-_RE_LOOP_OUTPUT_TOKEN = re.compile(
-    r"[A-Za-z]+(?:'[A-Za-z]+)?|\d+(?:\.\d+)?|[\u3040-\u30FF\u3400-\u9FFF]{2,}"
-)
 
 _LOCAL_AI_ELLIPSIS_RETRY_INSTRUCTION = (
     '- Do not output ellipsis placeholders (e.g., "...", "…").\n'
@@ -1330,10 +1315,6 @@ _LOCAL_AI_ELLIPSIS_RETRY_INSTRUCTION = (
 _LOCAL_AI_PLACEHOLDER_RETRY_INSTRUCTION = (
     "- Do not output placeholder tokens like <TRANSLATION> or <STYLE>.\n"
     "- Output actual translations, not placeholder markers.\n"
-)
-_LOCAL_AI_REPETITIVE_OUTPUT_ERROR_MESSAGE = (
-    "ローカルAIの応答に同一文の繰り返しを検出しました。"
-    "ローカルAIを再起動し、必要に応じてモデルを再配置してください。"
 )
 
 
@@ -1371,66 +1352,6 @@ def _is_placeholder_only_translation(source_text: str, translated_text: str) -> 
     if not _is_placeholder_only_text(translated_text):
         return False
     return not _is_placeholder_only_text(source_text)
-
-
-def _looks_repetitive_loop_output(text: str | None) -> bool:
-    normalized = _RE_LOOP_OUTPUT_WS.sub(" ", (text or "").strip())
-    if len(normalized) < 220:
-        return False
-
-    sentences = [
-        chunk.strip(" \t\r\n\"'()[]{}")
-        for chunk in _RE_LOOP_OUTPUT_SENTENCE_SPLIT.split(normalized)
-        if chunk and chunk.strip()
-    ]
-    if len(sentences) >= 2:
-        sentence_counts = Counter(sentences)
-        for sentence, count in sentence_counts.items():
-            if len(sentence) >= 80 and count >= 2 and len(normalized) >= 320:
-                return True
-
-    if len(sentences) >= 4:
-        top_sentence, top_count = Counter(sentences).most_common(1)[0]
-        if (
-            len(top_sentence) >= 24
-            and top_count >= 3
-            and (top_count / len(sentences)) >= 0.45
-        ):
-            return True
-
-    tokens = _RE_LOOP_OUTPUT_TOKEN.findall(normalized.casefold())
-    if len(tokens) >= 80:
-        unique_ratio = len(set(tokens)) / len(tokens)
-        if unique_ratio <= 0.24:
-            return True
-    if len(tokens) >= 60:
-        for window_size in (12, 16):
-            seen: dict[tuple[str, ...], int] = {}
-            repeated_windows = 0
-            limit = len(tokens) - window_size + 1
-            for idx in range(limit):
-                key = tuple(tokens[idx : idx + window_size])
-                count = seen.get(key, 0) + 1
-                seen[key] = count
-                if count == 2:
-                    repeated_windows += 1
-                    if repeated_windows >= 2:
-                        return True
-
-    return False
-
-
-def _build_repetitive_output_error_message(model_path: str | None = None) -> str:
-    message = _LOCAL_AI_REPETITIVE_OUTPUT_ERROR_MESSAGE
-    lowered = (model_path or "").strip().lower()
-    if "nemotron" not in lowered:
-        return message
-    return (
-        message
-        + " NVIDIA-Nemotron-Nano-9B-v2-Japanese は NVIDIA GPU 最適化モデルのため、"
-        + "実行環境によって品質が不安定になる場合があります。"
-        + " まず `local_ai_device=\"none\"` と `local_ai_n_gpu_layers=0` のCPU実行を試してください。"
-    )
 
 
 def _sanitize_output_stem(name: str) -> str:
@@ -4490,23 +4411,6 @@ class TranslationService:
                 needs_output_language_retry = False
                 needs_ellipsis_retry = False
                 needs_placeholder_retry = False
-                if _looks_repetitive_loop_output(translation):
-                    metadata["repetitive_output_detected"] = True
-                    logger.warning(
-                        "LocalAI repetitive output detected (output=%s chars=%d)",
-                        output_language,
-                        len(translation),
-                    )
-                    return TextTranslationResult(
-                        source_text=text,
-                        source_char_count=len(text),
-                        output_language=output_language,
-                        detected_language=detected_language,
-                        error_message=_build_repetitive_output_error_message(
-                            getattr(self.config, "local_ai_model_path", None)
-                        ),
-                        metadata=metadata,
-                    )
                 if simple_prompt_mode:
                     return TextTranslationResult(
                         source_text=text,
@@ -4859,23 +4763,6 @@ class TranslationService:
             needs_ellipsis_retry = False
             needs_placeholder_retry = False
             needs_output_language_retry = False
-            if _looks_repetitive_loop_output(translation):
-                metadata["repetitive_output_detected"] = True
-                logger.warning(
-                    "LocalAI repetitive output detected (output=%s chars=%d)",
-                    output_language,
-                    len(translation),
-                )
-                return TextTranslationResult(
-                    source_text=text,
-                    source_char_count=len(text),
-                    output_language=output_language,
-                    detected_language=detected_language,
-                    error_message=_build_repetitive_output_error_message(
-                        getattr(self.config, "local_ai_model_path", None)
-                    ),
-                    metadata=metadata,
-                )
             if simple_prompt_mode:
                 return TextTranslationResult(
                     source_text=text,
@@ -5296,14 +5183,6 @@ class TranslationService:
                 text,
                 output_language=output_language,
             )
-            strict = (
-                _SIMPLE_PROMPT_RETRY_INSTRUCTION_EN
-                if output_language == "en"
-                else _SIMPLE_PROMPT_RETRY_INSTRUCTION_JP
-            )
-            strict_prompt = _insert_extra_instruction_into_simple_prompt(
-                base_prompt, strict
-            )
 
             return self._translate_text_with_options_local(
                 text=text,
@@ -5314,7 +5193,7 @@ class TranslationService:
                 on_chunk=on_chunk,
                 raw_output=False,
                 force_simple_prompt=True,
-                override_prompt=strict_prompt,
+                override_prompt=base_prompt,
             )
 
         except TranslationCancelledError:

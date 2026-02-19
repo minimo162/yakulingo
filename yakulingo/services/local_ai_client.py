@@ -285,22 +285,91 @@ def _strip_leading_thinking_content(text: str) -> str:
     return cleaned.strip()
 
 
-def strip_prompt_echo(raw_content: str, prompt: str | None) -> str:
+def _strip_leading_retry_instruction_block(text: str) -> str:
+    """Remove leaked leading retry/instruction lines when model echoes prompt fragments."""
+    cleaned = (text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not cleaned:
+        return ""
+
+    while True:
+        lines = cleaned.splitlines()
+        if not lines:
+            return ""
+
+        # Trim leading blank lines before analysis.
+        while lines and not lines[0].strip():
+            lines.pop(0)
+        if not lines:
+            return ""
+
+        first = lines[0].strip().casefold()
+        removed = False
+
+        if first == "critical:":
+            end = 1
+            while end < len(lines) and lines[end].lstrip().startswith("-"):
+                end += 1
+            block = "\n".join(lines[:end]).casefold()
+            has_no_echo = "do not echo input" in block
+            has_translation_only = "translation only" in block
+            if has_no_echo and has_translation_only:
+                cleaned = "\n".join(lines[end:]).lstrip()
+                removed = True
+
+        if not removed:
+            first_line = lines[0].strip().casefold()
+            if (
+                first_line.startswith("translate ")
+                and "translation only" in first_line
+                and "do not echo input" in first_line
+            ):
+                cleaned = "\n".join(lines[1:]).lstrip()
+                removed = True
+
+        if not removed:
+            break
+
+    return cleaned.strip()
+
+
+def _finalize_strip_prompt_echo_text(
+    text: str, *, strip_leading_thinking: bool
+) -> str:
+    cleaned = text.strip()
+    if not cleaned:
+        return ""
+    if strip_leading_thinking:
+        cleaned = _strip_leading_thinking_content(cleaned)
+    return _strip_leading_retry_instruction_block(cleaned)
+
+
+def strip_prompt_echo(
+    raw_content: str,
+    prompt: str | None,
+    *,
+    strip_leading_thinking: bool = True,
+) -> str:
     cleaned = _strip_code_fences(raw_content or "")
     cleaned = cleaned.replace("\r\n", "\n").replace("\r", "\n").strip()
     if not cleaned:
         return ""
     if not prompt:
-        return _strip_leading_thinking_content(cleaned)
+        return _finalize_strip_prompt_echo_text(
+            cleaned, strip_leading_thinking=strip_leading_thinking
+        )
     prompt_clean = _strip_code_fences(prompt)
     prompt_clean = prompt_clean.replace("\r\n", "\n").replace("\r", "\n").strip()
     if not prompt_clean:
-        return _strip_leading_thinking_content(cleaned)
+        return _finalize_strip_prompt_echo_text(
+            cleaned, strip_leading_thinking=strip_leading_thinking
+        )
 
     idx = cleaned.find(prompt_clean)
     if idx != -1:
         stripped = (cleaned[:idx] + cleaned[idx + len(prompt_clean) :]).strip()
-        return _strip_leading_thinking_content(stripped)
+        return _finalize_strip_prompt_echo_text(
+            stripped, strip_leading_thinking=strip_leading_thinking
+        )
 
     limit = min(len(cleaned), len(prompt_clean), _PROMPT_ECHO_PREFIX_SCAN_LIMIT)
     prefix_len = 0
@@ -311,7 +380,9 @@ def strip_prompt_echo(raw_content: str, prompt: str | None) -> str:
     if prefix_len >= _PROMPT_ECHO_PREFIX_MIN:
         cleaned = cleaned[prefix_len:].lstrip()
 
-    return _strip_leading_thinking_content(cleaned)
+    return _finalize_strip_prompt_echo_text(
+        cleaned, strip_leading_thinking=strip_leading_thinking
+    )
 
 
 def _make_diagnostic_snippet(
@@ -554,6 +625,50 @@ def _parse_openai_stream_delta(payload: dict) -> Optional[str]:
         if isinstance(content, str):
             return content
     return None
+
+
+def _extract_openai_stream_delta_text(value: object) -> Optional[str]:
+    if isinstance(value, str):
+        return value
+    return None
+
+
+def _parse_openai_stream_delta_parts(payload: dict) -> tuple[Optional[str], Optional[str]]:
+    choices = payload.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return None, None
+    first = choices[0]
+    if not isinstance(first, dict):
+        return None, None
+    content: Optional[str] = None
+    reasoning: Optional[str] = None
+
+    delta = first.get("delta")
+    if isinstance(delta, dict):
+        content = _extract_openai_stream_delta_text(delta.get("content"))
+        reasoning = _extract_openai_stream_delta_text(
+            delta.get("reasoning_content")
+        ) or _extract_openai_stream_delta_text(delta.get("reasoning"))
+
+    text = _extract_openai_stream_delta_text(first.get("text"))
+    if content is None and text is not None:
+        content = text
+
+    message = first.get("message")
+    if isinstance(message, dict):
+        if content is None:
+            content = _extract_openai_stream_delta_text(message.get("content"))
+        if reasoning is None:
+            reasoning = _extract_openai_stream_delta_text(
+                message.get("reasoning_content")
+            ) or _extract_openai_stream_delta_text(message.get("reasoning"))
+
+    if reasoning is None:
+        reasoning = _extract_openai_stream_delta_text(first.get("reasoning_content"))
+    if reasoning is None:
+        reasoning = _extract_openai_stream_delta_text(first.get("reasoning"))
+
+    return content, reasoning
 
 
 def _parse_batch_items_json(obj: object, expected_count: int) -> Optional[list[str]]:
@@ -825,7 +940,7 @@ class LocalAIClient:
     def _should_force_chat_completions(
         runtime: LocalAIServerRuntime, prompt: str
     ) -> bool:
-        # Nemotron requires chat template controls (enable_thinking=false).
+        # Nemotron uses chat template controls (`enable_thinking`).
         return _is_nemotron_model(runtime) and (prompt or "").startswith(
             _RAW_PROMPT_MARKER
         )
@@ -1880,6 +1995,7 @@ class LocalAIClient:
                 candidate = obj.get("model")
                 if isinstance(candidate, str):
                     model_id = candidate
+
             delta = _parse_openai_stream_delta(obj)
             if delta:
                 nonlocal delta_buffer_len

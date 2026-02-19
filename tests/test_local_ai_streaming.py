@@ -32,6 +32,43 @@ def test_local_ai_streaming_parses_sse_and_collects_chunks() -> None:
     assert model_id is None
 
 
+def test_local_ai_streaming_ignores_reasoning_content_when_thinking_off() -> None:
+    client = LocalAIClient(settings=AppSettings())
+    received: list[str] = []
+
+    def on_chunk(text: str) -> None:
+        received.append(text)
+
+    chunks = [
+        b'data: {"choices":[{"delta":{"reasoning_content":"Thinking..."}}]}\n\n',
+        b'data: {"choices":[{"delta":{"content":"Hello"}}]}\n\n',
+        b"data: [DONE]\n\n",
+    ]
+
+    content, _model_id = client._consume_sse_stream(iter(chunks), on_chunk)
+
+    assert content == "Hello"
+    assert received == ["Hello"]
+
+
+def test_local_ai_streaming_only_reasoning_delta_yields_empty_content() -> None:
+    client = LocalAIClient(settings=AppSettings())
+    received: list[str] = []
+
+    def on_chunk(text: str) -> None:
+        received.append(text)
+
+    chunks = [
+        b'data: {"choices":[{"delta":{"reasoning_content":"only reasoning"}}]}\n\n',
+        b"data: [DONE]\n\n",
+    ]
+
+    content, _model_id = client._consume_sse_stream(iter(chunks), on_chunk)
+
+    assert content == ""
+    assert received == []
+
+
 def test_local_streaming_wrap_extracts_translation_incrementally() -> None:
     received: list[str] = []
     handler = _wrap_local_streaming_on_chunk(received.append, parse_json=True)
@@ -197,6 +234,23 @@ def test_local_streaming_wrap_strips_prompt_echo_for_plain_text_preview() -> Non
     handler(f"{prompt}\n\nHello")
 
     assert received == ["Hello"]
+
+
+def test_local_streaming_wrap_strips_think_block_for_preview() -> None:
+    received: list[str] = []
+    prompt = (
+        "Translate the following segment into English, without additional explanation.\n\n"
+        "こんにちは"
+    )
+    handler = _wrap_local_streaming_on_chunk(received.append, prompt=prompt)
+    assert handler is not None
+
+    handler(prompt)
+    handler(f"{prompt}<think>\ninternal reasoning")
+    handler(f"{prompt}<think>\ninternal reasoning\n</think>\n\nHello")
+
+    assert received
+    assert received[-1] == "Hello"
 
 
 def test_local_ai_translate_single_streaming_flushes_wrapped_preview_on_completion(

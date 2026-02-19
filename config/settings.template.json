@@ -18,6 +18,8 @@
   "local_ai_min_p": 0.01,
   "local_ai_repeat_penalty": 1.05,
   "local_ai_max_tokens": 1024,
+  "local_ai_reasoning_enabled": true,
+  "local_ai_reasoning_budget": 64,
   "local_ai_batch_size": 512,
   "local_ai_ubatch_size": 128,
   "local_ai_device": "none",

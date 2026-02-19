@@ -54,8 +54,31 @@ _DEFAULT_MODEL_PATH = "local_ai/models/NVIDIA-Nemotron-Nano-9B-v2-Japanese-Q4_K_
 _PREVIOUS_DEFAULT_MODEL_PATH = "local_ai/models/NVIDIA-Nemotron-Nano-9B-v2-Japanese-Q8_0.gguf"
 _LEGACY_DEFAULT_MODEL_PATH = "local_ai/models/HY-MT1.5-7B.i1-Q6_K.gguf"
 _OLDER_LEGACY_DEFAULT_MODEL_PATH = "local_ai/models/HY-MT1.5-1.8B.IQ4_XS.gguf"
-_RUNTIME_POLICY_VERSION = "reasoning-off-v2"
+_RUNTIME_POLICY_VERSION = "reasoning-budget-v4"
 _CHAT_TEMPLATE_KWARGS_REASONING_OFF = '{"enable_thinking":false}'
+
+
+def _coerce_reasoning_budget(value: object) -> Optional[int]:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        budget = int(value)
+    except (TypeError, ValueError):
+        return None
+    if budget in (-1, 0):
+        return budget
+    return None
+
+
+def _effective_reasoning_enabled(settings: AppSettings) -> bool:
+    return bool(getattr(settings, "local_ai_reasoning_enabled", False))
+
+
+def _effective_runtime_reasoning_budget(settings: AppSettings) -> Optional[int]:
+    _ = settings
+    # Server-side reasoning budget is disabled.
+    # Thinking budget is controlled per-request in local_ai_client.py.
+    return 0
 
 
 def _utc_now_iso() -> str:
@@ -645,11 +668,22 @@ class LocalLlamaServerManager:
 
         state_path = self.get_state_path()
         saved_state = _safe_read_json(state_path) or {}
+        expected_reasoning_enabled = _effective_reasoning_enabled(settings)
+        expected_reasoning_budget = _effective_runtime_reasoning_budget(settings)
         saved_runtime_policy = saved_state.get("runtime_policy_version")
+        saved_reasoning_enabled = saved_state.get("reasoning_enabled")
+        saved_reasoning_budget = _coerce_reasoning_budget(
+            saved_state.get("reasoning_budget")
+        )
+        saved_policy_mismatch = (
+            saved_runtime_policy != _RUNTIME_POLICY_VERSION
+            or saved_reasoning_enabled != expected_reasoning_enabled
+            or saved_reasoning_budget != expected_reasoning_budget
+        )
         runtime_policy_mismatch = (
             isinstance(saved_state.get("pid"), int)
             and int(saved_state.get("pid", 0)) > 0
-            and saved_runtime_policy != _RUNTIME_POLICY_VERSION
+            and saved_policy_mismatch
         )
 
         model_size, model_mtime = _file_fingerprint(model_path)
@@ -664,7 +698,23 @@ class LocalLlamaServerManager:
             expected_model_size=model_size,
             expected_model_mtime=model_mtime,
             expected_runtime_policy=_RUNTIME_POLICY_VERSION,
+            expected_reasoning_enabled=expected_reasoning_enabled,
+            expected_reasoning_budget=expected_reasoning_budget,
         )
+        if reuse_candidate is None:
+            saved_pid = saved_state.get("pid")
+            if (
+                (not isinstance(saved_pid, int) or saved_pid <= 0)
+                and not saved_policy_mismatch
+            ):
+                reuse_candidate = self._try_reuse_from_port_scan(
+                    host=host,
+                    port_base=port_base,
+                    port_max=port_max,
+                    server_exe_path=server_exe_path,
+                    server_variant=server_variant,
+                    model_path=model_path,
+                )
         if reuse_candidate is not None:
             pid_create_time: Optional[float] = None
             raw_ct = saved_state.get("pid_create_time")
@@ -693,6 +743,8 @@ class LocalLlamaServerManager:
                     "model_mtime": model_mtime,
                     "last_ok_at": _utc_now_iso(),
                     "runtime_policy_version": _RUNTIME_POLICY_VERSION,
+                    "reasoning_enabled": expected_reasoning_enabled,
+                    "reasoning_budget": expected_reasoning_budget,
                     "app_version": _get_app_version_text(),
                 },
             )
@@ -809,6 +861,8 @@ class LocalLlamaServerManager:
                 "started_at": _utc_now_iso(),
                 "last_ok_at": _utc_now_iso(),
                 "runtime_policy_version": _RUNTIME_POLICY_VERSION,
+                "reasoning_enabled": expected_reasoning_enabled,
+                "reasoning_budget": expected_reasoning_budget,
                 "app_version": _get_app_version_text(),
             },
         )
@@ -972,7 +1026,11 @@ class LocalLlamaServerManager:
     def _resolve_server_exe(self, server_dir: Path) -> tuple[Optional[Path], str]:
         state = _safe_read_json(self.get_state_path()) or {}
         preferred = state.get("server_variant")
-        preferred_variant = preferred if isinstance(preferred, str) else None
+        preferred_variant = (
+            preferred.strip().lower()
+            if isinstance(preferred, str) and preferred.strip()
+            else None
+        )
 
         candidates: list[tuple[str, Path]] = []
         direct_variant = server_dir.name.lower()
@@ -983,10 +1041,6 @@ class LocalLlamaServerManager:
             base_dir = server_dir.parent
             direct_variant_applied = True
 
-        if (base_dir / "vulkan").is_dir():
-            candidate = base_dir / "vulkan"
-            if candidate != server_dir:
-                candidates.append(("vulkan", candidate))
         if (base_dir / "avx2").is_dir():
             candidate = base_dir / "avx2"
             if candidate != server_dir:
@@ -995,9 +1049,17 @@ class LocalLlamaServerManager:
             candidate = base_dir / "generic"
             if candidate != server_dir:
                 candidates.append(("generic", candidate))
+        if (base_dir / "vulkan").is_dir():
+            candidate = base_dir / "vulkan"
+            if candidate != server_dir:
+                candidates.append(("vulkan", candidate))
 
         if not direct_variant_applied:
             candidates.append(("direct", server_dir))
+
+        # Vulkan is no longer preferred by default due runtime compatibility issues.
+        if preferred_variant == "vulkan" and not direct_variant_applied:
+            preferred_variant = None
 
         if preferred_variant and not direct_variant_applied:
             candidates = sorted(
@@ -1026,6 +1088,79 @@ class LocalLlamaServerManager:
                 return port
         return None
 
+    @staticmethod
+    def _model_id_matches_expected_model(
+        model_id: Optional[str], model_path: Path
+    ) -> bool:
+        if not isinstance(model_id, str):
+            return False
+        candidate = model_id.strip().casefold()
+        if not candidate:
+            return False
+        expected_name = model_path.name.strip().casefold()
+        expected_stem = model_path.stem.strip().casefold()
+        if not expected_name:
+            return False
+        if candidate in {expected_name, expected_stem}:
+            return True
+        if candidate.endswith(f"/{expected_name}") or candidate.endswith(
+            f"\\{expected_name}"
+        ):
+            return True
+        if expected_stem and (
+            candidate.endswith(f"/{expected_stem}")
+            or candidate.endswith(f"\\{expected_stem}")
+        ):
+            return True
+        return False
+
+    def _try_reuse_from_port_scan(
+        self,
+        *,
+        host: str,
+        port_base: int,
+        port_max: int,
+        server_exe_path: Path,
+        server_variant: str,
+        model_path: Path,
+    ) -> Optional[LocalAIServerRuntime]:
+        for port in range(port_base, port_max + 1):
+            models_payload, _ = _probe_openai_models(
+                host, port, timeout_s=_REUSE_HEALTHCHECK_TIMEOUT_S
+            )
+            if models_payload is None:
+                continue
+            model_id = (
+                _extract_first_model_id(models_payload)
+                if isinstance(models_payload, dict)
+                else None
+            )
+            if not self._model_id_matches_expected_model(model_id, model_path):
+                logger.debug(
+                    "Local AI port scan skipped runtime on %s:%d (model_id=%s expected=%s)",
+                    host,
+                    port,
+                    model_id,
+                    model_path.name,
+                )
+                continue
+            logger.info(
+                "Local AI reused running runtime from port scan: host=%s port=%d model=%s",
+                host,
+                port,
+                model_id or model_path.name,
+            )
+            return LocalAIServerRuntime(
+                host=host,
+                port=port,
+                base_url=f"http://{host}:{port}",
+                model_id=model_id,
+                server_exe_path=server_exe_path,
+                server_variant=server_variant,
+                model_path=model_path,
+            )
+        return None
+
     def _try_reuse(
         self,
         state: dict,
@@ -1036,6 +1171,8 @@ class LocalLlamaServerManager:
         expected_model_size: int,
         expected_model_mtime: int,
         expected_runtime_policy: Optional[str] = None,
+        expected_reasoning_enabled: Optional[bool] = None,
+        expected_reasoning_budget: Optional[int] = None,
     ) -> Optional[LocalAIServerRuntime]:
         host = state.get("host")
         port = state.get("port")
@@ -1050,6 +1187,14 @@ class LocalLlamaServerManager:
         if expected_runtime_policy is not None:
             if state.get("runtime_policy_version") != expected_runtime_policy:
                 return None
+        if expected_reasoning_enabled is not None:
+            reasoning_enabled = state.get("reasoning_enabled")
+            if not isinstance(reasoning_enabled, bool):
+                return None
+            if reasoning_enabled != expected_reasoning_enabled:
+                return None
+        if _coerce_reasoning_budget(state.get("reasoning_budget")) != expected_reasoning_budget:
+            return None
 
         exe_path = state.get("server_exe_path_resolved")
         model_path = state.get("model_path_resolved")
@@ -1449,17 +1594,10 @@ class LocalLlamaServerManager:
             elif help_text and has_short("-n"):
                 args += ["-n", str(int(settings.local_ai_max_tokens))]
 
-        if help_text and has_long("--reasoning-budget"):
-            args += ["--reasoning-budget", "0"]
-
+        # Keep server default in non-thinking mode.
+        # Thinking is explicitly controlled per request from LocalAIClient payload.
         if help_text and has_long("--chat-template-kwargs"):
-            args += [
-                "--chat-template-kwargs",
-                _CHAT_TEMPLATE_KWARGS_REASONING_OFF,
-            ]
-
-        if help_text and has_long("--reasoning-format"):
-            args += ["--reasoning-format", "deepseek"]
+            args += ["--chat-template-kwargs", _CHAT_TEMPLATE_KWARGS_REASONING_OFF]
 
         batch_size = settings.local_ai_batch_size
         if help_text and batch_size is not None and batch_size > 0:

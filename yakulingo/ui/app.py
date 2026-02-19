@@ -3788,6 +3788,16 @@ class YakuLingoApp:
                     force_follow_on_first_chunk=True,
                     log_context="Hotkey translation",
                 )
+                if self._is_reasoning_budget_active():
+                    try:
+                        stream_handler("推論中...")
+                        await asyncio.sleep(0)
+                    except Exception:
+                        logger.debug(
+                            "Hotkey translation [%s] failed to push reasoning placeholder",
+                            trace_id,
+                            exc_info=True,
+                        )
             result = await asyncio.to_thread(
                 self.translation_service.translate_text_with_style_comparison,
                 text,
@@ -8158,6 +8168,20 @@ class YakuLingoApp:
         value = value.strip().lower()
         return value in ("0", "false", "no", "off")
 
+    def _is_reasoning_budget_active(self) -> bool:
+        settings = getattr(self, "settings", None)
+        if settings is None:
+            return False
+        if not bool(getattr(settings, "local_ai_reasoning_enabled", False)):
+            return False
+        budget = getattr(settings, "local_ai_reasoning_budget", None)
+        if budget is None or isinstance(budget, bool):
+            return False
+        try:
+            return int(budget) > 0
+        except (TypeError, ValueError):
+            return False
+
     def _normalize_streaming_preview_text(self, text: Optional[str]) -> Optional[str]:
         if text is None:
             return None
@@ -9258,6 +9282,16 @@ class YakuLingoApp:
                     force_follow_on_first_chunk=True,
                     log_context="Translation",
                 )
+                if self._is_reasoning_budget_active():
+                    try:
+                        stream_handler("推論中...")
+                        await asyncio.sleep(0)
+                    except Exception:
+                        logger.debug(
+                            "Translation [%s] failed to push reasoning placeholder",
+                            trace_id,
+                            exc_info=True,
+                        )
             result = await asyncio.to_thread(
                 self.translation_service.translate_text_with_style_comparison,
                 source_text,
@@ -9308,6 +9342,9 @@ class YakuLingoApp:
             else:
                 error_message = result.error_message if result else "Unknown error"
 
+        except asyncio.CancelledError:
+            logger.info("Translation [%s] task cancelled", trace_id)
+            error_message = "翻訳がキャンセルされました"
         except TranslationCancelledError:
             logger.info("Translation [%s] cancelled by user", trace_id)
             error_message = "翻訳がキャンセルされました"
@@ -9320,6 +9357,9 @@ class YakuLingoApp:
             try:
                 flush()
                 await asyncio.sleep(0)
+            except asyncio.CancelledError:
+                logger.info("Translation [%s] cancelled during streaming flush", trace_id)
+                error_message = "翻訳がキャンセルされました"
             except Exception:
                 logger.debug(
                     "Translation [%s] streaming preview flush failed",

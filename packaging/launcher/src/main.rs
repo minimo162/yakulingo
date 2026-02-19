@@ -163,6 +163,29 @@ fn run() -> Result<(), String> {
             break;
         }
 
+        // Guard against duplicate launches during process handoff.
+        // Example: app.py can intentionally spawn a successor process and exit 0.
+        // If a valid instance is already alive, do not start another process.
+        let running_after_exit = {
+            let mutex_present_after_exit = if allow_multi_instance {
+                false
+            } else {
+                is_instance_mutex_present()
+            };
+            let app_status_after_exit = check_app_status(APP_PORT);
+            mutex_present_after_exit || app_status_after_exit == AppStatus::Running
+        };
+        if running_after_exit {
+            log_event(
+                &log_path,
+                &format!(
+                    "Detected active instance after child exit (code {}) - stopping restart",
+                    exit_code
+                ),
+            );
+            break;
+        }
+
         if elapsed > Duration::from_secs(RESTART_RESET_AFTER_SEC) {
             restart_attempts = 0;
             backoff = Duration::from_secs(RESTART_BACKOFF_BASE_SEC);

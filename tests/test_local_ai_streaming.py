@@ -32,6 +32,26 @@ def test_local_ai_streaming_parses_sse_and_collects_chunks() -> None:
     assert model_id is None
 
 
+def test_local_ai_streaming_parses_openai_content_parts_array() -> None:
+    client = LocalAIClient(settings=AppSettings())
+    received: list[str] = []
+
+    def on_chunk(text: str) -> None:
+        received.append(text)
+
+    chunks = [
+        b'data: {"choices":[{"delta":{"content":[{"type":"output_text","text":"Hel"}]}}]}\n\n',
+        b'data: {"choices":[{"delta":{"content":[{"type":"output_text","text":"lo"}]}}]}\n\n',
+        b"data: [DONE]\n\n",
+    ]
+
+    content, model_id = client._consume_sse_stream(iter(chunks), on_chunk)
+
+    assert content == "Hello"
+    assert received == ["Hel", "lo"]
+    assert model_id is None
+
+
 def test_local_ai_streaming_ignores_reasoning_content_when_thinking_off() -> None:
     client = LocalAIClient(settings=AppSettings())
     received: list[str] = []

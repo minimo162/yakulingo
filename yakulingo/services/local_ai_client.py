@@ -48,6 +48,8 @@ _TIMING_ENABLED = os.environ.get("YAKULINGO_LOCAL_AI_TIMING") == "1"
 _DIAGNOSTIC_SNIPPET_CHARS = 200
 _SSE_DELTA_COALESCE_MIN_CHARS = 256
 _SSE_DELTA_COALESCE_MAX_INTERVAL_SEC = 0.18
+_THINKING_BUDGET_SOFT_CAP_CPU = 64
+_THINKING_BUDGET_SOFT_CAP_STREAMING = 16
 
 _PROMPT_REPEAT_SEPARATOR = "\n\n"
 _PROMPT_ECHO_PREFIX_MIN = 120
@@ -105,6 +107,34 @@ def _is_nemotron_model(runtime: LocalAIServerRuntime) -> bool:
         if "nemotron" in lowered:
             return True
     return False
+
+
+def _resolve_reasoning_budget(settings: AppSettings) -> Optional[int]:
+    if not bool(getattr(settings, "local_ai_reasoning_enabled", False)):
+        return None
+    raw = getattr(settings, "local_ai_reasoning_budget", None)
+    if raw is None or isinstance(raw, bool):
+        return None
+    try:
+        budget = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return budget if budget > 0 else None
+
+
+def _normalize_reasoning_content_for_continuation(content: str) -> str:
+    text = (content or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not text:
+        return "<think>\n</think>\n\n"
+    lowered = text.casefold()
+    if "<think>" not in lowered:
+        text = f"<think>\n{text}"
+        lowered = text.casefold()
+    if "</think>" not in lowered:
+        if text and text[-1] not in ".!?。！？":
+            text += "."
+        text += "\n</think>\n\n"
+    return text
 
 
 _RE_CODE_FENCE = re.compile(r"^\s*```(?:json)?\s*$", re.IGNORECASE)
@@ -605,31 +635,27 @@ def _parse_openai_chat_content(payload: dict) -> str:
 
 
 def _parse_openai_stream_delta(payload: dict) -> Optional[str]:
-    choices = payload.get("choices")
-    if not isinstance(choices, list) or not choices:
-        return None
-    first = choices[0]
-    if not isinstance(first, dict):
-        return None
-    delta = first.get("delta")
-    if isinstance(delta, dict):
-        content = delta.get("content")
-        if isinstance(content, str):
-            return content
-    text = first.get("text")
-    if isinstance(text, str):
-        return text
-    message = first.get("message")
-    if isinstance(message, dict):
-        content = message.get("content")
-        if isinstance(content, str):
-            return content
-    return None
+    content, _reasoning = _parse_openai_stream_delta_parts(payload)
+    return content
 
 
 def _extract_openai_stream_delta_text(value: object) -> Optional[str]:
     if isinstance(value, str):
         return value
+    if isinstance(value, list):
+        parts: list[str] = []
+        for item in value:
+            if isinstance(item, str):
+                if item:
+                    parts.append(item)
+                continue
+            if not isinstance(item, dict):
+                continue
+            text = item.get("text")
+            if isinstance(text, str) and text:
+                parts.append(text)
+        if parts:
+            return "".join(parts)
     return None
 
 
@@ -945,6 +971,76 @@ class LocalAIClient:
             _RAW_PROMPT_MARKER
         )
 
+    def _resolve_thinking_budget_mode(
+        self, runtime: LocalAIServerRuntime, prompt: str
+    ) -> tuple[Optional[int], Optional[int]]:
+        if not _is_nemotron_model(runtime):
+            return None, None
+        if _should_enforce_json_response(prompt):
+            return None, None
+        budget = _resolve_reasoning_budget(self._settings)
+        if budget is None:
+            return None, None
+        max_tokens = self._settings.local_ai_max_tokens
+        if max_tokens is None:
+            logger.debug(
+                "LocalAI thinking budget skipped: local_ai_max_tokens is unset"
+            )
+            return None, None
+        total_max = int(max_tokens)
+        if total_max <= budget:
+            logger.warning(
+                "LocalAI thinking budget skipped: max_tokens=%d <= budget=%d",
+                total_max,
+                budget,
+            )
+            return None, None
+        return budget, total_max
+
+    @staticmethod
+    def _apply_thinking_budget_soft_cap(
+        runtime: LocalAIServerRuntime,
+        budget_tokens: int,
+        *,
+        streaming: bool,
+    ) -> int:
+        variant = str(getattr(runtime, "server_variant", "") or "").strip().lower()
+        is_cpu_runtime = variant != "vulkan"
+        cap: Optional[int] = None
+        if streaming:
+            cap = _THINKING_BUDGET_SOFT_CAP_STREAMING
+        elif is_cpu_runtime:
+            cap = _THINKING_BUDGET_SOFT_CAP_CPU
+        if cap is None:
+            return int(budget_tokens)
+        capped = min(int(budget_tokens), int(cap))
+        if capped < int(budget_tokens):
+            logger.info(
+                "LocalAI thinking budget capped: %d -> %d (variant=%s streaming=%s)",
+                int(budget_tokens),
+                int(capped),
+                variant or "unknown",
+                bool(streaming),
+            )
+        return capped
+
+    def _build_budget_continuation_prompt(self, prompt: str, reasoning_content: str) -> str:
+        user_prompt = (
+            self._extract_user_prompt_from_raw_prompt(prompt)
+            if self._is_raw_prompt(prompt)
+            else (prompt or "")
+        )
+        reasoning_block = _normalize_reasoning_content_for_continuation(
+            reasoning_content
+        )
+        return (
+            f"{_RAW_PROMPT_MARKER}"
+            f"{user_prompt}"
+            f"{_RAW_PROMPT_END_MARKER}\n"
+            f"<start_of_turn>model\n"
+            f"{reasoning_block}"
+        )
+
     def _build_chat_payload(
         self,
         runtime: LocalAIServerRuntime,
@@ -955,16 +1051,21 @@ class LocalAIClient:
         response_format: str | None = None,
         include_sampling_params: bool = True,
         repeat_prompt: bool = False,
+        max_tokens_override: Optional[int] = None,
     ) -> dict[str, object]:
         original_prompt = prompt or ""
         if self._should_force_chat_completions(runtime, original_prompt):
             original_prompt = self._extract_user_prompt_from_raw_prompt(original_prompt)
         user_prompt = _sent_prompt(original_prompt, repeat=repeat_prompt)
         messages: list[dict[str, str]] = [{"role": "user", "content": user_prompt}]
-        disable_nemotron_thinking = _is_nemotron_model(runtime)
+        is_nemotron = _is_nemotron_model(runtime)
+        enable_nemotron_thinking = (
+            is_nemotron and bool(self._settings.local_ai_reasoning_enabled)
+        )
+        force_greedy_for_nemotron = is_nemotron and not enable_nemotron_thinking
         effective_include_sampling_params = include_sampling_params
         temperature = float(self._settings.local_ai_temperature)
-        if disable_nemotron_thinking:
+        if force_greedy_for_nemotron:
             # Nemotron defaults to reasoning mode; explicitly disable it and use greedy.
             temperature = 0.0
             effective_include_sampling_params = False
@@ -974,8 +1075,10 @@ class LocalAIClient:
             "stream": stream,
             "temperature": temperature,
         }
-        if disable_nemotron_thinking:
-            payload["chat_template_kwargs"] = {"enable_thinking": False}
+        if is_nemotron:
+            payload["chat_template_kwargs"] = {
+                "enable_thinking": enable_nemotron_thinking
+            }
         if effective_include_sampling_params:
             top_p = self._settings.local_ai_top_p
             top_k = self._settings.local_ai_top_k
@@ -1000,7 +1103,9 @@ class LocalAIClient:
                 payload["repeat_penalty"] = float(
                     self._settings.local_ai_repeat_penalty
                 )
-        if self._settings.local_ai_max_tokens is not None:
+        if max_tokens_override is not None:
+            payload["max_tokens"] = int(max_tokens_override)
+        elif self._settings.local_ai_max_tokens is not None:
             payload["max_tokens"] = int(self._settings.local_ai_max_tokens)
         if enforce_json:
             payload["response_format"] = _build_response_format_payload(
@@ -1018,13 +1123,17 @@ class LocalAIClient:
         stream: bool,
         include_sampling_params: bool = True,
         repeat_prompt: bool = False,
+        max_tokens_override: Optional[int] = None,
     ) -> dict[str, object]:
         original_prompt = prompt or ""
         sent_prompt = _sent_prompt(original_prompt, repeat=repeat_prompt)
-        disable_nemotron_thinking = _is_nemotron_model(runtime)
+        is_nemotron = _is_nemotron_model(runtime)
+        force_greedy_for_nemotron = is_nemotron and not bool(
+            self._settings.local_ai_reasoning_enabled
+        )
         effective_include_sampling_params = include_sampling_params
         temperature = float(self._settings.local_ai_temperature)
-        if disable_nemotron_thinking:
+        if force_greedy_for_nemotron:
             # Keep raw prompt path deterministic for Nemotron as well.
             temperature = 0.0
             effective_include_sampling_params = False
@@ -1056,7 +1165,9 @@ class LocalAIClient:
                 payload["min_p"] = float(self._settings.local_ai_min_p)
             if self._settings.local_ai_repeat_penalty is not None:
                 payload["repeat_penalty"] = float(self._settings.local_ai_repeat_penalty)
-        if self._settings.local_ai_max_tokens is not None:
+        if max_tokens_override is not None:
+            payload["max_tokens"] = int(max_tokens_override)
+        elif self._settings.local_ai_max_tokens is not None:
             payload["max_tokens"] = int(self._settings.local_ai_max_tokens)
         if _RAW_PROMPT_STOP_SEQUENCES:
             payload["stop"] = _RAW_PROMPT_STOP_SEQUENCES
@@ -1220,6 +1331,76 @@ class LocalAIClient:
             # Avoid re-running warmup on every request if it keeps failing.
             _mark_warmed(runtime)
 
+    def _chat_completions_with_thinking_budget(
+        self,
+        runtime: LocalAIServerRuntime,
+        prompt: str,
+        *,
+        timeout: Optional[int],
+        budget_tokens: int,
+        total_max_tokens: int,
+    ) -> LocalAIRequestResult:
+        reasoning = self._chat_completions(
+            runtime,
+            prompt,
+            timeout=timeout,
+            repeat_prompt=False,
+            max_tokens_override=budget_tokens,
+        )
+        continuation_prompt = self._build_budget_continuation_prompt(
+            prompt, reasoning.content
+        )
+        remaining_tokens = max(1, int(total_max_tokens) - int(budget_tokens))
+        completion = self._completions(
+            runtime,
+            continuation_prompt,
+            timeout=timeout,
+            repeat_prompt=False,
+            max_tokens_override=remaining_tokens,
+        )
+        cleaned = strip_prompt_echo(completion.content, continuation_prompt)
+        return LocalAIRequestResult(
+            content=cleaned,
+            model_id=completion.model_id,
+            parsed_json=completion.parsed_json,
+        )
+
+    def _chat_completions_streaming_with_thinking_budget(
+        self,
+        runtime: LocalAIServerRuntime,
+        prompt: str,
+        on_chunk: Callable[[str], None],
+        *,
+        timeout: Optional[int],
+        budget_tokens: int,
+        total_max_tokens: int,
+    ) -> LocalAIRequestResult:
+        reasoning = self._chat_completions(
+            runtime,
+            prompt,
+            timeout=timeout,
+            repeat_prompt=False,
+            max_tokens_override=budget_tokens,
+        )
+        continuation_prompt = self._build_budget_continuation_prompt(
+            prompt, reasoning.content
+        )
+        remaining_tokens = max(1, int(total_max_tokens) - int(budget_tokens))
+        completion = self._completions_streaming(
+            runtime,
+            continuation_prompt,
+            on_chunk,
+            timeout=timeout,
+            repeat_prompt=False,
+            max_tokens_override=remaining_tokens,
+        )
+        cleaned = strip_prompt_echo(completion.content, continuation_prompt)
+        return LocalAIRequestResult(
+            content=cleaned,
+            model_id=completion.model_id,
+            parsed_json=completion.parsed_json,
+        )
+
     def translate_single(
         self,
         text: str,
@@ -1250,24 +1431,63 @@ class LocalAIClient:
         use_completions = self._is_raw_prompt(prompt) and not self._should_force_chat_completions(
             runtime, prompt
         )
+        budget_tokens, total_max_tokens = self._resolve_thinking_budget_mode(
+            runtime, prompt
+        )
+        if budget_tokens is not None and total_max_tokens is not None:
+            budget_tokens = self._apply_thinking_budget_soft_cap(
+                runtime, budget_tokens, streaming=on_chunk is not None
+            )
+            if int(total_max_tokens) <= int(budget_tokens):
+                logger.warning(
+                    "LocalAI thinking budget disabled after cap: max_tokens=%d <= budget=%d",
+                    int(total_max_tokens),
+                    int(budget_tokens),
+                )
+                budget_tokens = None
+                total_max_tokens = None
+        use_budgeted_reasoning = (
+            not use_completions
+            and budget_tokens is not None
+            and total_max_tokens is not None
+        )
         if on_chunk is None:
-            result = (
-                self._completions(runtime, prompt, timeout=timeout, repeat_prompt=False)
-                if use_completions
-                else self._chat_completions(
-                    runtime, prompt, timeout=timeout, repeat_prompt=False
+            if use_budgeted_reasoning:
+                result = self._chat_completions_with_thinking_budget(
+                    runtime,
+                    prompt,
+                    timeout=timeout,
+                    budget_tokens=budget_tokens,
+                    total_max_tokens=total_max_tokens,
                 )
-            )
+            else:
+                result = (
+                    self._completions(runtime, prompt, timeout=timeout, repeat_prompt=False)
+                    if use_completions
+                    else self._chat_completions(
+                        runtime, prompt, timeout=timeout, repeat_prompt=False
+                    )
+                )
         else:
-            result = (
-                self._completions_streaming(
-                    runtime, prompt, on_chunk, timeout=timeout, repeat_prompt=False
+            if use_budgeted_reasoning:
+                result = self._chat_completions_streaming_with_thinking_budget(
+                    runtime,
+                    prompt,
+                    on_chunk,
+                    timeout=timeout,
+                    budget_tokens=budget_tokens,
+                    total_max_tokens=total_max_tokens,
                 )
-                if use_completions
-                else self._chat_completions_streaming(
-                    runtime, prompt, on_chunk, timeout=timeout, repeat_prompt=False
+            else:
+                result = (
+                    self._completions_streaming(
+                        runtime, prompt, on_chunk, timeout=timeout, repeat_prompt=False
+                    )
+                    if use_completions
+                    else self._chat_completions_streaming(
+                        runtime, prompt, on_chunk, timeout=timeout, repeat_prompt=False
+                    )
                 )
-            )
             flush = getattr(on_chunk, "flush", None)
             if callable(flush):
                 try:
@@ -1278,7 +1498,11 @@ class LocalAIClient:
         t_req = time.perf_counter() - t1
         logger.debug(
             "[TIMING] LocalAI %s%s: %.2fs (prompt_chars=%d repeated=%s)",
-            "completions" if use_completions else "chat_completions",
+            (
+                "completions"
+                if use_completions
+                else ("chat_completions_budgeted" if use_budgeted_reasoning else "chat_completions")
+            ),
             "" if on_chunk is None else "_streaming",
             t_req,
             _sent_prompt_len(prompt, repeat=repeat_used),
@@ -1351,6 +1575,7 @@ class LocalAIClient:
         *,
         timeout: Optional[int],
         repeat_prompt: bool = False,
+        max_tokens_override: Optional[int] = None,
     ) -> LocalAIRequestResult:
         if self._should_cancel():
             raise TranslationCancelledError("Translation cancelled by user")
@@ -1374,6 +1599,7 @@ class LocalAIClient:
                 stream=False,
                 include_sampling_params=include_sampling_params,
                 repeat_prompt=repeat_prompt,
+                max_tokens_override=max_tokens_override,
             )
             try:
                 response = self._http_json_cancellable(
@@ -1413,6 +1639,7 @@ class LocalAIClient:
         *,
         timeout: Optional[int],
         repeat_prompt: bool = False,
+        max_tokens_override: Optional[int] = None,
     ) -> LocalAIRequestResult:
         cached_sampling_support = self._get_sampling_params_support(runtime)
         include_sampling_params = cached_sampling_support is not False
@@ -1430,6 +1657,7 @@ class LocalAIClient:
                 stream=True,
                 include_sampling_params=include_sampling_params,
                 repeat_prompt=repeat_prompt,
+                max_tokens_override=max_tokens_override,
             )
             try:
                 result = self._completions_streaming_with_payload(
@@ -1464,6 +1692,7 @@ class LocalAIClient:
         timeout: Optional[int],
         force_response_format: Optional[bool] = None,
         repeat_prompt: bool = False,
+        max_tokens_override: Optional[int] = None,
     ) -> LocalAIRequestResult:
         if self._should_cancel():
             raise TranslationCancelledError("Translation cancelled by user")
@@ -1504,6 +1733,7 @@ class LocalAIClient:
                 response_format=response_format,
                 include_sampling_params=include_sampling_params,
                 repeat_prompt=repeat_prompt,
+                max_tokens_override=max_tokens_override,
             )
             try:
                 response = self._http_json_cancellable(

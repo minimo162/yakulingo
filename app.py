@@ -108,6 +108,10 @@ def _relaunch_with_pythonw_if_needed() -> None:
         return
     if os.environ.get("YAKULINGO_ALLOW_CONSOLE") == "1":
         return
+    if (os.environ.get("YAKULINGO_LAUNCH_SOURCE") or "").strip().lower() == "launcher":
+        # Native launcher already hides the console via CREATE_NO_WINDOW.
+        # Relaunching here can trigger watchdog restart races.
+        return
     if os.environ.get("YAKULINGO_RELAUNCHED") == "1":
         return
 

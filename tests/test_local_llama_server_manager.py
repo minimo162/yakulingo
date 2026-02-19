@@ -375,6 +375,87 @@ def test_ensure_ready_falls_back_to_bundled_server_dir_when_custom_invalid(
     assert seen_dirs == [tmp_path / "custom" / "invalid", bundled_dir]
 
 
+def test_ensure_ready_reuses_running_runtime_from_port_scan_when_pid_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_app_base_dir(tmp_path, monkeypatch)
+    settings_model_path = tmp_path / "settings_model.gguf"
+    settings_model_path.write_bytes(b"dummy")
+
+    server_dir = tmp_path / "llama_cpp"
+    avx2_dir = server_dir / "avx2"
+    avx2_dir.mkdir(parents=True, exist_ok=True)
+    (avx2_dir / "llama-server.exe").write_bytes(b"exe")
+
+    state_path = tmp_path / "state.json"
+    lls._atomic_write_json(
+        state_path,
+        {
+            "host": "127.0.0.1",
+            "port": 4892,
+            "pid": None,
+            "server_variant": "vulkan",
+            "runtime_policy_version": lls._RUNTIME_POLICY_VERSION,
+            "reasoning_enabled": True,
+            "reasoning_budget": 0,
+        },
+    )
+
+    monkeypatch.setattr(lls, "_probe_executable_supported", lambda path: True)
+    monkeypatch.setattr(
+        lls.LocalLlamaServerManager,
+        "get_state_path",
+        staticmethod(lambda: state_path),
+    )
+    monkeypatch.setattr(
+        lls.LocalLlamaServerManager,
+        "get_log_path",
+        staticmethod(lambda: tmp_path / "local_ai_server.log"),
+    )
+
+    def fake_probe_openai_models(host: str, port: int, timeout_s: float = 0.8):
+        _ = host, timeout_s
+        if port == 4891:
+            return {"object": "list", "data": [{"id": settings_model_path.name}]}, None
+        return None, "timeout"
+
+    monkeypatch.setattr(lls, "_probe_openai_models", fake_probe_openai_models)
+
+    manager = lls.LocalLlamaServerManager()
+    monkeypatch.setattr(
+        manager,
+        "_find_free_port",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("port scan reuse should skip new start")
+        ),
+    )
+    monkeypatch.setattr(
+        manager,
+        "_start_new_server",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("new server start should not run")
+        ),
+    )
+
+    settings = AppSettings(
+        local_ai_model_path=str(settings_model_path),
+        local_ai_server_dir="llama_cpp",
+        local_ai_port_base=4891,
+        local_ai_port_max=4893,
+        local_ai_reasoning_enabled=True,
+    )
+
+    runtime = manager.ensure_ready(settings)
+
+    assert runtime.host == "127.0.0.1"
+    assert runtime.port == 4891
+    assert runtime.model_id == settings_model_path.name
+    assert runtime.server_variant == "avx2"
+    saved_state = lls._safe_read_json(state_path) or {}
+    assert saved_state.get("port") == 4891
+    assert saved_state.get("pid") is None
+
+
 def test_ensure_ready_falls_back_to_avx2_when_vulkan_oom(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -405,7 +486,7 @@ def test_ensure_ready_falls_back_to_avx2_when_vulkan_oom(
 
     settings = AppSettings(
         local_ai_model_path=str(settings_model_path),
-        local_ai_server_dir="llama_cpp",
+        local_ai_server_dir="llama_cpp/vulkan",
         local_ai_port_base=4891,
         local_ai_port_max=4893,
     )
@@ -499,7 +580,7 @@ def test_wait_ready_aborts_early_when_vulkan_oom_detected(
     assert called["kill"] == 0
 
 
-def test_resolve_server_exe_prefers_vulkan_variant(
+def test_resolve_server_exe_prefers_avx2_variant(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     server_dir = tmp_path / "llama_cpp"
@@ -518,8 +599,8 @@ def test_resolve_server_exe_prefers_vulkan_variant(
     manager = lls.LocalLlamaServerManager()
     exe_path, variant = manager._resolve_server_exe(server_dir)
 
-    assert variant == "vulkan"
-    assert exe_path == server_dir / "vulkan" / "llama-server.exe"
+    assert variant == "avx2"
+    assert exe_path == server_dir / "avx2" / "llama-server.exe"
 
 
 def test_resolve_server_exe_direct_variant_uses_variant(
@@ -889,7 +970,7 @@ def test_build_server_args_disables_reasoning_when_supported(
 
     monkeypatch.setattr(lls.subprocess, "run", fake_run)
 
-    settings = AppSettings()
+    settings = AppSettings(local_ai_reasoning_enabled=False)
     settings._validate()
 
     args = manager._build_server_args(
@@ -901,18 +982,16 @@ def test_build_server_args_disables_reasoning_when_supported(
         settings=settings,
     )
 
-    assert "--reasoning-budget" in args
-    assert args[args.index("--reasoning-budget") + 1] == "0"
+    assert "--reasoning-budget" not in args
     assert "--chat-template-kwargs" in args
     assert (
         args[args.index("--chat-template-kwargs") + 1]
         == '{"enable_thinking":false}'
     )
-    assert "--reasoning-format" in args
-    assert args[args.index("--reasoning-format") + 1] == "deepseek"
+    assert "--reasoning-format" not in args
 
 
-def test_build_server_args_sets_nemotron_reasoning_budget_when_supported(
+def test_build_server_args_keeps_server_reasoning_off_for_nemotron_when_supported(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     manager = lls.LocalLlamaServerManager()
@@ -954,10 +1033,13 @@ def test_build_server_args_sets_nemotron_reasoning_budget_when_supported(
         settings=settings,
     )
 
-    assert "--reasoning-budget" in args
-    assert args[args.index("--reasoning-budget") + 1] == "0"
+    assert "--reasoning-budget" not in args
     assert "--chat-template-kwargs" in args
-    assert "--reasoning-format" in args
+    assert (
+        args[args.index("--chat-template-kwargs") + 1]
+        == '{"enable_thinking":false}'
+    )
+    assert "--reasoning-format" not in args
 
 
 def test_build_server_args_skips_reasoning_flags_without_help(

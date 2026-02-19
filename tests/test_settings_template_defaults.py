@@ -25,6 +25,8 @@ def test_local_ai_defaults_match_template() -> None:
         "local_ai_flash_attn",
         "local_ai_cache_type_k",
         "local_ai_cache_type_v",
+        "local_ai_reasoning_enabled",
+        "local_ai_reasoning_budget",
     ]
 
     settings = AppSettings()

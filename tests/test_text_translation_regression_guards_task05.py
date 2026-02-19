@@ -5,6 +5,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Callable
 
+import pytest
+
 from yakulingo.config.settings import AppSettings
 from yakulingo.services.local_ai_client import LocalAIClient, LocalAIRequestResult
 from yakulingo.services.local_ai_prompt_builder import LocalPromptBuilder
@@ -249,3 +251,142 @@ def test_streaming_preview_does_not_regress_on_shorter_truncated_update(
         assert rendered[-1] == full
     finally:
         loop.close()
+
+
+@pytest.mark.asyncio
+async def test_translate_text_clears_translating_state_when_task_cancelled(
+    monkeypatch,
+) -> None:
+    app = YakuLingoApp()
+    app.state.source_text = "テスト"
+    app.state.text_detected_language = "日本語"
+    app.state.text_detected_language_reason = "kana"
+
+    class DummyClient:
+        has_socket_connection = True
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            _ = exc_type, exc, tb
+            return False
+
+    app._client = DummyClient()
+
+    async def fake_ensure_connection_async() -> bool:
+        return True
+
+    monkeypatch.setattr(app, "_ensure_connection_async", fake_ensure_connection_async)
+    monkeypatch.setattr(app, "_resolve_effective_detected_language", lambda value: value)
+    monkeypatch.setattr(app, "_is_local_streaming_preview_enabled", lambda: False)
+    monkeypatch.setattr(app, "_refresh_result_panel", lambda: None)
+    monkeypatch.setattr(
+        app, "_scroll_result_panel_to_bottom", lambda *args, **kwargs: None
+    )
+    monkeypatch.setattr(app, "_scroll_result_panel_to_top", lambda *args, **kwargs: None)
+    monkeypatch.setattr(app, "_refresh_tabs", lambda: None)
+    monkeypatch.setattr(app, "_update_translate_button_state", lambda: None)
+    monkeypatch.setattr(app, "_refresh_status", lambda: None)
+    monkeypatch.setattr(app, "_add_to_history", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "yakulingo.ui.app.ui", SimpleNamespace(notify=lambda *args, **kwargs: None)
+    )
+
+    def _raise_cancel(*_args, **_kwargs):
+        raise asyncio.CancelledError()
+
+    app.translation_service = SimpleNamespace(
+        reset_cancel=lambda: None,
+        _cancel_event=SimpleNamespace(is_set=lambda: False),
+        translate_text_with_style_comparison=_raise_cancel,
+    )
+
+    await app._translate_text()
+
+    assert app.state.text_translating is False
+    assert app.state.text_detected_language is None
+    assert app.state.text_detected_language_reason is None
+    assert app.state.text_streaming_preview is None
+    assert app._active_translation_trace_id is None
+
+
+@pytest.mark.asyncio
+async def test_translate_text_emits_reasoning_placeholder_before_stream(
+    monkeypatch,
+) -> None:
+    app = YakuLingoApp()
+    app.settings = AppSettings(
+        local_ai_reasoning_enabled=True,
+        local_ai_reasoning_budget=128,
+    )
+    app.state.source_text = "テスト"
+    app.state.text_detected_language = "日本語"
+    app.state.text_detected_language_reason = "kana"
+
+    class DummyClient:
+        has_socket_connection = True
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            _ = exc_type, exc, tb
+            return False
+
+    app._client = DummyClient()
+
+    async def fake_ensure_connection_async() -> bool:
+        return True
+
+    monkeypatch.setattr(app, "_ensure_connection_async", fake_ensure_connection_async)
+    monkeypatch.setattr(app, "_resolve_effective_detected_language", lambda value: value)
+    monkeypatch.setattr(app, "_is_local_streaming_preview_enabled", lambda: True)
+    monkeypatch.setattr(app, "_refresh_result_panel", lambda: None)
+    monkeypatch.setattr(
+        app, "_scroll_result_panel_to_bottom", lambda *args, **kwargs: None
+    )
+    monkeypatch.setattr(app, "_scroll_result_panel_to_top", lambda *args, **kwargs: None)
+    monkeypatch.setattr(app, "_refresh_tabs", lambda: None)
+    monkeypatch.setattr(app, "_update_translate_button_state", lambda: None)
+    monkeypatch.setattr(app, "_refresh_status", lambda: None)
+    monkeypatch.setattr(app, "_add_to_history", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "yakulingo.ui.app.ui", SimpleNamespace(notify=lambda *args, **kwargs: None)
+    )
+
+    emitted: list[str] = []
+
+    def fake_create_stream_handler(*args, **kwargs):
+        _ = args, kwargs
+
+        def _handler(text: str) -> None:
+            emitted.append(text)
+
+        setattr(_handler, "flush", lambda: None)
+        return _handler
+
+    monkeypatch.setattr(
+        app, "_create_text_streaming_preview_on_chunk", fake_create_stream_handler
+    )
+
+    def fake_translate(*args):
+        on_chunk = args[4]
+        if callable(on_chunk):
+            on_chunk("final chunk")
+        return SimpleNamespace(
+            options=[SimpleNamespace(text="Final answer")],
+            error_message=None,
+            detected_language=None,
+        )
+
+    app.translation_service = SimpleNamespace(
+        reset_cancel=lambda: None,
+        _cancel_event=SimpleNamespace(is_set=lambda: False),
+        translate_text_with_style_comparison=fake_translate,
+    )
+
+    await app._translate_text()
+
+    assert emitted
+    assert emitted[0] == "推論中..."

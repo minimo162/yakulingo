@@ -300,7 +300,9 @@ def test_build_chat_payload_omits_sampling_params_when_none() -> None:
 
 
 def test_build_chat_payload_disables_nemotron_thinking_with_greedy() -> None:
-    client = LocalAIClient(AppSettings())
+    settings = AppSettings(local_ai_reasoning_enabled=False)
+    settings._validate()
+    client = LocalAIClient(settings)
     runtime = _make_nemotron_runtime()
     payload = client._build_chat_payload(
         runtime, "prompt", stream=False, enforce_json=False
@@ -313,8 +315,26 @@ def test_build_chat_payload_disables_nemotron_thinking_with_greedy() -> None:
         assert key not in payload
 
 
+def test_build_chat_payload_enables_nemotron_thinking_with_sampling() -> None:
+    settings = AppSettings(local_ai_reasoning_enabled=True)
+    settings._validate()
+    client = LocalAIClient(settings)
+    runtime = _make_nemotron_runtime()
+    payload = client._build_chat_payload(
+        runtime, "prompt", stream=False, enforce_json=False
+    )
+    assert payload["chat_template_kwargs"] == {"enable_thinking": True}
+    assert payload["temperature"] == 0.7
+    assert payload["top_p"] == 0.95
+    assert payload["top_k"] == 64
+    assert payload["min_p"] == 0.01
+    assert payload["repeat_penalty"] == 1.05
+
+
 def test_build_completions_payload_uses_greedy_for_nemotron() -> None:
-    client = LocalAIClient(AppSettings())
+    settings = AppSettings(local_ai_reasoning_enabled=False)
+    settings._validate()
+    client = LocalAIClient(settings)
     runtime = _make_nemotron_runtime()
     payload = client._build_completions_payload(runtime, "prompt", stream=False)
     assert payload["prompt"] == "prompt"
@@ -325,7 +345,9 @@ def test_build_completions_payload_uses_greedy_for_nemotron() -> None:
 
 
 def test_build_chat_payload_keeps_configured_max_tokens_for_nemotron_json_mode() -> None:
-    client = LocalAIClient(AppSettings())
+    settings = AppSettings(local_ai_reasoning_enabled=False)
+    settings._validate()
+    client = LocalAIClient(settings)
     runtime = _make_nemotron_runtime()
     payload = client._build_chat_payload(
         runtime, 'Return JSON only: {"translation": ""}', stream=False, enforce_json=True
@@ -335,7 +357,9 @@ def test_build_chat_payload_keeps_configured_max_tokens_for_nemotron_json_mode()
 
 
 def test_build_chat_payload_extracts_raw_prompt_for_nemotron() -> None:
-    client = LocalAIClient(AppSettings())
+    settings = AppSettings(local_ai_reasoning_enabled=False)
+    settings._validate()
+    client = LocalAIClient(settings)
     runtime = _make_nemotron_runtime()
     raw_prompt = (
         "<bos><start_of_turn>user\n"
@@ -360,7 +384,9 @@ def test_build_chat_payload_extracts_raw_prompt_for_nemotron() -> None:
 
 
 def test_translate_single_forces_chat_completions_for_nemotron_raw_prompt() -> None:
-    client = LocalAIClient(AppSettings())
+    settings = AppSettings(local_ai_reasoning_enabled=False)
+    settings._validate()
+    client = LocalAIClient(settings)
     runtime = _make_nemotron_runtime()
     raw_prompt = (
         "<bos><start_of_turn>user\n"
@@ -437,3 +463,176 @@ def test_translate_sync_forces_chat_completions_for_nemotron_raw_prompt() -> Non
 
     assert result == ["Hello"]
     assert called == {"chat": 1, "completions": 0}
+
+
+def test_translate_single_uses_budgeted_two_phase_for_nemotron() -> None:
+    settings = AppSettings(
+        local_ai_reasoning_enabled=True,
+        local_ai_reasoning_budget=32,
+        local_ai_max_tokens=128,
+    )
+    settings._validate()
+    client = LocalAIClient(settings)
+    runtime = _make_nemotron_runtime()
+    call_state = {"chat": 0, "completions": 0}
+    seen = {"chat_budget": None, "completion_budget": None, "prompt": ""}
+
+    client._ensure_warmed = lambda *args, **kwargs: None  # type: ignore[method-assign]
+
+    def fake_chat(*args, **kwargs) -> LocalAIRequestResult:
+        _ = args
+        call_state["chat"] += 1
+        seen["chat_budget"] = kwargs.get("max_tokens_override")
+        return LocalAIRequestResult(content="<think>\nstep by step", model_id=None)
+
+    def fake_completions(*args, **kwargs) -> LocalAIRequestResult:
+        _ = kwargs
+        call_state["completions"] += 1
+        seen["completion_budget"] = kwargs.get("max_tokens_override")
+        seen["prompt"] = str(args[1]) if len(args) > 1 else ""
+        return LocalAIRequestResult(content="Final answer.", model_id=None)
+
+    client._chat_completions = fake_chat  # type: ignore[method-assign]
+    client._completions = fake_completions  # type: ignore[method-assign]
+
+    result = client.translate_single(
+        text="ignored",
+        prompt="What is 2+2?",
+        runtime=runtime,
+        timeout=1,
+    )
+
+    assert result == "Final answer."
+    assert call_state == {"chat": 1, "completions": 1}
+    assert seen["chat_budget"] == 32
+    assert seen["completion_budget"] == 96
+    assert "<think>" in seen["prompt"]
+    assert "</think>" in seen["prompt"]
+
+
+def test_translate_single_skips_budget_mode_when_max_tokens_too_small() -> None:
+    settings = AppSettings(
+        local_ai_reasoning_enabled=True,
+        local_ai_reasoning_budget=128,
+        local_ai_max_tokens=None,
+    )
+    settings._validate()
+    client = LocalAIClient(settings)
+    runtime = _make_nemotron_runtime()
+    called = {"chat": 0, "completions": 0}
+
+    client._ensure_warmed = lambda *args, **kwargs: None  # type: ignore[method-assign]
+
+    def fake_chat(*args, **kwargs) -> LocalAIRequestResult:
+        _ = args
+        called["chat"] += 1
+        # Fallback path should use normal chat completion (no override budget).
+        assert kwargs.get("max_tokens_override") is None
+        return LocalAIRequestResult(content="Hello", model_id=None)
+
+    def fake_completions(*args, **kwargs) -> LocalAIRequestResult:
+        _ = args, kwargs
+        called["completions"] += 1
+        raise AssertionError("budget fallback should not call completions")
+
+    client._chat_completions = fake_chat  # type: ignore[method-assign]
+    client._completions = fake_completions  # type: ignore[method-assign]
+
+    result = client.translate_single(
+        text="ignored",
+        prompt="Translate this.",
+        runtime=runtime,
+        timeout=1,
+    )
+
+    assert result == "Hello"
+    assert called == {"chat": 1, "completions": 0}
+
+
+def test_translate_single_caps_budget_for_streaming_on_cpu_runtime() -> None:
+    settings = AppSettings(
+        local_ai_reasoning_enabled=True,
+        local_ai_reasoning_budget=512,
+        local_ai_max_tokens=1024,
+    )
+    settings._validate()
+    client = LocalAIClient(settings)
+    runtime = _make_nemotron_runtime()
+    call_state = {"chat": 0, "completions_stream": 0}
+    seen = {"chat_budget": None, "completion_budget": None}
+    streamed: list[str] = []
+
+    client._ensure_warmed = lambda *args, **kwargs: None  # type: ignore[method-assign]
+
+    def fake_chat(*args, **kwargs) -> LocalAIRequestResult:
+        _ = args
+        call_state["chat"] += 1
+        seen["chat_budget"] = kwargs.get("max_tokens_override")
+        return LocalAIRequestResult(content="<think>\ninternal", model_id=None)
+
+    def fake_completions_streaming(*args, **kwargs) -> LocalAIRequestResult:
+        _ = args
+        call_state["completions_stream"] += 1
+        seen["completion_budget"] = kwargs.get("max_tokens_override")
+        on_chunk = args[2]
+        on_chunk("Answer")
+        return LocalAIRequestResult(content="Answer", model_id=None)
+
+    client._chat_completions = fake_chat  # type: ignore[method-assign]
+    client._completions_streaming = fake_completions_streaming  # type: ignore[method-assign]
+
+    result = client.translate_single(
+        text="ignored",
+        prompt="Translate this.",
+        runtime=runtime,
+        timeout=1,
+        on_chunk=streamed.append,
+    )
+
+    assert result == "Answer"
+    assert call_state == {"chat": 1, "completions_stream": 1}
+    assert seen["chat_budget"] == 16
+    assert seen["completion_budget"] == 1008
+    assert streamed == ["Answer"]
+
+
+def test_translate_single_caps_budget_for_non_streaming_on_cpu_runtime() -> None:
+    settings = AppSettings(
+        local_ai_reasoning_enabled=True,
+        local_ai_reasoning_budget=512,
+        local_ai_max_tokens=1024,
+    )
+    settings._validate()
+    client = LocalAIClient(settings)
+    runtime = _make_nemotron_runtime()
+    call_state = {"chat": 0, "completions": 0}
+    seen = {"chat_budget": None, "completion_budget": None}
+
+    client._ensure_warmed = lambda *args, **kwargs: None  # type: ignore[method-assign]
+
+    def fake_chat(*args, **kwargs) -> LocalAIRequestResult:
+        _ = args
+        call_state["chat"] += 1
+        seen["chat_budget"] = kwargs.get("max_tokens_override")
+        return LocalAIRequestResult(content="<think>\ninternal", model_id=None)
+
+    def fake_completions(*args, **kwargs) -> LocalAIRequestResult:
+        _ = args
+        call_state["completions"] += 1
+        seen["completion_budget"] = kwargs.get("max_tokens_override")
+        return LocalAIRequestResult(content="Answer", model_id=None)
+
+    client._chat_completions = fake_chat  # type: ignore[method-assign]
+    client._completions = fake_completions  # type: ignore[method-assign]
+
+    result = client.translate_single(
+        text="ignored",
+        prompt="Translate this.",
+        runtime=runtime,
+        timeout=1,
+    )
+
+    assert result == "Answer"
+    assert call_state == {"chat": 1, "completions": 1}
+    assert seen["chat_budget"] == 64
+    assert seen["completion_budget"] == 960

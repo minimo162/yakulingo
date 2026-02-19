@@ -344,6 +344,9 @@ class AppSettings:
     local_ai_min_p: Optional[float] = 0.01
     local_ai_repeat_penalty: Optional[float] = 1.05
     local_ai_max_tokens: Optional[int] = 1024
+    # Reasoning (thinking) controls for Nemotron-class models.
+    local_ai_reasoning_enabled: bool = True
+    local_ai_reasoning_budget: Optional[int] = 64
     local_ai_batch_size: Optional[int] = 512
     local_ai_ubatch_size: Optional[int] = 128
     local_ai_device: str = "none"
@@ -710,6 +713,51 @@ class AppSettings:
                 self.local_ai_max_tokens,
             )
             self.local_ai_max_tokens = None
+        if not isinstance(self.local_ai_reasoning_enabled, bool):
+            logger.warning(
+                "local_ai_reasoning_enabled invalid (%s), resetting to True",
+                type(self.local_ai_reasoning_enabled).__name__,
+            )
+            self.local_ai_reasoning_enabled = True
+        if self.local_ai_reasoning_budget is not None:
+            if isinstance(self.local_ai_reasoning_budget, bool):
+                logger.warning(
+                    "local_ai_reasoning_budget invalid (bool), resetting to None"
+                )
+                self.local_ai_reasoning_budget = None
+            else:
+                try:
+                    budget = int(self.local_ai_reasoning_budget)
+                except (TypeError, ValueError):
+                    logger.warning(
+                        "local_ai_reasoning_budget invalid (%s), resetting to None",
+                        self.local_ai_reasoning_budget,
+                    )
+                    self.local_ai_reasoning_budget = None
+                else:
+                    if budget < 0:
+                        logger.warning(
+                            "local_ai_reasoning_budget must be >= 0 (%d), resetting to None",
+                            budget,
+                        )
+                        self.local_ai_reasoning_budget = None
+                    else:
+                        self.local_ai_reasoning_budget = budget
+
+        if (
+            self.local_ai_reasoning_enabled
+            and self.local_ai_reasoning_budget is not None
+            and self.local_ai_max_tokens is not None
+            and self.local_ai_reasoning_budget >= self.local_ai_max_tokens
+        ):
+            adjusted_budget = max(0, self.local_ai_max_tokens - 1)
+            logger.warning(
+                "local_ai_reasoning_budget (%d) must be < local_ai_max_tokens (%d), resetting to %d",
+                self.local_ai_reasoning_budget,
+                self.local_ai_max_tokens,
+                adjusted_budget,
+            )
+            self.local_ai_reasoning_budget = adjusted_budget
 
         # Local AI ctx size constraints (conservative)
         if self.local_ai_ctx_size < 512:

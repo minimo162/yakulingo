@@ -12,7 +12,7 @@ jobs:
   stop-pod:
     runs-on: ubuntu-latest
     steps:
-      - name: Stop RunPod Pod
+      - name: Stop or Terminate RunPod Pod
         env:
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
           RUNPOD_POD_ID: ${{ secrets.RUNPOD_POD_ID }}
@@ -26,7 +26,7 @@ jobs:
             exit 1
           fi
 
-          resolve_pod_id_by_name() {
+          resolve_pod_by_name() {
             local pod_name="$1"
             local query_payload list_resp err_count matched_count
             query_payload='{"query":"query { myself { pods { id name desiredStatus } } }"}'
@@ -41,20 +41,27 @@ jobs:
             fi
             matched_count=$(echo "$list_resp" | jq -r --arg name "$pod_name" '[.data.myself.pods[]? | select(.name == $name)] | length')
             if [ "$matched_count" = "0" ]; then
-              echo "[ERROR] no pod found by RUNPOD_POD_NAME=${pod_name}"
-              return 1
+              return 0
             fi
             if [ "$matched_count" != "1" ]; then
               echo "[ERROR] multiple pods found by RUNPOD_POD_NAME=${pod_name}; set unique name"
               echo "$list_resp" | jq -r --arg name "$pod_name" '.data.myself.pods[]? | select(.name == $name) | "\(.id) \(.name) \(.desiredStatus // "")"'
               return 1
             fi
-            echo "$list_resp" | jq -r --arg name "$pod_name" '.data.myself.pods[]? | select(.name == $name) | .id'
+            echo "$list_resp" | jq -r --arg name "$pod_name" '.data.myself.pods[]? | select(.name == $name) | @json'
           }
 
           TARGET_POD_ID=""
+          TARGET_STATUS=""
+          TARGET_NETWORK_VOLUME_ID=""
           if [ -n "${RUNPOD_POD_NAME:-}" ]; then
-            TARGET_POD_ID=$(resolve_pod_id_by_name "$RUNPOD_POD_NAME")
+            POD_JSON=$(resolve_pod_by_name "$RUNPOD_POD_NAME")
+            if [ -z "$POD_JSON" ]; then
+              echo "[INFO] no pod found by name (${RUNPOD_POD_NAME}); nothing to stop"
+              exit 0
+            fi
+            TARGET_POD_ID=$(echo "$POD_JSON" | jq -r '.id')
+            TARGET_STATUS=$(echo "$POD_JSON" | jq -r '.desiredStatus // empty')
           elif [ -n "${RUNPOD_POD_ID:-}" ]; then
             TARGET_POD_ID="${RUNPOD_POD_ID}"
           else
@@ -62,9 +69,41 @@ jobs:
             exit 1
           fi
 
-          echo "target_pod_id=${TARGET_POD_ID}"
+          POD_QUERY_PAYLOAD=$(jq -cn --arg id "$TARGET_POD_ID" \
+            '{"query":"query($id:String!){ pod(input:{podId:$id}) { id name desiredStatus networkVolumeId } }","variables":{"id":$id}}')
+          POD_QUERY_RESP=$(curl -sS https://api.runpod.io/graphql \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${RUNPOD_API_KEY}" \
+            -d "$POD_QUERY_PAYLOAD")
+          POD_QUERY_ERR=$(echo "$POD_QUERY_RESP" | jq -r '.errors | length // 0')
+          if [ "$POD_QUERY_ERR" != "0" ]; then
+            echo "[ERROR] pod query failed: $(echo "$POD_QUERY_RESP" | jq -c '.')"
+            exit 1
+          fi
 
-          PAYLOAD=$(printf '{"query":"mutation { podStop(input:{podId:\\"%s\\"}) { id desiredStatus } }"}' "$TARGET_POD_ID")
+          POD_EXISTS=$(echo "$POD_QUERY_RESP" | jq -r '.data.pod.id // empty')
+          if [ -z "$POD_EXISTS" ]; then
+            echo "[INFO] target pod not found (${TARGET_POD_ID}); nothing to stop"
+            exit 0
+          fi
+
+          TARGET_STATUS=$(echo "$POD_QUERY_RESP" | jq -r '.data.pod.desiredStatus // empty')
+          TARGET_NETWORK_VOLUME_ID=$(echo "$POD_QUERY_RESP" | jq -r '.data.pod.networkVolumeId // empty')
+          echo "target_pod_id=${TARGET_POD_ID} desiredStatus=${TARGET_STATUS} networkVolumeId=${TARGET_NETWORK_VOLUME_ID:-<none>}"
+
+          ACTION="stop"
+          if [ -n "$TARGET_NETWORK_VOLUME_ID" ]; then
+            ACTION="terminate"
+          fi
+
+          if [ "$ACTION" = "terminate" ]; then
+            PAYLOAD=$(jq -cn --arg id "$TARGET_POD_ID" \
+              '{"query":"mutation($input: PodTerminateInput!){ podTerminate(input:$input) }","variables":{"input":{"podId":$id}}}')
+          else
+            PAYLOAD=$(jq -cn --arg id "$TARGET_POD_ID" \
+              '{"query":"mutation($input: PodStopInput!){ podStop(input:$input){ id desiredStatus } }","variables":{"input":{"podId":$id}}}')
+          fi
+
           RESP=$(curl -sS https://api.runpod.io/graphql \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${RUNPOD_API_KEY}" \
@@ -72,22 +111,32 @@ jobs:
 
           echo "$RESP"
           ERR_COUNT=$(echo "$RESP" | jq -r '.errors | length // 0')
-          STOP_ID=$(echo "$RESP" | jq -r '.data.podStop.id // empty')
-          STOP_STATUS=$(echo "$RESP" | jq -r '.data.podStop.desiredStatus // empty')
 
-          if [ "$ERR_COUNT" != "0" ] || [ -z "$STOP_ID" ]; then
-            echo "[ERROR] podStop failed: $(echo "$RESP" | jq -c '.')"
+          if [ "$ERR_COUNT" != "0" ]; then
+            echo "[ERROR] pod${ACTION^} failed: $(echo "$RESP" | jq -c '.')"
             exit 1
           fi
 
-          echo "podStop succeeded: id=${STOP_ID} status=${STOP_STATUS}"
+          if [ "$ACTION" = "stop" ]; then
+            STOP_ID=$(echo "$RESP" | jq -r '.data.podStop.id // empty')
+            STOP_STATUS=$(echo "$RESP" | jq -r '.data.podStop.desiredStatus // empty')
+            if [ -z "$STOP_ID" ]; then
+              echo "[ERROR] podStop returned empty id: $(echo "$RESP" | jq -c '.')"
+              exit 1
+            fi
+            RESULT_SUMMARY="podStop succeeded: id=${STOP_ID} status=${STOP_STATUS}"
+          else
+            RESULT_SUMMARY="podTerminate succeeded: id=${TARGET_POD_ID}"
+          fi
+
+          echo "$RESULT_SUMMARY"
 
           if [ -n "${SLACK_WEBHOOK_URL:-}" ]; then
             MSG=$(echo "$RESP" | jq -c '.')
-            PAYLOAD_JSON=$(jq -Rn --arg text "Window stop executed: ${MSG}" '{text:$text}')
+            PAYLOAD_JSON=$(jq -Rn --arg text "Window ${ACTION} executed: ${MSG}" '{text:$text}')
             curl -sS -X POST "$SLACK_WEBHOOK_URL" \
               -H "Content-Type: application/json" \
               -d "$PAYLOAD_JSON" >/dev/null || true
           fi
 
-          echo "window-stop workflow completed"
+          echo "window-${ACTION} workflow completed"

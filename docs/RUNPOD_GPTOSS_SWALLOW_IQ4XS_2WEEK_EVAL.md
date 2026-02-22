@@ -2325,6 +2325,7 @@ $env:SWALLOW_API_KEY = "<Step 6で作成したトークン>"
 - RunPod自動停止（最大稼働時間）
 - 時間帯運用（平日 09:30-11:30 JST）
 - アラート通知（Slack Webhook）
+- Network Volume運用時の仕様差分（`Stop/Resume` ではなく `Terminate + 再デプロイ`）
 
 RunPod標準機能だけでは「任意の月額ハード上限」を直接設定できないため、GraphQL APIで代替実装する。
 
@@ -2641,6 +2642,10 @@ curl -sS https://api.runpod.io/graphql \
 Pod内で確実に止めるには、外部スケジューラ（GitHub Actions等）からRunPod APIを叩くのが安全。  
 以下は GitHub Actions 例（`11:30 JST = 02:30 UTC`）。
 
+注記（Network Volume運用時）:
+- Network Volume が紐づくPodは `Stop` できないため、`runpod-window-stop` は自動的に `podTerminate` を実行する。
+- 通常VolumeのPodでは `podStop` を実行する（後方互換）。
+
 `.github/workflows/runpod-window-stop.yml`:
 
 ```yaml
@@ -2689,6 +2694,13 @@ jobs:
 
 時間帯運用の停止を自動化する場合は、朝の `podResume` もセットで定義する。  
 （手動起動前提で運用するなら、このセクションはスキップしてよい）
+
+注記（Network Volume運用時）:
+- `runpod-morning-resume` は `podResume` 失敗時、Network Volume付きPodを `podTerminate` 後に `podFindAndDeployOnDemand` で再作成する。
+- 再作成に必要なSecrets:
+  - 必須: `RUNPOD_API_KEY`, `RUNPOD_POD_NAME`, `RUNPOD_GPU_TYPE_ID`, `RUNPOD_NETWORK_VOLUME_ID`
+  - いずれか必須: `RUNPOD_TEMPLATE_ID` または `RUNPOD_IMAGE_NAME`
+  - 任意: `RUNPOD_GPU_COUNT`, `RUNPOD_CONTAINER_DISK_GB`, `RUNPOD_PORTS`, `RUNPOD_VOLUME_MOUNT_PATH`, `RUNPOD_CLOUD_TYPE`, `RUNPOD_DATA_CENTER_ID`
 
 `.github/workflows/runpod-morning-resume.yml`:
 

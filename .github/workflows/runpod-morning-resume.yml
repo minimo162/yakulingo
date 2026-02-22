@@ -170,6 +170,11 @@ jobs:
             fi
 
             echo "[INFO] create config: cloud=${RUNPOD_CLOUD_TYPE} pod_name=${RUNPOD_POD_NAME} gpu_type_id=${RUNPOD_GPU_TYPE_ID} gpu_count=${RUNPOD_GPU_COUNT} disk=${RUNPOD_CONTAINER_DISK_GB} ports=${RUNPOD_PORTS} mount=${RUNPOD_VOLUME_MOUNT_PATH} network_volume_id=${RUNPOD_NETWORK_VOLUME_ID} data_center_id=${RUNPOD_DATA_CENTER_ID:-<none>} template_id=${RUNPOD_TEMPLATE_ID:-<none>} image_name=${RUNPOD_IMAGE_NAME:-<none>}"
+            PORTS_JSON=$(jq -cn --arg ports "$RUNPOD_PORTS" \
+              '$ports | split(",") | map(gsub("^\\s+|\\s+$";"")) | map(select(length > 0))')
+            if [ "$(echo "$PORTS_JSON" | jq -r 'length')" = "0" ]; then
+              PORTS_JSON='["11434/http"]'
+            fi
 
             build_create_payload() {
               local mode="$1"      # template|image
@@ -222,6 +227,52 @@ jobs:
                 }'
             }
 
+            build_rest_create_body() {
+              local mode="$1"       # template|image
+              local include_dc="$2" # with|without
+              local template_id=""
+              local image_name=""
+              local data_center_id=""
+
+              if [ "$mode" = "template" ]; then
+                template_id="$RUNPOD_TEMPLATE_ID"
+              else
+                image_name="$RUNPOD_IMAGE_NAME"
+              fi
+              if [ "$include_dc" = "with" ]; then
+                data_center_id="${RUNPOD_DATA_CENTER_ID:-}"
+              fi
+
+              jq -cn \
+                --arg cloud "$RUNPOD_CLOUD_TYPE" \
+                --arg name "$RUNPOD_POD_NAME" \
+                --arg nv "$RUNPOD_NETWORK_VOLUME_ID" \
+                --arg gpu "$RUNPOD_GPU_TYPE_ID" \
+                --argjson gc "$RUNPOD_GPU_COUNT" \
+                --argjson disk "$RUNPOD_CONTAINER_DISK_GB" \
+                --arg mount "$RUNPOD_VOLUME_MOUNT_PATH" \
+                --arg templateId "$template_id" \
+                --arg imageName "$image_name" \
+                --arg dataCenterId "$data_center_id" \
+                --argjson ports "$PORTS_JSON" \
+                '(
+                  {
+                    cloudType:$cloud,
+                    computeType:"GPU",
+                    name:$name,
+                    networkVolumeId:$nv,
+                    gpuCount:$gc,
+                    gpuTypeIds:[$gpu],
+                    containerDiskInGb:$disk,
+                    ports:$ports,
+                    volumeMountPath:$mount
+                  }
+                  + (if $templateId != "" then {templateId:$templateId} else {} end)
+                  + (if $imageName != "" then {imageName:$imageName} else {} end)
+                  + (if $dataCenterId != "" then {dataCenterIds:[$dataCenterId]} else {} end)
+                )'
+            }
+
             LAST_CREATE_RESP=""
             CREATE_SUCCESS=0
             MODE_LIST=()
@@ -271,7 +322,46 @@ jobs:
             done
 
             if [ "$CREATE_SUCCESS" != "1" ]; then
-              echo "[ERROR] podFindAndDeployOnDemand failed after retries: $(echo "$LAST_CREATE_RESP" | jq -c '.')"
+              echo "[WARN] podFindAndDeployOnDemand failed after retries: $(echo "$LAST_CREATE_RESP" | jq -c '.')"
+              echo "[INFO] fallback create via REST /v1/pods"
+
+              LAST_REST_HTTP=""
+              LAST_REST_BODY=""
+              for MODE in "${MODE_LIST[@]}"; do
+                for DC_MODE in "${DC_LIST[@]}"; do
+                  for ATTEMPT in 1 2 3; do
+                    echo "[INFO] rest create attempt mode=${MODE} dc_mode=${DC_MODE} try=${ATTEMPT}"
+                    REST_CREATE_BODY=$(build_rest_create_body "$MODE" "$DC_MODE")
+                    REST_RAW=$(curl -sS -w '\n%{http_code}' -X POST https://rest.runpod.io/v1/pods \
+                      -H "Content-Type: application/json" \
+                      -H "Authorization: Bearer ${RUNPOD_API_KEY}" \
+                      -d "$REST_CREATE_BODY")
+
+                    LAST_REST_HTTP=$(echo "$REST_RAW" | tail -n1)
+                    LAST_REST_BODY=$(echo "$REST_RAW" | sed '$d')
+                    echo "$LAST_REST_BODY"
+
+                    REST_ID=$(echo "$LAST_REST_BODY" | jq -r '.id // empty')
+                    REST_STATUS=$(echo "$LAST_REST_BODY" | jq -r '.desiredStatus // .status // empty')
+                    if [[ "$LAST_REST_HTTP" =~ ^2[0-9][0-9]$ ]] && [ -n "$REST_ID" ]; then
+                      ACTION_SUMMARY="REST /v1/pods create succeeded: id=${REST_ID} status=${REST_STATUS:-<unknown>} mode=${MODE} dc_mode=${DC_MODE}"
+                      CREATE_SUCCESS=1
+                      break 3
+                    fi
+
+                    REST_MSG=$(echo "$LAST_REST_BODY" | jq -r '.message // .error // empty')
+                    echo "[WARN] rest create failed: http=${LAST_REST_HTTP:-<none>} msg=${REST_MSG:-<none>}"
+
+                    if [ "$ATTEMPT" -lt 3 ]; then
+                      sleep $((ATTEMPT * 10))
+                    fi
+                  done
+                done
+              done
+            fi
+
+            if [ "$CREATE_SUCCESS" != "1" ]; then
+              echo "[ERROR] pod creation failed (GraphQL + REST). last_graphql=$(echo "$LAST_CREATE_RESP" | jq -c '.') last_rest_http=${LAST_REST_HTTP:-<none>} last_rest=$(echo "${LAST_REST_BODY:-{}}" | jq -c '.')"
               exit 1
             fi
           fi

@@ -27,6 +27,7 @@ jobs:
           RUNPOD_NETWORK_VOLUME_ID: ${{ secrets.RUNPOD_NETWORK_VOLUME_ID }}
           RUNPOD_CLOUD_TYPE: ${{ secrets.RUNPOD_CLOUD_TYPE }}
           RUNPOD_DATA_CENTER_ID: ${{ secrets.RUNPOD_DATA_CENTER_ID }}
+          RUNPOD_PROXY_CHECK_ENABLED: ${{ secrets.RUNPOD_PROXY_CHECK_ENABLED }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
           set -euo pipefail
@@ -43,6 +44,7 @@ jobs:
           RUNPOD_VOLUME_MOUNT_PATH=${RUNPOD_VOLUME_MOUNT_PATH:-/workspace}
           RUNPOD_TEMPLATE_ID=${RUNPOD_TEMPLATE_ID:-}
           RUNPOD_IMAGE_NAME=${RUNPOD_IMAGE_NAME:-}
+          RUNPOD_PROXY_CHECK_ENABLED=${RUNPOD_PROXY_CHECK_ENABLED:-1}
 
           resolve_pod_by_name() {
             local pod_name="$1"
@@ -103,9 +105,46 @@ jobs:
             return 0
           }
 
+          parse_proxy_port() {
+            local ports="${1:-}"
+            echo "$ports" | tr ',' '\n' | head -n1 | sed -E 's#^\s*([0-9]+).*$#\1#'
+          }
+
+          check_proxy_warning() {
+            local pod_id="$1"
+            local proxy_port="$2"
+            local attempts=10
+            local wait_sec=15
+            local url body_file http_code
+            url="https://${pod_id}-${proxy_port}.proxy.runpod.net/"
+            body_file="/tmp/runpod_proxy_check_${pod_id}.txt"
+
+            echo "[INFO] proxy warning check url=${url}"
+            for attempt in $(seq 1 "$attempts"); do
+              http_code=$(curl -sS -L --max-time 20 -o "$body_file" -w '%{http_code}' "$url" || echo "000")
+              if grep -qi "critical error on this machine" "$body_file" 2>/dev/null; then
+                echo "[ERROR] critical machine warning detected from proxy response"
+                return 2
+              fi
+              case "$http_code" in
+                200|401|403|404)
+                  echo "[INFO] proxy check passed: http=${http_code} try=${attempt}/${attempts}"
+                  return 0
+                  ;;
+              esac
+              echo "[INFO] proxy check pending: http=${http_code} try=${attempt}/${attempts}"
+              if [ "$attempt" -lt "$attempts" ]; then
+                sleep "$wait_sec"
+              fi
+            done
+            echo "[WARN] proxy check timed out without clear warning"
+            return 1
+          }
+
           TARGET_POD_ID=""
           TARGET_STATUS=""
           TARGET_NETWORK_VOLUME_ID=""
+          ACTIVE_POD_ID=""
           if [ -n "${RUNPOD_POD_NAME:-}" ]; then
             POD_JSON=$(resolve_pod_by_name "$RUNPOD_POD_NAME")
             if [ -n "$POD_JSON" ]; then
@@ -141,9 +180,10 @@ jobs:
 
           ACTION_SUMMARY=""
 
-            if [ -n "$TARGET_POD_ID" ] && [ "${TARGET_STATUS:-}" = "RUNNING" ]; then
-              ACTION_SUMMARY="pod already running: id=${TARGET_POD_ID}"
-            elif [ -n "$TARGET_POD_ID" ]; then
+          if [ -n "$TARGET_POD_ID" ] && [ "${TARGET_STATUS:-}" = "RUNNING" ]; then
+            ACTION_SUMMARY="pod already running: id=${TARGET_POD_ID}"
+            ACTIVE_POD_ID="$TARGET_POD_ID"
+          elif [ -n "$TARGET_POD_ID" ]; then
             RESUME_PAYLOAD=$(jq -cn --arg id "$TARGET_POD_ID" --argjson gc "$RUNPOD_GPU_COUNT" \
               '{"query":"mutation($input: PodResumeInput!){ podResume(input:$input){ id desiredStatus } }","variables":{"input":{"podId":$id,"gpuCount":$gc}}}')
             RESUME_RESP=$(curl -sS https://api.runpod.io/graphql \
@@ -156,10 +196,11 @@ jobs:
             RESUME_ID=$(echo "$RESUME_RESP" | jq -r '.data.podResume.id // empty')
             RESUME_STATUS=$(echo "$RESUME_RESP" | jq -r '.data.podResume.desiredStatus // empty')
 
-              if [ "$RESUME_ERR" = "0" ] && [ -n "$RESUME_ID" ]; then
-                ACTION_SUMMARY="podResume succeeded: id=${RESUME_ID} status=${RESUME_STATUS}"
-              elif [ -n "$TARGET_NETWORK_VOLUME_ID" ]; then
-                echo "[WARN] podResume failed on network-volume pod. fallback to terminate + redeploy."
+            if [ "$RESUME_ERR" = "0" ] && [ -n "$RESUME_ID" ]; then
+              ACTION_SUMMARY="podResume succeeded: id=${RESUME_ID} status=${RESUME_STATUS}"
+              ACTIVE_POD_ID="$RESUME_ID"
+            elif [ -n "$TARGET_NETWORK_VOLUME_ID" ]; then
+              echo "[WARN] podResume failed on network-volume pod. fallback to terminate + redeploy."
               if ! terminate_pod "$TARGET_POD_ID"; then
                 exit 1
               fi
@@ -292,6 +333,7 @@ jobs:
                       continue
                     fi
                     ACTION_SUMMARY="REST /v1/pods create succeeded: id=${REST_ID} status=${REST_STATUS:-<unknown>} mode=${MODE} dc_mode=${DC_MODE}"
+                    ACTIVE_POD_ID="$REST_ID"
                     CREATE_SUCCESS=1
                     break 3
                   fi
@@ -312,9 +354,27 @@ jobs:
             fi
           fi
 
+          if [ -z "$ACTIVE_POD_ID" ] && [ -n "$TARGET_POD_ID" ]; then
+            ACTIVE_POD_ID="$TARGET_POD_ID"
+          fi
+
           if [ -z "$ACTION_SUMMARY" ]; then
             echo "[ERROR] no action was taken"
             exit 1
+          fi
+
+          if [ "${RUNPOD_PROXY_CHECK_ENABLED}" = "1" ] && [ -n "$ACTIVE_POD_ID" ]; then
+            PROXY_PORT=$(parse_proxy_port "$RUNPOD_PORTS")
+            if [[ "$PROXY_PORT" =~ ^[0-9]+$ ]]; then
+              CHECK_RESULT=0
+              check_proxy_warning "$ACTIVE_POD_ID" "$PROXY_PORT" || CHECK_RESULT=$?
+              if [ "$CHECK_RESULT" = "2" ]; then
+                echo "[ERROR] runpod critical machine warning detected. terminate this pod and re-run workflow."
+                exit 1
+              fi
+            else
+              echo "[WARN] proxy warning check skipped: invalid RUNPOD_PORTS=${RUNPOD_PORTS}"
+            fi
           fi
 
           echo "$ACTION_SUMMARY"

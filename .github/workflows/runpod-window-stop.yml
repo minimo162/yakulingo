@@ -17,6 +17,7 @@ jobs:
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
           RUNPOD_POD_ID: ${{ secrets.RUNPOD_POD_ID }}
           RUNPOD_POD_NAME: ${{ secrets.RUNPOD_POD_NAME }}
+          RUNPOD_NETWORK_VOLUME_ID: ${{ secrets.RUNPOD_NETWORK_VOLUME_ID }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
           set -euo pipefail
@@ -70,7 +71,7 @@ jobs:
           fi
 
           POD_QUERY_PAYLOAD=$(jq -cn --arg id "$TARGET_POD_ID" \
-            '{"query":"query($id:String!){ pod(input:{podId:$id}) { id name desiredStatus networkVolumeId } }","variables":{"id":$id}}')
+            '{"query":"query($id:String!){ pod(input:{podId:$id}) { id name desiredStatus networkVolumeId networkVolume { id } } }","variables":{"id":$id}}')
           POD_QUERY_RESP=$(curl -sS https://api.runpod.io/graphql \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${RUNPOD_API_KEY}" \
@@ -88,12 +89,16 @@ jobs:
           fi
 
           TARGET_STATUS=$(echo "$POD_QUERY_RESP" | jq -r '.data.pod.desiredStatus // empty')
-          TARGET_NETWORK_VOLUME_ID=$(echo "$POD_QUERY_RESP" | jq -r '.data.pod.networkVolumeId // empty')
-          echo "target_pod_id=${TARGET_POD_ID} desiredStatus=${TARGET_STATUS} networkVolumeId=${TARGET_NETWORK_VOLUME_ID:-<none>}"
+          TARGET_NETWORK_VOLUME_ID=$(echo "$POD_QUERY_RESP" | jq -r '.data.pod.networkVolumeId // .data.pod.networkVolume.id // empty')
+          echo "target_pod_id=${TARGET_POD_ID} desiredStatus=${TARGET_STATUS} networkVolumeId=${TARGET_NETWORK_VOLUME_ID:-<none>} expectedNetworkVolumeId=${RUNPOD_NETWORK_VOLUME_ID:-<none>}"
 
           ACTION="stop"
           if [ -n "$TARGET_NETWORK_VOLUME_ID" ]; then
             ACTION="terminate"
+            echo "[INFO] select action=terminate (pod has networkVolumeId)"
+          elif [ -n "${RUNPOD_NETWORK_VOLUME_ID:-}" ]; then
+            ACTION="terminate"
+            echo "[INFO] select action=terminate (RUNPOD_NETWORK_VOLUME_ID is configured)"
           fi
 
           if [ "$ACTION" = "terminate" ]; then

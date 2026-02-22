@@ -2962,6 +2962,7 @@ fi
 ## RunPod運用ログ（自動化）
 
 ### 現在の確定設定（2026-02-22）
+- 注: 下記は当初設定。`US-KS-2` のホスト警告再発により、最新方針は「引き継ぎメモ（2026-02-22）」を優先。
 - Pod名: `demo`
 - リージョン: `US-KS-2`
 - GPU方針: `RTX PRO 6000` 系
@@ -2999,3 +3000,29 @@ fi
 - 平日 08:50 JST の `runpod-morning-resume` が成功すること
 - 平日 12:00 JST の `runpod-window-stop` が成功すること
 - 失敗時は先に `RUNPOD_NETWORK_VOLUME_ID` と `RUNPOD_DATA_CENTER_ID` の整合性を確認すること
+
+### 引き継ぎメモ（2026-02-22）
+#### 現状サマリ
+- `US-KS-2` では、手動作成/ワークフロー作成の両方で `critical error on this machine` 警告が再現。
+- `Network Volume` 自体はアタッチされるケースがあるが、ホスト健全性に起因する不安定さが残る。
+- 在庫状況を踏まえ、次の試行先を `CA-MTL-1` + `A40` に切り替える方針。
+
+#### 次担当で更新するSecrets
+- `RUNPOD_DATA_CENTER_ID=CA-MTL-1`
+- `RUNPOD_GPU_TYPE_ID=NVIDIA A40`
+- `RUNPOD_NETWORK_VOLUME_ID=<CA-MTL-1で新規作成したNetwork Volume ID>`
+- `RUNPOD_POD_NAME=demo`（継続）
+- `RUNPOD_IMAGE_NAME=runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404`（継続）
+
+#### 事前確認（実施済み）
+- GraphQL確認で `A40` の `gpuTypeId` は `NVIDIA A40` を取得済み。
+
+#### 次担当の実施手順（再開ポイント）
+1. 上記Secretsを更新。
+2. `runpod-morning-resume` を手動実行し、`create config` に `data_center_id=CA-MTL-1` と `gpu_type_id=NVIDIA A40` が出ることを確認。
+3. 作成されたPodの `networkVolumeId` が期待値と一致することを確認。
+4. `/workspace/nv_canary.txt` を作成して `runpod-window-stop`（手動）→ `runpod-morning-resume`（手動）で残存確認。
+5. 依然として同警告が出る場合は、リージョンを `US-MO-1` または `EU-FR-1` へ切替。
+
+#### ローカル作業ツリー注意
+- この引き継ぎ記入時点で、`runpod-morning-resume` / `runpod-window-stop` に未コミット変更があるため、次担当は `git status` で差分確認してから作業再開すること。

@@ -86,6 +86,23 @@ jobs:
             echo "$resp"
           }
 
+          terminate_pod() {
+            local pod_id="$1"
+            local term_payload term_resp term_err
+            term_payload=$(jq -cn --arg id "$pod_id" \
+              '{"query":"mutation($input: PodTerminateInput!){ podTerminate(input:$input) }","variables":{"input":{"podId":$id}}}')
+            term_resp=$(curl -sS https://api.runpod.io/graphql \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer ${RUNPOD_API_KEY}" \
+              -d "$term_payload")
+            term_err=$(echo "$term_resp" | jq -r '.errors | length // 0')
+            if [ "$term_err" != "0" ]; then
+              echo "[ERROR] podTerminate failed: $(echo "$term_resp" | jq -c '.')"
+              return 1
+            fi
+            return 0
+          }
+
           TARGET_POD_ID=""
           TARGET_STATUS=""
           TARGET_NETWORK_VOLUME_ID=""
@@ -112,11 +129,21 @@ jobs:
             echo "[INFO] target pod was not found. creating a new pod..."
           fi
 
+          if [ -n "$TARGET_POD_ID" ] && [ -n "${RUNPOD_NETWORK_VOLUME_ID:-}" ] && [ "${TARGET_NETWORK_VOLUME_ID:-}" != "${RUNPOD_NETWORK_VOLUME_ID}" ]; then
+            echo "[WARN] existing pod networkVolumeId mismatch: expected=${RUNPOD_NETWORK_VOLUME_ID} actual=${TARGET_NETWORK_VOLUME_ID:-<none>}. terminate and recreate."
+            if ! terminate_pod "$TARGET_POD_ID"; then
+              exit 1
+            fi
+            TARGET_POD_ID=""
+            TARGET_STATUS=""
+            TARGET_NETWORK_VOLUME_ID=""
+          fi
+
           ACTION_SUMMARY=""
 
-          if [ -n "$TARGET_POD_ID" ] && [ "${TARGET_STATUS:-}" = "RUNNING" ]; then
-            ACTION_SUMMARY="pod already running: id=${TARGET_POD_ID}"
-          elif [ -n "$TARGET_POD_ID" ]; then
+            if [ -n "$TARGET_POD_ID" ] && [ "${TARGET_STATUS:-}" = "RUNNING" ]; then
+              ACTION_SUMMARY="pod already running: id=${TARGET_POD_ID}"
+            elif [ -n "$TARGET_POD_ID" ]; then
             RESUME_PAYLOAD=$(jq -cn --arg id "$TARGET_POD_ID" --argjson gc "$RUNPOD_GPU_COUNT" \
               '{"query":"mutation($input: PodResumeInput!){ podResume(input:$input){ id desiredStatus } }","variables":{"input":{"podId":$id,"gpuCount":$gc}}}')
             RESUME_RESP=$(curl -sS https://api.runpod.io/graphql \
@@ -129,19 +156,11 @@ jobs:
             RESUME_ID=$(echo "$RESUME_RESP" | jq -r '.data.podResume.id // empty')
             RESUME_STATUS=$(echo "$RESUME_RESP" | jq -r '.data.podResume.desiredStatus // empty')
 
-            if [ "$RESUME_ERR" = "0" ] && [ -n "$RESUME_ID" ]; then
-              ACTION_SUMMARY="podResume succeeded: id=${RESUME_ID} status=${RESUME_STATUS}"
-            elif [ -n "$TARGET_NETWORK_VOLUME_ID" ]; then
-              echo "[WARN] podResume failed on network-volume pod. fallback to terminate + redeploy."
-              TERM_PAYLOAD=$(jq -cn --arg id "$TARGET_POD_ID" \
-                '{"query":"mutation($input: PodTerminateInput!){ podTerminate(input:$input) }","variables":{"input":{"podId":$id}}}')
-              TERM_RESP=$(curl -sS https://api.runpod.io/graphql \
-                -H "Content-Type: application/json" \
-                -H "Authorization: Bearer ${RUNPOD_API_KEY}" \
-                -d "$TERM_PAYLOAD")
-              TERM_ERR=$(echo "$TERM_RESP" | jq -r '.errors | length // 0')
-              if [ "$TERM_ERR" != "0" ]; then
-                echo "[ERROR] fallback podTerminate failed: $(echo "$TERM_RESP" | jq -c '.')"
+              if [ "$RESUME_ERR" = "0" ] && [ -n "$RESUME_ID" ]; then
+                ACTION_SUMMARY="podResume succeeded: id=${RESUME_ID} status=${RESUME_STATUS}"
+              elif [ -n "$TARGET_NETWORK_VOLUME_ID" ]; then
+                echo "[WARN] podResume failed on network-volume pod. fallback to terminate + redeploy."
+              if ! terminate_pod "$TARGET_POD_ID"; then
                 exit 1
               fi
               TARGET_POD_ID=""
@@ -255,6 +274,23 @@ jobs:
                   REST_ID=$(echo "$LAST_REST_BODY" | jq -r '.id // empty')
                   REST_STATUS=$(echo "$LAST_REST_BODY" | jq -r '.desiredStatus // .status // empty')
                   if [[ "$LAST_REST_HTTP" =~ ^2[0-9][0-9]$ ]] && [ -n "$REST_ID" ]; then
+                    REST_NETWORK_VOLUME_ID=$(echo "$LAST_REST_BODY" | jq -r '.networkVolume.id // .networkVolumeId // empty')
+                    if [ -z "$REST_NETWORK_VOLUME_ID" ]; then
+                      if VERIFY_RESP=$(query_pod_by_id "$REST_ID"); then
+                        REST_NETWORK_VOLUME_ID=$(echo "$VERIFY_RESP" | jq -r '.data.pod.networkVolumeId // empty')
+                      fi
+                    fi
+
+                    if [ -n "${RUNPOD_NETWORK_VOLUME_ID:-}" ] && [ "$REST_NETWORK_VOLUME_ID" != "$RUNPOD_NETWORK_VOLUME_ID" ]; then
+                      echo "[WARN] created pod networkVolumeId mismatch: expected=${RUNPOD_NETWORK_VOLUME_ID} actual=${REST_NETWORK_VOLUME_ID:-<none>}. terminate and retry."
+                      if ! terminate_pod "$REST_ID"; then
+                        exit 1
+                      fi
+                      if [ "$ATTEMPT" -lt 3 ]; then
+                        sleep $((ATTEMPT * 10))
+                      fi
+                      continue
+                    fi
                     ACTION_SUMMARY="REST /v1/pods create succeeded: id=${REST_ID} status=${REST_STATUS:-<unknown>} mode=${MODE} dc_mode=${DC_MODE}"
                     CREATE_SUCCESS=1
                     break 3

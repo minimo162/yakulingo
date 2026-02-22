@@ -16,16 +16,55 @@ jobs:
         env:
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
           RUNPOD_POD_ID: ${{ secrets.RUNPOD_POD_ID }}
+          RUNPOD_POD_NAME: ${{ secrets.RUNPOD_POD_NAME }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
           set -euo pipefail
 
-          if [ -z "${RUNPOD_API_KEY:-}" ] || [ -z "${RUNPOD_POD_ID:-}" ]; then
-            echo "[ERROR] RUNPOD_API_KEY or RUNPOD_POD_ID is not set"
+          if [ -z "${RUNPOD_API_KEY:-}" ]; then
+            echo "[ERROR] RUNPOD_API_KEY is not set"
             exit 1
           fi
 
-          PAYLOAD=$(printf '{"query":"mutation { podResume(input:{podId:\\"%s\\"}) { id desiredStatus } }"}' "$RUNPOD_POD_ID")
+          resolve_pod_id_by_name() {
+            local pod_name="$1"
+            local query_payload list_resp err_count matched_count
+            query_payload='{"query":"query { myself { pods { id name desiredStatus } } }"}'
+            list_resp=$(curl -sS https://api.runpod.io/graphql \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer ${RUNPOD_API_KEY}" \
+              -d "$query_payload")
+            err_count=$(echo "$list_resp" | jq -r '.errors | length // 0')
+            if [ "$err_count" != "0" ]; then
+              echo "[ERROR] pod list query failed: $(echo "$list_resp" | jq -c '.')"
+              return 1
+            fi
+            matched_count=$(echo "$list_resp" | jq -r --arg name "$pod_name" '[.data.myself.pods[]? | select(.name == $name)] | length')
+            if [ "$matched_count" = "0" ]; then
+              echo "[ERROR] no pod found by RUNPOD_POD_NAME=${pod_name}"
+              return 1
+            fi
+            if [ "$matched_count" != "1" ]; then
+              echo "[ERROR] multiple pods found by RUNPOD_POD_NAME=${pod_name}; set unique name"
+              echo "$list_resp" | jq -r --arg name "$pod_name" '.data.myself.pods[]? | select(.name == $name) | "\(.id) \(.name) \(.desiredStatus // "")"'
+              return 1
+            fi
+            echo "$list_resp" | jq -r --arg name "$pod_name" '.data.myself.pods[]? | select(.name == $name) | .id'
+          }
+
+          TARGET_POD_ID=""
+          if [ -n "${RUNPOD_POD_NAME:-}" ]; then
+            TARGET_POD_ID=$(resolve_pod_id_by_name "$RUNPOD_POD_NAME")
+          elif [ -n "${RUNPOD_POD_ID:-}" ]; then
+            TARGET_POD_ID="${RUNPOD_POD_ID}"
+          else
+            echo "[ERROR] RUNPOD_POD_NAME or RUNPOD_POD_ID is not set"
+            exit 1
+          fi
+
+          echo "target_pod_id=${TARGET_POD_ID}"
+
+          PAYLOAD=$(printf '{"query":"mutation { podResume(input:{podId:\\"%s\\"}) { id desiredStatus } }"}' "$TARGET_POD_ID")
           RESP=$(curl -sS https://api.runpod.io/graphql \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${RUNPOD_API_KEY}" \

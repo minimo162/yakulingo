@@ -1,0 +1,54 @@
+name: runpod-morning-resume
+
+on:
+  schedule:
+    - cron: "30 0 * * 1-5" # Mon-Fri 00:30 UTC = 09:30 JST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  resume-pod:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resume RunPod Pod
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+          RUNPOD_POD_ID: ${{ secrets.RUNPOD_POD_ID }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${RUNPOD_API_KEY:-}" ] || [ -z "${RUNPOD_POD_ID:-}" ]; then
+            echo "[ERROR] RUNPOD_API_KEY or RUNPOD_POD_ID is not set"
+            exit 1
+          fi
+
+          PAYLOAD=$(printf '{"query":"mutation { podResume(input:{podId:\\"%s\\"}) { id desiredStatus } }"}' "$RUNPOD_POD_ID")
+          RESP=$(curl -sS https://api.runpod.io/graphql \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${RUNPOD_API_KEY}" \
+            -d "$PAYLOAD")
+
+          echo "$RESP"
+          ERR_COUNT=$(echo "$RESP" | jq -r '.errors | length // 0')
+          RESUME_ID=$(echo "$RESP" | jq -r '.data.podResume.id // empty')
+          RESUME_STATUS=$(echo "$RESP" | jq -r '.data.podResume.desiredStatus // empty')
+
+          if [ "$ERR_COUNT" != "0" ] || [ -z "$RESUME_ID" ]; then
+            echo "[ERROR] podResume failed: $(echo "$RESP" | jq -c '.')"
+            exit 1
+          fi
+
+          echo "podResume succeeded: id=${RESUME_ID} status=${RESUME_STATUS}"
+
+          if [ -n "${SLACK_WEBHOOK_URL:-}" ]; then
+            MSG=$(echo "$RESP" | jq -c '.')
+            PAYLOAD_JSON=$(jq -Rn --arg text "Morning resume executed: ${MSG}" '{text:$text}')
+            curl -sS -X POST "$SLACK_WEBHOOK_URL" \
+              -H "Content-Type: application/json" \
+              -d "$PAYLOAD_JSON" >/dev/null || true
+          fi
+
+          echo "morning-resume workflow completed"

@@ -2323,7 +2323,7 @@ $env:SWALLOW_API_KEY = "<Step 6で作成したトークン>"
 
 - 月額上限（ソフト警告 + ハード停止）
 - RunPod自動停止（最大稼働時間）
-- 時間帯運用（平日 09:30-11:30 JST）
+- 時間帯運用（平日 08:50-12:00 JST）
 - アラート通知（Slack Webhook）
 - Network Volume運用時の仕様差分（`Stop/Resume` ではなく `Terminate + 再デプロイ`）
 
@@ -2637,10 +2637,10 @@ curl -sS https://api.runpod.io/graphql \
   -d "$STOP_PAYLOAD" >/dev/null || true
 ```
 
-### 11-5: 時間帯運用の停止（平日 11:30 JST）
+### 11-5: 時間帯運用の停止（平日 12:00 JST）
 
 Pod内で確実に止めるには、外部スケジューラ（GitHub Actions等）からRunPod APIを叩くのが安全。  
-以下は GitHub Actions 例（`11:30 JST = 02:30 UTC`）。
+以下は GitHub Actions 例（`12:00 JST = 03:00 UTC`）。
 
 注記（Network Volume運用時）:
 - Network Volume が紐づくPodは `Stop` できないため、`runpod-window-stop` は自動的に `podTerminate` を実行する。
@@ -2652,7 +2652,7 @@ Pod内で確実に止めるには、外部スケジューラ（GitHub Actions等
 name: runpod-window-stop
 on:
   schedule:
-    - cron: "30 2 * * 1-5" # Mon-Fri 02:30 UTC = 11:30 JST
+    - cron: "0 3 * * 1-5" # Mon-Fri 03:00 UTC = 12:00 JST
   workflow_dispatch:
 
 jobs:
@@ -2690,7 +2690,7 @@ jobs:
           echo "window-stop workflow completed"
 ```
 
-### 11-5A: 朝の自動起動（平日 09:30 JST, 任意）
+### 11-5A: 朝の自動起動（平日 08:50 JST, 任意）
 
 時間帯運用の停止を自動化する場合は、朝の `podResume` もセットで定義する。  
 （手動起動前提で運用するなら、このセクションはスキップしてよい）
@@ -2708,7 +2708,7 @@ jobs:
 name: runpod-morning-resume
 on:
   schedule:
-    - cron: "30 0 * * 1-5" # Mon-Fri 00:30 UTC = 09:30 JST
+    - cron: "50 23 * * 0-4" # Sun-Thu 23:50 UTC = Mon-Fri 08:50 JST
   workflow_dispatch:
 
 jobs:
@@ -2804,7 +2804,7 @@ chmod 600 /workspace/backups/swallow-config-*.tar.gz
 
 ### 朝（`runpod-morning-resume` を使わない場合）
 
-- 推奨運用時間: **平日 09:30〜11:30 JST**
+- 推奨運用時間: **平日 08:50〜12:00 JST**
 
 ```bash
 if systemctl is-enabled swallow-lmstudio.service >/dev/null 2>&1; then
@@ -2996,6 +2996,6 @@ fi
 ```
 
 ### 運用チェック（最小）
-- 平日 09:30 JST の `runpod-morning-resume` が成功すること
-- 平日 11:30 JST の `runpod-window-stop` が成功すること
+- 平日 08:50 JST の `runpod-morning-resume` が成功すること
+- 平日 12:00 JST の `runpod-window-stop` が成功すること
 - 失敗時は先に `RUNPOD_NETWORK_VOLUME_ID` と `RUNPOD_DATA_CENTER_ID` の整合性を確認すること

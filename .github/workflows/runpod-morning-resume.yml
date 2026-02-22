@@ -2,7 +2,7 @@ name: runpod-morning-resume
 
 on:
   schedule:
-    - cron: "30 0 * * 1-5" # Mon-Fri 00:30 UTC = 09:30 JST
+    - cron: "50 23 * * 0-4" # Sun-Thu 23:50 UTC = Mon-Fri 08:50 JST
   workflow_dispatch:
 
 permissions:

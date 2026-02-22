@@ -2958,3 +2958,44 @@ fi
 *最終更新: 2026-02-22*
 *用途: GPT-OSS-Swallow-120B IQ4_XS の2週間検証（LM Studio/RunPod）*
 
+
+## RunPod運用ログ（自動化）
+
+### 現在の確定設定（2026-02-22）
+- Pod名: `demo`
+- リージョン: `US-KS-2`
+- GPU方針: `RTX PRO 6000` 系
+- 永続化: `Network Volume` を `/workspace` にマウント
+- `runpod-morning-resume`: Pod不在時は `REST /v1/pods` で作成（GraphQL作成は使用しない）
+- `runpod-window-stop`: `networkVolumeId` があるPodは `terminate`、それ以外は `stop`
+
+### 実行ログテンプレート（1日1回）
+以下を `docs/PHASE1_DAY1_WORKLOG_YYYY-MM-DD.md` または当日ワークログへ転記して運用する。
+
+```md
+## RunPod 自動化ログ（YYYY-MM-DD JST）
+
+- runpod-morning-resume
+  - 実行種別: `schedule` / `workflow_dispatch`
+  - GitHub Actions Run ID: `<run_id>`
+  - Head SHA: `<commit_sha>`
+  - 結果: `success` / `failure`
+  - サマリ: `<pod already running | podResume succeeded | REST /v1/pods create succeeded>`
+  - Pod ID: `<pod_id>`
+
+- runpod-window-stop
+  - 実行種別: `schedule` / `workflow_dispatch`
+  - GitHub Actions Run ID: `<run_id>`
+  - Head SHA: `<commit_sha>`
+  - 結果: `success` / `failure`
+  - サマリ: `<podStop succeeded | podTerminate succeeded>`
+  - Pod ID: `<pod_id>`
+
+- 備考
+  - `<例: network volume not found が出たため RUNPOD_NETWORK_VOLUME_ID を更新>`
+```
+
+### 運用チェック（最小）
+- 平日 09:30 JST の `runpod-morning-resume` が成功すること
+- 平日 11:30 JST の `runpod-window-stop` が成功すること
+- 失敗時は先に `RUNPOD_NETWORK_VOLUME_ID` と `RUNPOD_DATA_CENTER_ID` の整合性を確認すること

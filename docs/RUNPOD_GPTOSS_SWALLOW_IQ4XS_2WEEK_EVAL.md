@@ -630,6 +630,7 @@ bash /workspace/scripts/runpod_lobehub_bootstrap.sh
 - 認証ユーザーは既定で6人作成され、`/workspace/lobehub_basic_auth_users.txt` に保存される。
 - `lobe-chat` にローカル変更がある場合は、`/workspace/lobe-chat.backup.YYYYMMDD-HHMMSS` へ自動退避して再cloneする。
 - `pgvector` が無い環境では、`postgresql-<major>-pgvector` の導入を試み、無い場合はソースビルドで導入する。
+- `pnpm approve-builds` の手動承認は不要（スクリプトが `onlyBuiltDependencies` / `ignoredBuiltDependencies` をグローバル設定）。
 
 ```bash
 cat > /workspace/start.sh << 'SCRIPT_EOF'

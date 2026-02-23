@@ -63,6 +63,12 @@ ensure_node_toolchain() {
   corepack prepare pnpm@10.20.0 --activate
 }
 
+ensure_pnpm_build_policy() {
+  log "configure pnpm build policy (global)"
+  pnpm config set --global --json onlyBuiltDependencies '["@swc/core","@lobehub/editor","better-sqlite3","esbuild","onnxruntime-node","sharp"]'
+  pnpm config set --global --json ignoredBuiltDependencies '["@playwright/browser-chromium","@scarf/scarf","@tree-sitter-grammars/tree-sitter-yaml","core-js","core-js-pure","electron","es5-ext","protobufjs","tree-sitter","tree-sitter-json","unrs-resolver"]'
+}
+
 sync_lobe_chat_repo() {
   local backup
   if [ ! -d "${LOBE_CHAT_DIR}/.git" ]; then
@@ -348,6 +354,7 @@ health_check() {
 main() {
   ensure_base_packages
   ensure_node_toolchain
+  ensure_pnpm_build_policy
   sync_lobe_chat_repo
   ensure_postgres_started
   ensure_pgvector_extension

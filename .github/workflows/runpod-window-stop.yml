@@ -18,6 +18,7 @@ jobs:
           RUNPOD_POD_ID: ${{ secrets.RUNPOD_POD_ID }}
           RUNPOD_POD_NAME: ${{ secrets.RUNPOD_POD_NAME }}
           RUNPOD_NETWORK_VOLUME_ID: ${{ secrets.RUNPOD_NETWORK_VOLUME_ID }}
+          RUNPOD_FORCE_STOP: ${{ secrets.RUNPOD_FORCE_STOP }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
           set -euo pipefail
@@ -92,8 +93,12 @@ jobs:
           TARGET_NETWORK_VOLUME_ID=$(echo "$POD_QUERY_RESP" | jq -r '.data.pod.networkVolumeId // .data.pod.networkVolume.id // empty')
           echo "target_pod_id=${TARGET_POD_ID} desiredStatus=${TARGET_STATUS} networkVolumeId=${TARGET_NETWORK_VOLUME_ID:-<none>} expectedNetworkVolumeId=${RUNPOD_NETWORK_VOLUME_ID:-<none>}"
 
+          RUNPOD_FORCE_STOP=${RUNPOD_FORCE_STOP:-0}
           ACTION="stop"
-          if [ -n "$TARGET_NETWORK_VOLUME_ID" ]; then
+          if [ "${RUNPOD_FORCE_STOP}" = "1" ]; then
+            ACTION="stop"
+            echo "[INFO] select action=stop (RUNPOD_FORCE_STOP=1)"
+          elif [ -n "$TARGET_NETWORK_VOLUME_ID" ]; then
             ACTION="terminate"
             echo "[INFO] select action=terminate (pod has networkVolumeId)"
           elif [ -n "${RUNPOD_NETWORK_VOLUME_ID:-}" ]; then

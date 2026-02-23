@@ -220,16 +220,12 @@ jobs:
               echo "[ERROR] RUNPOD_GPU_TYPE_ID is required for pod creation"
               exit 1
             fi
-            if [ -z "${RUNPOD_NETWORK_VOLUME_ID:-}" ]; then
-              echo "[ERROR] RUNPOD_NETWORK_VOLUME_ID is required for pod creation"
-              exit 1
-            fi
             if [ -z "${RUNPOD_TEMPLATE_ID:-}" ] && [ -z "${RUNPOD_IMAGE_NAME:-}" ]; then
               echo "[ERROR] RUNPOD_TEMPLATE_ID or RUNPOD_IMAGE_NAME is required for pod creation"
               exit 1
             fi
 
-            echo "[INFO] create config: cloud=${RUNPOD_CLOUD_TYPE} pod_name=${RUNPOD_POD_NAME} gpu_type_id=${RUNPOD_GPU_TYPE_ID} gpu_count=${RUNPOD_GPU_COUNT} disk=${RUNPOD_CONTAINER_DISK_GB} ports=${RUNPOD_PORTS} mount=${RUNPOD_VOLUME_MOUNT_PATH} network_volume_id=${RUNPOD_NETWORK_VOLUME_ID} data_center_id=${RUNPOD_DATA_CENTER_ID:-<none>} template_id=${RUNPOD_TEMPLATE_ID:-<none>} image_name=${RUNPOD_IMAGE_NAME:-<none>}"
+            echo "[INFO] create config: cloud=${RUNPOD_CLOUD_TYPE} pod_name=${RUNPOD_POD_NAME} gpu_type_id=${RUNPOD_GPU_TYPE_ID} gpu_count=${RUNPOD_GPU_COUNT} disk=${RUNPOD_CONTAINER_DISK_GB} ports=${RUNPOD_PORTS} mount=${RUNPOD_VOLUME_MOUNT_PATH} network_volume_id=${RUNPOD_NETWORK_VOLUME_ID:-<none>} data_center_id=${RUNPOD_DATA_CENTER_ID:-<none>} template_id=${RUNPOD_TEMPLATE_ID:-<none>} image_name=${RUNPOD_IMAGE_NAME:-<none>}"
             PORTS_JSON=$(jq -cn --arg ports "$RUNPOD_PORTS" \
               '$ports | split(",") | map(gsub("^\\s+|\\s+$";"")) | map(select(length > 0))')
             if [ "$(echo "$PORTS_JSON" | jq -r 'length')" = "0" ]; then
@@ -255,7 +251,7 @@ jobs:
               jq -cn \
                 --arg cloud "$RUNPOD_CLOUD_TYPE" \
                 --arg name "$RUNPOD_POD_NAME" \
-                --arg nv "$RUNPOD_NETWORK_VOLUME_ID" \
+                --arg nv "${RUNPOD_NETWORK_VOLUME_ID:-}" \
                 --arg gpu "$RUNPOD_GPU_TYPE_ID" \
                 --argjson gc "$RUNPOD_GPU_COUNT" \
                 --argjson disk "$RUNPOD_CONTAINER_DISK_GB" \
@@ -269,13 +265,12 @@ jobs:
                     cloudType:$cloud,
                     computeType:"GPU",
                     name:$name,
-                    networkVolumeId:$nv,
                     gpuCount:$gc,
                     gpuTypeIds:[$gpu],
                     containerDiskInGb:$disk,
-                    ports:$ports,
-                    volumeMountPath:$mount
+                    ports:$ports
                   }
+                  + (if $nv != "" then {networkVolumeId:$nv, volumeMountPath:$mount} else {} end)
                   + (if $templateId != "" then {templateId:$templateId} else {} end)
                   + (if $imageName != "" then {imageName:$imageName} else {} end)
                   + (if $dataCenterId != "" then {dataCenterIds:[$dataCenterId]} else {} end)

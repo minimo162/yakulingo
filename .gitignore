@@ -236,3 +236,6 @@ config/user_settings.json
 
 # Screenshots (local UI checks)
 yakulingo_ui*.png
+
+# Local icon artifact
+yakulingo/ui/yakulingo_icon_72kb.png

@@ -79,8 +79,11 @@ Go/No-Go（初日）:
 長いスクリプトは、ドキュメント内インラインに加えて以下へも同内容を配置している。
 
 - `tools/runpod_eval/benchmark_step9.py`
+- `tools/runpod_eval/step8_gate_check.py`
 - `tools/runpod_eval/responses_chat_proxy.py`
 - `tools/runpod_eval/conversation_continuity_check.py`
+- `tools/runpod_eval/fetch_workflow_runs.py`（GitHub Actions 実行履歴の取得補助）
+- `tools/runpod_eval/runpod_nv_bootstrap.sh`（Network Volume運用の再作成復旧を自動化）
 
 更新時の運用ルール:
 - スクリプト本体（`tools/runpod_eval/`）を先に更新する
@@ -561,6 +564,53 @@ nginx -t && (nginx -s reload 2>/dev/null || nginx)
 ```
 
 ## Step 7: 起動スクリプト（初回のみ作成）
+
+### 7-0: 推奨（Network Volume運用）- 復旧自動化スクリプト
+
+`Terminate + 再作成` のたびに `/root` や `/etc` が初期化されるため、  
+以下スクリプトで `lms` 再導入・モデル再登録・`start.sh` 再生成まで自動化する。
+
+前提:
+- モデル本体は `/workspace/models/swallow-120b/IQ4_XS/*.gguf` に配置済み
+
+```bash
+# 初回: yakulingo を取得して bootstrap 実行
+if [ ! -d /workspace/yakulingo/.git ]; then
+  git clone https://github.com/minimo162/yakulingo.git /workspace/yakulingo
+else
+  git -C /workspace/yakulingo fetch origin main
+  git -C /workspace/yakulingo pull --ff-only origin main
+fi
+
+bash /workspace/yakulingo/tools/runpod_eval/runpod_nv_bootstrap.sh
+```
+
+補足:
+- `runpod_nv_bootstrap.sh` 自体が `yakulingo` の clone/pull を内部で実行する。
+- 実行後、最新スクリプトは `/workspace/scripts/runpod_nv_bootstrap.sh` に同期される。
+- 2回目以降は次の1行で復旧できる:
+```bash
+bash /workspace/scripts/runpod_nv_bootstrap.sh
+```
+
+オプション:
+- LobeHubを同居運用する場合は Node/pnpm も同時に導入
+
+```bash
+INSTALL_NODE_TOOLCHAIN=1 bash /workspace/scripts/runpod_nv_bootstrap.sh
+```
+
+期待値（復旧確認）:
+
+```bash
+curl -sS -o /dev/null -w "noauth=%{http_code}\n" http://127.0.0.1:11434/v1/models
+curl -sS -o /dev/null -w "auth=%{http_code}\n" \
+  -H "x-api-key: $(tr -d '\n' < /workspace/.auth_token)" \
+  http://127.0.0.1:11434/v1/models
+```
+
+- `noauth=401`
+- `auth=200`
 
 ```bash
 cat > /workspace/start.sh << 'SCRIPT_EOF'
@@ -2203,7 +2253,8 @@ Step 8-1（`chat/completions` の oneshot / multi が2xx）を満たしたら、
 LobeHubを OpenAI互換クライアントとして接続する。
 
 前提:
-- LobeHubは **RunPodのLM Studio Podとは別ホスト**（社内VM/別Pod/ローカルPC）で動かす。
+- 本番運用では、LobeHubは **RunPodのLM Studio Podとは別ホスト**（社内VM/別Pod/ローカルPC）で動かす。
+- PoC限定で同一Pod同居を行う場合は、10-A-5 の暫定手順を使う（本番非推奨）。
 - このガイドのNginx認証（Step 6）を有効にしていること。
 
 #### 10-A-1: LobeHub用環境変数ファイルを作成
@@ -2256,6 +2307,48 @@ docker logs --tail 200 lobehub
 - ブラウザにRunPod APIキーを直接配らない（LobeHubサーバ側で保持）。
 - チーム利用時はLobeHub側にも認証/TLSを前段配置する（社内VPN・リバースプロキシ等）。
 - LobeHubの環境変数はバージョンで増減するため、更新時は公式ドキュメントを確認する。
+
+#### 10-A-5: 同一Pod同居PoC（2026-02-23実績ベース、暫定）
+
+前提:
+- これはPoCの暫定導線。長期運用や本番では別ホスト分離に戻すこと。
+- LobeHub `2.x` は `client mode` が廃止されており、`PostgreSQL` が必須。
+
+実施ログ（到達点）:
+- `pnpm install` は完了（`Done in 15m 37.5s`）。
+- `pnpm approve-builds` で `@swc/core`, `better-sqlite3`, `esbuild`, `onnxruntime-node`, `sharp` を許可。
+- `pnpm rebuild` は完了。
+- `pnpm db:migrate` は `database migration pass` を確認。
+- `pnpm exec next dev -H 0.0.0.0 -p 3210 --webpack` で起動し、初回コンパイルが長い（`/workspace` はNetwork Volumeのため）。
+
+最小手順（同居PoC）:
+```bash
+# Node.js + pnpm 前提
+cd /workspace/lobe-chat
+pnpm install
+pnpm approve-builds
+pnpm rebuild
+
+# PostgreSQL を同一Pod内に用意（例）
+apt-get update && apt-get install -y postgresql postgresql-contrib
+pg_ctlcluster 16 main start
+
+# DB情報を /opt/lobehub/lobehub.env に設定
+# DATABASE_URL は実値を設定（<...> プレースホルダは禁止）
+
+set -a
+source /opt/lobehub/lobehub.env
+set +a
+
+pnpm db:migrate
+pnpm exec next dev -H 0.0.0.0 -p 3210 --webpack
+```
+
+重要メモ:
+- `pnpm dev --host ...` は失敗するため使わない（`next dev` は `--host` 非対応）。
+- 代わりに `pnpm exec next dev -H 0.0.0.0 -p 3210` を使う。
+- `DATABASE_URL` をダミー値（`<user>...`）で設定すると `source` で構文エラーになる。
+- `pnpm db:migrate` が「database env not found」でスキップされる場合は、環境変数未読込を疑う。
 
 ### 10-B: パターンB VSCode拡張（Codex）推奨（`wire_api="responses"`）
 
@@ -2323,7 +2416,7 @@ $env:SWALLOW_API_KEY = "<Step 6で作成したトークン>"
 
 - 月額上限（ソフト警告 + ハード停止）
 - RunPod自動停止（最大稼働時間）
-- 時間帯運用（平日 08:50-12:00 JST）
+- 時間帯運用（平日 08:50-18:00 JST）
 - アラート通知（Slack Webhook）
 - Network Volume運用時の仕様差分（`Stop/Resume` ではなく `Terminate + 再デプロイ`）
 
@@ -2563,7 +2656,7 @@ systemd timerで「起動からN時間後の停止」を予約する。
 source /workspace/cost-guardrail.env
 mkdir -p /workspace/scripts /workspace/logs
 
-MAX_RUNTIME_HOURS=${MAX_RUNTIME_HOURS:-2}
+MAX_RUNTIME_HOURS=${MAX_RUNTIME_HOURS:-10}
 
 cat > /workspace/scripts/pod_stop_once.sh << 'STOP_EOF'
 #!/usr/bin/env bash
@@ -2637,10 +2730,10 @@ curl -sS https://api.runpod.io/graphql \
   -d "$STOP_PAYLOAD" >/dev/null || true
 ```
 
-### 11-5: 時間帯運用の停止（平日 12:00 JST）
+### 11-5: 時間帯運用の停止（平日 18:00 JST）
 
 Pod内で確実に止めるには、外部スケジューラ（GitHub Actions等）からRunPod APIを叩くのが安全。  
-以下は GitHub Actions 例（`12:00 JST = 03:00 UTC`）。
+以下は GitHub Actions 例（`18:00 JST = 09:00 UTC`）。
 
 注記（Network Volume運用時）:
 - Network Volume が紐づくPodは `Stop` できないため、`runpod-window-stop` は自動的に `podTerminate` を実行する。
@@ -2652,7 +2745,7 @@ Pod内で確実に止めるには、外部スケジューラ（GitHub Actions等
 name: runpod-window-stop
 on:
   schedule:
-    - cron: "0 3 * * 1-5" # Mon-Fri 03:00 UTC = 12:00 JST
+    - cron: "0 9 * * 1-5" # Mon-Fri 09:00 UTC = 18:00 JST
   workflow_dispatch:
 
 jobs:
@@ -2746,6 +2839,39 @@ jobs:
           echo "morning-resume workflow completed"
 ```
 
+### 11-5B: `stop/resume` 運用へ切替（Network Volumeなし）
+
+目的:
+- `terminate + 再作成` ではなく、同一Podを `podStop` / `podResume` で使い回す。
+- Pod再作成時の再セットアップ（`lms`/`node`/`pnpm` 再導入）を避ける。
+
+前提:
+- モデルを毎回再ダウンロードできる構成か、Podローカルディスクに保持できる運用であること。
+- 既存のNetwork Volume運用から切替える場合、`/workspace` 永続化は失われる。
+
+切替手順:
+1. RunPod Consoleで **Network Volumeをアタッチしない** 新規Podを作成する。
+2. Local disk（`RUNPOD_CONTAINER_DISK_GB`）を大きめに設定する（目安: `200GB` 以上）。
+3. 新Podで Step 2〜Step 8 の最小導線（モデル配置・`start.sh`・疎通）を再実行する。
+4. GitHub Secrets を以下の方針で更新する。
+   - `RUNPOD_POD_ID`: 新PodのID
+   - `RUNPOD_POD_NAME`: 新Pod名（推奨: IDより名前基準で解決）
+   - `RUNPOD_NETWORK_VOLUME_ID`: **空にする**（削除）
+   - `RUNPOD_CONTAINER_DISK_GB`: 実Podと整合する値へ更新
+   - `RUNPOD_FORCE_STOP`: `1`（`runpod-window-stop` を常に `podStop` に固定）
+5. `runpod-window-stop` / `runpod-morning-resume` を `workflow_dispatch` で1回ずつ実行し、`stop -> resume` が成立することを確認する。
+
+このリポジトリのワークフロー挙動（2026-02-23 反映）:
+- `.github/workflows/runpod-morning-resume.yml`
+  - `RUNPOD_NETWORK_VOLUME_ID` が空でも作成処理を継続可能
+  - Pod作成時、`networkVolumeId` / `volumeMountPath` は **Network Volume指定時のみ** 付与
+- `.github/workflows/runpod-window-stop.yml`
+  - `RUNPOD_FORCE_STOP=1` で `podStop` を強制（`networkVolumeId` 判定を上書き）
+
+注意:
+- `RUNPOD_FORCE_STOP=1` のままNetwork Volume付きPodに戻すと、`podStop` 失敗時の運用判断が難しくなる。
+- Network Volume運用へ戻すときは `RUNPOD_FORCE_STOP` を `0`（または削除）に戻す。
+
 ### 11-6: ログローテーション（必須）
 
 2週間検証でもログ肥大化は起きるため、`/workspace/logs` と手動起動ログのローテーションを先に有効化する。
@@ -2804,7 +2930,7 @@ chmod 600 /workspace/backups/swallow-config-*.tar.gz
 
 ### 朝（`runpod-morning-resume` を使わない場合）
 
-- 推奨運用時間: **平日 08:50〜12:00 JST**
+- 推奨運用時間: **平日 08:50〜18:00 JST**
 
 ```bash
 if systemctl is-enabled swallow-lmstudio.service >/dev/null 2>&1; then
@@ -2862,11 +2988,264 @@ fi
 2. 送信元IP（VPN経由含む）がallowlistに含まれるか確認
 3. 更新後に `nginx -t && nginx -s reload` を実行
 
+### `stop` のつもりが `terminate` される
+
+症状:
+- `runpod-window-stop` 実行時に `podStop` ではなく `podTerminate` になる。
+
+対処:
+1. GitHub Secrets の `RUNPOD_NETWORK_VOLUME_ID` を空にする（削除）。
+2. GitHub Secrets に `RUNPOD_FORCE_STOP=1` を設定する。
+3. Pod自体が `networkVolumeId` なしで作成されていることを確認する。
+4. ワークフローログで `select action=stop (RUNPOD_FORCE_STOP=1)` が出ることを確認する。
+
+### Pod再作成後に `lms: command not found` になる
+
+症状:
+- `/workspace/start.sh` 実行時に `lms: command not found`
+- `11434` が待受せず、`curl .../v1/models` が `000`
+
+対処:
+1. 初回は `yakulingo` を取得してから `runpod_nv_bootstrap.sh` を実行する。
+```bash
+if [ ! -d /workspace/yakulingo/.git ]; then
+  git clone https://github.com/minimo162/yakulingo.git /workspace/yakulingo
+else
+  git -C /workspace/yakulingo fetch origin main
+  git -C /workspace/yakulingo pull --ff-only origin main
+fi
+bash /workspace/yakulingo/tools/runpod_eval/runpod_nv_bootstrap.sh
+```
+2. 2回目以降は以下の1行でよい（`/workspace/scripts` に同期済み）。
+```bash
+bash /workspace/scripts/runpod_nv_bootstrap.sh
+```
+3. Node/pnpm も同時に戻したい場合:
+```bash
+INSTALL_NODE_TOOLCHAIN=1 bash /workspace/scripts/runpod_nv_bootstrap.sh
+```
+4. 復旧確認:
+```bash
+curl -sS -o /dev/null -w "noauth=%{http_code}\n" http://127.0.0.1:11434/v1/models
+curl -sS -o /dev/null -w "auth=%{http_code}\n" -H "x-api-key: $(tr -d '\n' < /workspace/.auth_token)" http://127.0.0.1:11434/v1/models
+```
+
+### `huggingface-cli: command not found` になる
+
+症状:
+- `huggingface-cli download ...` 実行時に `command not found`
+
+対処:
+1. まず `hf` コマンドを使う（`huggingface_hub` 1.x 系の推奨）。
+2. 実行例:
+```bash
+pip install -U huggingface_hub hf_transfer
+export HF_HUB_ENABLE_HF_TRANSFER=1
+hf download mmnga-o/GPT-OSS-Swallow-120B-RL-v0.1-gguf \
+  --include "*IQ4_XS*" \
+  --local-dir /workspace/models/swallow-120b/
+```
+
+### `Still waiting to acquire lock ... .gitignore.lock` が続く
+
+症状:
+- `hf download` 中に lock 待ち表示が出て止まって見える。
+
+対処:
+1. `ps` で `hf download` プロセスが生存し、`du -sh` でサイズ増加していれば待機。
+2. 進捗が完全停止した場合のみ、重複プロセスを停止して再実行する。
+3. 目安確認:
+```bash
+ps -ef | grep -E "hf download|python -m huggingface_hub" | grep -v grep
+du -sh /workspace/models/swallow-120b
+```
+
+### Nginx が `11434` を listen しない / 起動はするが接続できない
+
+症状:
+- `curl http://127.0.0.1:11434/v1/models` が `connection refused`
+- 既存ポート（`9091`, `3001`, `7861` など）競合ログが出る
+
+対処:
+1. 既存のシステム nginx 設定と分離し、専用設定で起動する。
+2. `pid` と `error_log` を `/workspace` 配下に置く。
+3. 専用インスタンス起動例:
+```bash
+nginx -t -c /workspace/nginx-swallow/nginx.conf
+nginx -c /workspace/nginx-swallow/nginx.conf
+ss -ltnp | grep 11434
+```
+
+### Nginx 設定エラー（`map_hash_bucket_size` / `invalid return code`）
+
+症状:
+- `could not build map_hash, you should increase map_hash_bucket_size`
+- `invalid return code "$auth_status"`
+
+対処:
+1. `map` を使う場合は `map_hash_bucket_size 128;` などを追加する。
+2. `return $auth_status;` で失敗する場合は `if` ベース判定へ切替える。
+3. 設定変更後は必ず `nginx -t` で構文確認してから再起動する。
+
 ### LobeHubで会話が続かない（文脈が効かない）
 
 1. 2ターン目以降を「同じ会話スレッド」で送っているか確認（毎回New Chatにしていないか）
 2. LobeHubを再起動するたびに会話が初期化される運用になっていないか確認
 3. Step 8-1 の multiテストが2xxかつ妥当応答になるか再確認
+
+### LobeHub 2.x で `DATABASE_URL` エラーになる
+
+症状:
+- `You are try to use database, but "DATABASE_URL" is not set correctly`
+
+対処:
+1. `LobeHub 2.x` はサーバDB前提。`NEXT_PUBLIC_SERVICE_MODE=client` では回避できない。
+2. `/opt/lobehub/lobehub.env` に `DATABASE_DRIVER=node` と `DATABASE_URL=<実値>` を設定する。
+3. `set -a; source /opt/lobehub/lobehub.env; set +a` で読み込んでから `pnpm db:migrate` を実行する。
+4. `DATABASE_URL` はプレースホルダ禁止（`<...>` を含めない）。実際の接続URIを1行で設定する。
+
+### LobeHub起動時に `Module not found: Can't resolve 'stream'`（grpc経由）が出る
+
+症状:
+- `instrumentation.node.ts` -> `@opentelemetry` -> `@grpc/grpc-js` の解決でビルドエラーが出る。
+
+対処（PoC最短）:
+1. `next dev` の起動引数を `--webpack` に固定する。
+2. それでも詰まる場合は telemetry/instrumentation を無効化して再起動する。
+3. 500が残る場合は `curl http://127.0.0.1:3210/` の結果と dev ログ最終行で再切り分けする。
+
+### `pnpm install` が長時間止まって見える
+
+症状:
+- `Progress: ... added ...` のあと更新が遅く、停止に見える。
+
+対処:
+1. `/workspace`（Network Volume）上では初回展開が遅い前提で待機する。
+2. `pnpm` プロセスCPUが動いていれば継続中と判断する。
+3. 監視例:
+```bash
+ps -eo pid,etimes,%cpu,%mem,cmd | grep -E "pnpm install|node /usr/bin/pnpm" | grep -v grep
+```
+
+### `pnpm approve-builds` で `Do you approve?` を `false` にしてしまった
+
+症状:
+- 必要な native build が許可されず、後続で不具合が出る。
+
+対処:
+1. `pnpm approve-builds` を再実行する。
+2. 今回のPoCで最低限選ぶ項目:
+   - `@swc/core`
+   - `better-sqlite3`
+   - `esbuild`
+   - `onnxruntime-node`
+   - `sharp`
+3. 確認プロンプトは `y` で確定する。
+
+### `next dev` の `unknown option '--host'`
+
+症状:
+- `pnpm dev --host 0.0.0.0 --port 3210` が失敗する。
+
+対処:
+1. `next dev` は `--host` ではなく `-H`（または `--hostname`）を使う。
+2. 実行例:
+```bash
+pnpm exec next dev -H 0.0.0.0 -p 3210
+```
+
+### `KEY_VAULTS_SECRET is not set` で LobeHub が 500
+
+症状:
+- `curl http://127.0.0.1:3210/` が `500`
+- エラー本文に ``KEY_VAULTS_SECRET` is not set`
+
+対処:
+1. `/opt/lobehub/lobehub.env` に `KEY_VAULTS_SECRET` を設定する。
+2. あわせて `AUTH_SECRET` も設定する。
+3. `source` 再読込後に `next dev` を再起動する。
+
+### `pnpm db:migrate` がスキップされる / 進まない
+
+症状:
+- `not find database env ... migration skipped`
+- 進行に見えてDB側クエリが出ない
+
+対処:
+1. `/opt/lobehub/lobehub.env` を `set -a; source ...; set +a` で読み込む。
+2. `DATABASE_URL` は実値で設定し、`<...>` プレースホルダを使わない。
+3. 先に接続確認を行う:
+```bash
+pnpm exec node -e "const {Client}=require('pg');const c=new Client({connectionString:process.env.DATABASE_URL});c.connect().then(()=>{console.log('DB OK');return c.end()}).catch(e=>{console.error('DB NG:',e.message);process.exit(1)})"
+```
+4. `DB OK` の後に `pnpm db:migrate` を実行する。
+
+### `extension \"vector\" is not available`
+
+症状:
+- PostgreSQL で `CREATE EXTENSION vector` が失敗する。
+
+対処:
+1. `pgvector` パッケージを導入する（なければソースビルド）。
+2. 導入後に再度 `CREATE EXTENSION IF NOT EXISTS vector;` を実行する。
+
+### `step8_gate_check.py` が見つからない
+
+症状:
+- `python: can't open file '/workspace/yakulingo/tools/runpod_eval/step8_gate_check.py': [Errno 2] No such file or directory`
+
+対処:
+1. `yakulingo` リポジトリが `/workspace/yakulingo` に存在するか確認する。
+2. 無い場合は clone する。
+```bash
+git clone https://github.com/minimo162/yakulingo.git /workspace/yakulingo
+```
+3. 再実行前に存在確認する。
+```bash
+find /workspace -type f -name step8_gate_check.py 2>/dev/null
+```
+
+### `lms load` で `A model with identifier ... already exists`
+
+症状:
+- `Error: A model with identifier gpt-oss-swallow-120b-iq4xs already exists.`
+
+対処:
+1. 既にロード済みなので、同じ `MODEL_ID` での再ロードはスキップする。
+2. `start.sh` 側で `lms ps --json` を見て存在時は `load` を呼ばない分岐にする。
+3. 確認:
+```bash
+lms ps --json | jq '.[] | {identifier, loaded}'
+```
+
+### Step 9 ベンチが「固まって見える」（無出力時間が長い）
+
+症状:
+- `benchmark_step9.py` 実行中に端末出力がしばらく増えない。
+
+対処:
+1. 進行中判定は GPU 使用率/メモリとプロセス生存で行う。
+2. 監視例:
+```bash
+nvidia-smi
+ps -ef | grep benchmark_step9.py | grep -v grep
+```
+3. `nvidia-smi` で推論プロセスがGPUを継続利用していれば正常進行とみなす。
+4. 完了後は `summary.log` / `raw.csv` の更新時刻で結果を確認する。
+
+### RunPod 画面の Network Volume 表示が期待容量とズレる
+
+症状:
+- 画面表示が `66.3 / 20` のように見え、設定した `200GB` と一致しない。
+
+対処:
+1. まず Pod 内実体を優先して確認する（`/workspace` のマウント先容量）。
+```bash
+df -h /workspace
+```
+2. `/workspace` が `mfs#<region>.runpod.net:...` でマウントされ、必要容量が確保されていれば作業継続可。
+3. 併せて RunPod 側で「接続中の Network Volume 名/ID」が期待値（例: `eu-se-1-a40x2-workspace`）か確認する。
+4. 不一致なら Pod を terminate し、期待する Volume ID を指定して再作成する。
 
 ### VSCode Codexが接続できない / 不安定
 
@@ -2955,7 +3334,7 @@ fi
 ---
 
 *作成日: 2026-02-22*
-*最終更新: 2026-02-22*
+*最終更新: 2026-02-23*
 *用途: GPT-OSS-Swallow-120B IQ4_XS の2週間検証（LM Studio/RunPod）*
 
 
@@ -2998,7 +3377,7 @@ fi
 
 ### 運用チェック（最小）
 - 平日 08:50 JST の `runpod-morning-resume` が成功すること
-- 平日 12:00 JST の `runpod-window-stop` が成功すること
+- 平日 18:00 JST の `runpod-window-stop` が成功すること
 - 失敗時は先に `RUNPOD_NETWORK_VOLUME_ID` と `RUNPOD_DATA_CENTER_ID` の整合性を確認すること
 
 ### 引き継ぎメモ（2026-02-22）
@@ -3026,3 +3405,26 @@ fi
 
 #### ローカル作業ツリー注意
 - この引き継ぎ記入時点で、`runpod-morning-resume` / `runpod-window-stop` に未コミット変更があるため、次担当は `git status` で差分確認してから作業再開すること。
+
+### 引き継ぎメモ（2026-02-23）
+#### 現状確認（ローカル）
+- `runpod-morning-resume` は次を実装済み:
+  - Pod名解決 (`RUNPOD_POD_NAME`) と `podResume` 実行
+  - `networkVolumeId` 不一致時の `terminate` + 再作成
+  - Pod不在/復旧失敗時の `REST /v1/pods` 作成
+  - `critical error on this machine` 文言のプロキシ検知
+- `runpod-window-stop` は `networkVolumeId` があるPodを `terminate`、それ以外を `stop` する分岐を実装済み。
+- 2026-02-23 時点の `git status --short` では、ワークフロー差分はなく、未追跡は `yakulingo/ui/yakulingo_icon_72kb.png` のみ。
+
+#### 直近の再開手順（優先順）
+1. GitHub Secrets を以下へ更新する。
+   - `RUNPOD_DATA_CENTER_ID=CA-MTL-1`
+   - `RUNPOD_GPU_TYPE_ID=NVIDIA A40`
+   - `RUNPOD_NETWORK_VOLUME_ID=<CA-MTL-1で新規作成したNetwork Volume ID>`
+2. `runpod-morning-resume` を `workflow_dispatch` 実行し、ログに `create config` の `data_center_id=CA-MTL-1` と `gpu_type_id=NVIDIA A40` が出ることを確認する。
+3. 作成されたPodの `networkVolumeId` が Secrets の期待値と一致することを確認する。
+4. Pod内で `/workspace/nv_canary.txt` を作成し、`runpod-window-stop` → `runpod-morning-resume` を手動実行して残存確認する。
+5. 警告が再発する場合は、`RUNPOD_DATA_CENTER_ID` を `US-MO-1` または `EU-FR-1` へ切り替えて同手順を再試行する。
+
+#### 記録先
+- 実行結果は `docs/PHASE1_DAY1_WORKLOG_2026-02-23.md` に追記する。

@@ -128,6 +128,93 @@ function Resolve-NodeExe {
   return $null
 }
 
+function Resolve-UvExe {
+  param([Parameter(Mandatory = $true)][string]$BaseDir)
+  $runtimeUv = Join-Path $BaseDir ".runtime\uv\uv.exe"
+  if (Test-Path $runtimeUv) {
+    return $runtimeUv
+  }
+  return $null
+}
+
+function Resolve-PythonExe {
+  param([Parameter(Mandatory = $true)][string]$BaseDir)
+  $runtimeRoot = Join-Path $BaseDir ".runtime"
+  $binFile = Join-Path $runtimeRoot "python-bin.txt"
+  if (Test-Path $binFile) {
+    $candidate = (Get-Content -Raw $binFile).Trim()
+    if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path $candidate)) {
+      try {
+        return (Resolve-Path $candidate).Path
+      } catch {
+        return $candidate
+      }
+    }
+  }
+
+  $managedRoot = Join-Path $runtimeRoot "python-managed"
+  if (Test-Path $managedRoot) {
+    $candidates = Get-ChildItem -Path $managedRoot -Recurse -Filter "python.exe" -ErrorAction SilentlyContinue |
+      Sort-Object LastWriteTime -Descending
+    if ($candidates -and $candidates.Count -gt 0) {
+      return $candidates[0].FullName
+    }
+  }
+  return $null
+}
+
+function Normalize-PathForMatch {
+  param([string]$Value)
+  if ([string]::IsNullOrWhiteSpace($Value)) { return "" }
+  return ($Value.ToLower() -replace "\\", "/")
+}
+
+function Test-IsLocaLingoServerCommandLine {
+  param(
+    [string]$CommandLine,
+    [string]$ServerScriptPath
+  )
+  if ([string]::IsNullOrWhiteSpace($CommandLine)) { return $false }
+  $normalizedCmd = Normalize-PathForMatch -Value $CommandLine
+  $normalizedServer = Normalize-PathForMatch -Value $ServerScriptPath
+  if ([string]::IsNullOrWhiteSpace($normalizedServer)) { return $false }
+  return $normalizedCmd.Contains($normalizedServer)
+}
+
+function Get-LocaLingoServerProcessIds {
+  param([string]$ServerScriptPath)
+  $rows = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+    $_.Name -match "^node(\.exe)?$" -and (Test-IsLocaLingoServerCommandLine -CommandLine $_.CommandLine -ServerScriptPath $ServerScriptPath)
+  }
+  return @($rows | ForEach-Object { [int]$_.ProcessId } | Sort-Object -Unique)
+}
+
+function Test-IsLocaLingoServerProcessId {
+  param(
+    [int]$ProcessId,
+    [string]$ServerScriptPath
+  )
+  if ($ProcessId -le 0) { return $false }
+  $rows = Get-CimInstance Win32_Process -Filter "ProcessId = $ProcessId" -ErrorAction SilentlyContinue
+  if (-not $rows) { return $false }
+  $cmd = $rows | Select-Object -ExpandProperty CommandLine -First 1
+  return Test-IsLocaLingoServerCommandLine -CommandLine $cmd -ServerScriptPath $ServerScriptPath
+}
+
+function Stop-ProcessByIdSafe {
+  param([int]$ProcessId)
+  if ($ProcessId -le 0) { return $false }
+  $proc = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+  if (-not $proc) { return $false }
+  try {
+    Stop-Process -Id $ProcessId -Force -ErrorAction Stop
+    return $true
+  } catch {
+    Write-Warning "Failed to stop PID=$ProcessId : $($_.Exception.Message)"
+    return $false
+  }
+}
+
 $userSlug = Get-UserSlug
 $userDir = Join-Path $env:LOCALAPPDATA "YakuLingoRunpodHtmx"
 $apiKeyStoreFile = Join-Path $userDir "runpod_api_key.dpapi"
@@ -203,8 +290,25 @@ if ([string]::IsNullOrWhiteSpace($runPodApiKey)) {
   Save-RunPodApiKey -ApiKey $runPodApiKey -FilePath $apiKeyStoreFile
 }
 
+$connectionTestMode = Get-ConfigValue -Key "RUNPOD_CONNECTION_TEST_MODE" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($connectionTestMode)) {
+  $connectionTestMode = "soft"
+}
+$connectionTestModeNormalized = $connectionTestMode.Trim().ToLowerInvariant()
+if ($connectionTestModeNormalized -ne "strict") {
+  $connectionTestModeNormalized = "soft"
+}
+
 if (-not $SkipConnectionTest) {
-  & (Join-Path $PSScriptRoot "test-runpod-connection.ps1") -EnvFile $localEnvFile -FallbackEnvFile $configEnvFile -ApiKey $runPodApiKey
+  $connectionArgs = @{
+    EnvFile         = $localEnvFile
+    FallbackEnvFile = $configEnvFile
+    ApiKey          = $runPodApiKey
+  }
+  if ($connectionTestModeNormalized -ne "strict") {
+    $connectionArgs["SoftFail"] = $true
+  }
+  & (Join-Path $PSScriptRoot "test-runpod-connection.ps1") @connectionArgs
 }
 
 $nodeExe = Resolve-NodeExe -BaseDir $BaseDir
@@ -236,20 +340,66 @@ if (Test-Path $pidFile) {
   [int]$existingPid = 0
   [void][int]::TryParse($existingPidRaw, [ref]$existingPid)
   if ($existingPid -gt 0) {
-    $p = Get-Process -Id $existingPid -ErrorAction SilentlyContinue
-    if ($p) {
-      $existingPort = Get-ConfigValue -Key "APP_PORT" -FilePaths $configFiles
-      if ($PSBoundParameters.ContainsKey("Port") -and $Port -gt 0) {
-        $existingPort = "$Port"
-      }
-      if ([string]::IsNullOrWhiteSpace($existingPort)) { $existingPort = "3030" }
-      Write-Host "RunPod HTMX client already running (PID=$existingPid)."
-      if (-not $NoOpenBrowser) { Start-Process "http://localhost:$existingPort/" | Out-Null }
-      exit 0
-    }
+    # PID file will be validated against actual command-line match below.
   }
-  Remove-Item -Force $pidFile -ErrorAction SilentlyContinue
 }
+
+$pythonRuntimeSpec = Get-ConfigValue -Key "PYTHON_RUNTIME_SPEC" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($pythonRuntimeSpec)) { $pythonRuntimeSpec = "3.11" }
+
+$pythonRuntimeUvTarget = Get-ConfigValue -Key "PYTHON_RUNTIME_UV_TARGET" -FilePaths $configFiles
+
+$uvExe = Resolve-UvExe -BaseDir $BaseDir
+$pythonExe = Resolve-PythonExe -BaseDir $BaseDir
+if ([string]::IsNullOrWhiteSpace($uvExe) -or [string]::IsNullOrWhiteSpace($pythonExe)) {
+  $preparePyScript = Join-Path $PSScriptRoot "prepare-python-runtime.ps1"
+  if (!(Test-Path $preparePyScript)) {
+    Write-Host "Bundled Python runtime is missing and prepare script is not found:"
+    Write-Host "  $preparePyScript"
+    exit 1
+  }
+
+  Write-Host "Bundled Python runtime not found. Preparing now..."
+  $prepareArgs = @{}
+  $prepareArgs["PythonSpec"] = $pythonRuntimeSpec
+  if (-not [string]::IsNullOrWhiteSpace($pythonRuntimeUvTarget)) {
+    $prepareArgs["UvTarget"] = $pythonRuntimeUvTarget
+  }
+  & $preparePyScript @prepareArgs
+
+  $uvExe = Resolve-UvExe -BaseDir $BaseDir
+  $pythonExe = Resolve-PythonExe -BaseDir $BaseDir
+  if ([string]::IsNullOrWhiteSpace($uvExe) -or [string]::IsNullOrWhiteSpace($pythonExe)) {
+    Write-Host "Failed to prepare bundled Python runtime."
+    exit 1
+  }
+}
+
+$restartTargets = @()
+if (Test-Path $pidFile) {
+  $existingPidRaw = (Get-Content -Raw $pidFile).Trim()
+  [int]$pidFromFile = 0
+  [void][int]::TryParse($existingPidRaw, [ref]$pidFromFile)
+  if ($pidFromFile -gt 0 -and (Test-IsLocaLingoServerProcessId -ProcessId $pidFromFile -ServerScriptPath $serverScript)) {
+    $restartTargets += $pidFromFile
+  }
+}
+$restartTargets += Get-LocaLingoServerProcessIds -ServerScriptPath $serverScript
+$restartTargets = @($restartTargets | Where-Object { $_ -gt 0 } | Sort-Object -Unique)
+
+if ($restartTargets.Count -gt 0) {
+  Write-Host "Restarting LocaLingo. Stopping previous process(es): $($restartTargets -join ', ')"
+  foreach ($procId in $restartTargets) {
+    [void](Stop-ProcessByIdSafe -ProcessId $procId)
+  }
+  for ($i = 0; $i -lt 20; $i++) {
+    $alive = @($restartTargets | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue })
+    if ($alive.Count -eq 0) { break }
+    Start-Sleep -Milliseconds 200
+  }
+}
+
+Remove-Item -Force $pidFile -ErrorAction SilentlyContinue
 
 $defaultModel = Get-ConfigValue -Key "DEFAULT_MODEL" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($defaultModel)) {
@@ -266,22 +416,26 @@ if ($parsedAppPort -le 0) { $appPort = "3030" }
 $appBind = Get-ConfigValue -Key "APP_BIND" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($appBind)) { $appBind = "127.0.0.1" }
 
+$appTimeZone = Get-ConfigValue -Key "APP_TIME_ZONE" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($appTimeZone)) { $appTimeZone = "Asia/Tokyo" }
+
 $timeoutMs = Get-ConfigValue -Key "RUNPOD_REQUEST_TIMEOUT_MS" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($timeoutMs)) { $timeoutMs = "90000" }
 
-$workspaceRoot = Get-ConfigValue -Key "WORKSPACE_ROOT" -FilePaths $configFiles
-if ([string]::IsNullOrWhiteSpace($workspaceRoot)) {
-  $fallbackWorkspace = Join-Path $BaseDir "..\..\.."
-  if (Test-Path $fallbackWorkspace) {
-    $workspaceRoot = (Resolve-Path $fallbackWorkspace).Path
-  }
-  else {
-    $workspaceRoot = $BaseDir
-  }
+$runPodRetryMaxAttempts = Get-ConfigValue -Key "RUNPOD_HTTP_RETRY_MAX_ATTEMPTS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($runPodRetryMaxAttempts)) { $runPodRetryMaxAttempts = "4" }
+
+$runPodRetryDelayMs = Get-ConfigValue -Key "RUNPOD_HTTP_RETRY_DELAY_MS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($runPodRetryDelayMs)) { $runPodRetryDelayMs = "1500" }
+
+$runPodRetryMaxDelayMs = Get-ConfigValue -Key "RUNPOD_HTTP_RETRY_MAX_DELAY_MS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($runPodRetryMaxDelayMs)) { $runPodRetryMaxDelayMs = "6000" }
+
+$workspaceRoot = Join-Path $BaseDir "workspace"
+if (!(Test-Path $workspaceRoot)) {
+  New-Item -ItemType Directory -Path $workspaceRoot -Force | Out-Null
 }
-elseif (!(Split-Path -Path $workspaceRoot -IsAbsolute)) {
-  $workspaceRoot = Join-Path $BaseDir $workspaceRoot
-}
+$workspaceRoot = (Resolve-Path $workspaceRoot).Path
 
 $localShellTimeout = Get-ConfigValue -Key "LOCAL_SHELL_TIMEOUT_MS" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($localShellTimeout)) { $localShellTimeout = "20000" }
@@ -303,13 +457,76 @@ if ([string]::IsNullOrWhiteSpace($autoMaxValidationCommands)) { $autoMaxValidati
 $autoModelMaxTokens = Get-ConfigValue -Key "AUTONOMOUS_MODEL_MAX_TOKENS" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($autoModelMaxTokens)) { $autoModelMaxTokens = "4000" }
 
+$playwrightMcpEnabled = Get-ConfigValue -Key "PLAYWRIGHT_MCP_ENABLED" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($playwrightMcpEnabled)) { $playwrightMcpEnabled = "1" }
+
+$playwrightMcpBrowser = Get-ConfigValue -Key "PLAYWRIGHT_MCP_BROWSER" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($playwrightMcpBrowser)) { $playwrightMcpBrowser = "chromium" }
+
+$playwrightMcpHeadless = Get-ConfigValue -Key "PLAYWRIGHT_MCP_HEADLESS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($playwrightMcpHeadless)) { $playwrightMcpHeadless = "1" }
+
+$playwrightMcpTimeoutMs = Get-ConfigValue -Key "PLAYWRIGHT_MCP_TIMEOUT_MS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($playwrightMcpTimeoutMs)) { $playwrightMcpTimeoutMs = "300000" }
+
+$playwrightMcpMaxResults = Get-ConfigValue -Key "PLAYWRIGHT_MCP_MAX_RESULTS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($playwrightMcpMaxResults)) { $playwrightMcpMaxResults = "5" }
+
+$clientAutostopEnabled = Get-ConfigValue -Key "CLIENT_AUTOSTOP_ENABLED" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($clientAutostopEnabled)) { $clientAutostopEnabled = "1" }
+
+$clientHeartbeatIntervalMs = Get-ConfigValue -Key "CLIENT_HEARTBEAT_INTERVAL_MS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($clientHeartbeatIntervalMs)) { $clientHeartbeatIntervalMs = "15000" }
+
+$clientHeartbeatStaleMs = Get-ConfigValue -Key "CLIENT_HEARTBEAT_STALE_MS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($clientHeartbeatStaleMs)) { $clientHeartbeatStaleMs = "45000" }
+
+$clientAutostopIdleMs = Get-ConfigValue -Key "CLIENT_AUTOSTOP_IDLE_MS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($clientAutostopIdleMs)) { $clientAutostopIdleMs = "30000" }
+
+$clientHeartbeatSweepMs = Get-ConfigValue -Key "CLIENT_HEARTBEAT_SWEEP_MS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($clientHeartbeatSweepMs)) { $clientHeartbeatSweepMs = "5000" }
+
+$clientAutostopRequestGraceMs = Get-ConfigValue -Key "CLIENT_AUTOSTOP_REQUEST_GRACE_MS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($clientAutostopRequestGraceMs)) { $clientAutostopRequestGraceMs = "30000" }
+
+$streamKeepaliveIntervalMs = Get-ConfigValue -Key "STREAM_KEEPALIVE_INTERVAL_MS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($streamKeepaliveIntervalMs)) { $streamKeepaliveIntervalMs = "10000" }
+
+$generationTemperature = Get-ConfigValue -Key "GENERATION_TEMPERATURE" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($generationTemperature)) { $generationTemperature = "0.6" }
+
+$generationTopP = Get-ConfigValue -Key "GENERATION_TOP_P" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($generationTopP)) { $generationTopP = "0.95" }
+
+$generationTopK = Get-ConfigValue -Key "GENERATION_TOP_K" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($generationTopK)) { $generationTopK = "20" }
+
+$generationMinP = Get-ConfigValue -Key "GENERATION_MIN_P" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($generationMinP)) { $generationMinP = "0" }
+
+$generationMaxContextTokens = Get-ConfigValue -Key "GENERATION_MAX_CONTEXT_TOKENS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($generationMaxContextTokens)) { $generationMaxContextTokens = "32768" }
+
+$generationContextReserveTokens = Get-ConfigValue -Key "GENERATION_CONTEXT_RESERVE_TOKENS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($generationContextReserveTokens)) { $generationContextReserveTokens = "512" }
+
+$autoToolTemperature = Get-ConfigValue -Key "AUTO_TOOL_TEMPERATURE" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($autoToolTemperature)) { $autoToolTemperature = $generationTemperature }
+
 $envVars = @{
   "RUNPOD_BASE_URL"         = $baseUrl
   "RUNPOD_API_KEY"          = $runPodApiKey
   "DEFAULT_MODEL"           = $defaultModel
+  "UV_BIN"                  = $uvExe
+  "PYTHON_BIN"              = $pythonExe
   "APP_PORT"                = $appPort
   "APP_BIND"                = $appBind
+  "APP_TIME_ZONE"           = $appTimeZone
   "RUNPOD_REQUEST_TIMEOUT_MS" = $timeoutMs
+  "RUNPOD_HTTP_RETRY_MAX_ATTEMPTS" = $runPodRetryMaxAttempts
+  "RUNPOD_HTTP_RETRY_DELAY_MS" = $runPodRetryDelayMs
+  "RUNPOD_HTTP_RETRY_MAX_DELAY_MS" = $runPodRetryMaxDelayMs
   "WORKSPACE_ROOT"          = $workspaceRoot
   "LOCAL_SHELL_TIMEOUT_MS"  = $localShellTimeout
   "LOCAL_SHELL_ALLOWLIST"   = $localShellAllowlist
@@ -318,6 +535,25 @@ $envVars = @{
   "AUTONOMOUS_MAX_FILE_CONTEXT_CHARS" = $autoMaxContextChars
   "AUTONOMOUS_MAX_VALIDATION_COMMANDS" = $autoMaxValidationCommands
   "AUTONOMOUS_MODEL_MAX_TOKENS" = $autoModelMaxTokens
+  "PLAYWRIGHT_MCP_ENABLED" = $playwrightMcpEnabled
+  "PLAYWRIGHT_MCP_BROWSER" = $playwrightMcpBrowser
+  "PLAYWRIGHT_MCP_HEADLESS" = $playwrightMcpHeadless
+  "PLAYWRIGHT_MCP_TIMEOUT_MS" = $playwrightMcpTimeoutMs
+  "PLAYWRIGHT_MCP_MAX_RESULTS" = $playwrightMcpMaxResults
+  "CLIENT_AUTOSTOP_ENABLED" = $clientAutostopEnabled
+  "CLIENT_HEARTBEAT_INTERVAL_MS" = $clientHeartbeatIntervalMs
+  "CLIENT_HEARTBEAT_STALE_MS" = $clientHeartbeatStaleMs
+  "CLIENT_AUTOSTOP_IDLE_MS" = $clientAutostopIdleMs
+  "CLIENT_HEARTBEAT_SWEEP_MS" = $clientHeartbeatSweepMs
+  "CLIENT_AUTOSTOP_REQUEST_GRACE_MS" = $clientAutostopRequestGraceMs
+  "STREAM_KEEPALIVE_INTERVAL_MS" = $streamKeepaliveIntervalMs
+  "GENERATION_TEMPERATURE" = $generationTemperature
+  "GENERATION_TOP_P" = $generationTopP
+  "GENERATION_TOP_K" = $generationTopK
+  "GENERATION_MIN_P" = $generationMinP
+  "GENERATION_MAX_CONTEXT_TOKENS" = $generationMaxContextTokens
+  "GENERATION_CONTEXT_RESERVE_TOKENS" = $generationContextReserveTokens
+  "AUTO_TOOL_TEMPERATURE" = $autoToolTemperature
 }
 
 $saved = @{}
@@ -370,15 +606,18 @@ if (-not $NoOpenBrowser) {
   Start-Process $url | Out-Null
 }
 
-Write-Host "RunPod HTMX client started."
+Write-Host "LocaLingo started."
 Write-Host "PID: $($proc.Id)"
 Write-Host "Node: $nodeExe"
+Write-Host "UV: $uvExe"
+Write-Host "Python: $pythonExe"
 Write-Host "Config files:"
 Write-Host "  local: $localEnvFile"
 Write-Host "  shared: $configEnvFile"
 Write-Host "Secure key store: $apiKeyStoreFile"
 Write-Host "Workspace root: $workspaceRoot"
 Write-Host "Endpoint: $(Mask-Url -Url $baseUrl)"
+Write-Host "Connection test mode: $connectionTestModeNormalized"
 Write-Host "URL: $url"
 Write-Host "Out log: $outLog"
 Write-Host "Err log: $errLog"

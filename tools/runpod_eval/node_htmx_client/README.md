@@ -1,4 +1,4 @@
-# RunPod Node + htmx Client
+# LocaLingo (RunPod Node + htmx Client)
 
 This is a lightweight local client app for RunPod LM Studio.
 
@@ -13,13 +13,18 @@ Goal:
 Run only these files in this folder:
 
 - `start.bat`
-- `stop.bat`
 
 Everything else is in `_internal`.
 
 `start.bat` behavior:
 - Uses bundled Node runtime only.
 - If runtime is missing, auto-runs `_internal/prepare-node-runtime.ps1` once.
+- If bundled Python runtime is missing, auto-runs `_internal/prepare-python-runtime.ps1` once.
+- If a previous LocaLingo server process exists, it is stopped and restarted automatically.
+
+`stop.bat` behavior:
+- Deprecated (no-op message only).
+- Close browser tabs or run `start.bat` again to refresh/restart process.
 
 ## First-Time Admin Setup
 
@@ -37,9 +42,11 @@ Everything else is in `_internal`.
 5. Distribute this folder to members.
 
 Recommended additional settings for local coding mode:
-- `WORKSPACE_ROOT=.` (or your target repo path)
 - `LOCAL_SHELL_TIMEOUT_MS=20000`
 - `LOCAL_SHELL_ALLOWLIST=` (empty = built-in safe defaults)
+
+Workspace root is fixed to:
+- `tools/runpod_eval/node_htmx_client/workspace`
 
 ## Per-User Behavior
 
@@ -58,15 +65,22 @@ Per-user local files are:
 - If no local key, imports shared obfuscated key from `_internal/runpod_api_key.obf`.
 - Starts local Node server and opens browser.
 
-## Optional: Prepare Portable Node Runtime
+## Optional: Prepare Portable Runtime
 
 Bundled runtime is the default and required runtime:
 
 1. Admin runs:
    - `tools/runpod_eval/node_htmx_client/_internal/prepare-node-runtime.bat`
+   - `tools/runpod_eval/node_htmx_client/_internal/prepare-python-runtime.bat`
 2. This creates:
    - `tools/runpod_eval/node_htmx_client/.runtime/node/node.exe`
-3. Members can then run `start.bat` without system Node.
+   - `tools/runpod_eval/node_htmx_client/.runtime/uv/uv.exe`
+   - `tools/runpod_eval/node_htmx_client/.runtime/python-managed/...`
+3. Members can run `start.bat` without system Node/Python.
+
+Runtime size notes:
+- Python is provisioned via uv managed standalone runtime (no system install).
+- uv download cache is stored under `%LOCALAPPDATA%\YakuLingoRunpodHtmx\uv-cache` to avoid bloating repo folder.
 
 ## Connection Test
 
@@ -99,21 +113,91 @@ Options:
 ## Local Coder Mode (Codex-like MVP)
 
 The UI now includes local workspace tools in addition to chat:
-- Read file (`/api/tools/read`)
+- Read file (`/api/tools/read`) - text/PDF/Office (`.xlsx/.docx/.pptx`)
+- Read file by line range (`/api/tools/read_file`)
+- List directory (`/api/tools/list_dir`)
 - Search text with ripgrep (`/api/tools/search`)
 - Run shell command with approval (`/api/tools/shell`)
-- Write file with approval (`/api/tools/write`)
+- Write file (`/api/tools/write`, workspace only, supports `.xlsx/.docx/.pptx`)
+- Apply patch (`/api/tools/apply_patch`, Codex-style patch blocks)
+- Update plan (`/api/tools/update_plan`, step/status checklist)
+- Web search via Playwright MCP (`web_search`, auto tool selection)
 
 Tool results are stored in session and can be injected into chat context
 using "Include local tool context". This lets RunPod model answers reference
 actual local repository data.
 
 Safety guardrails:
-- All file operations are restricted to `WORKSPACE_ROOT`.
-- Shell commands require explicit checkbox approval in UI.
+- All file operations are restricted to the fixed workspace folder (`tools/runpod_eval/node_htmx_client/workspace`).
+- `read` / `read_file` / `list_dir` / `write` / `apply_patch` require workspace-relative paths.
 - Shell commands are filtered by allowed prefixes (`LOCAL_SHELL_ALLOWLIST`).
 - Shell command chaining chars (`;`, `&`, `|`, `>`, `<`, backtick, newline)
   are blocked.
+- Web search runs in isolated Playwright MCP session and returns only extracted summaries/links.
+
+Codex-like behavior:
+- Model can auto-select `list_dir -> read_file -> apply_patch -> shell` workflow.
+- Partial edits can be applied without rewriting full file content.
+- Plan snapshots can be stored in-session via `update_plan`.
+
+Office read/write notes:
+- `read` extracts text from `.xlsx/.docx/.pptx` and returns normalized plain text.
+- `write` for `.docx/.xlsx/.pptx` accepts plain text or JSON payload.
+- `.docx` JSON example: `{"paragraphs":["line1","line2"]}`
+- `.xlsx` JSON example: `{"sheets":[{"name":"Sheet1","rows":[["A1","B1"],["A2","B2"]]}]}`
+- `.pptx` JSON example: `{"slides":[{"title":"Slide 1","lines":["point1","point2"]}]}`
+
+Playwright MCP settings:
+- `PLAYWRIGHT_MCP_ENABLED=1`
+- `PLAYWRIGHT_MCP_BROWSER=chromium`
+- `PLAYWRIGHT_MCP_HEADLESS=1`
+- `PLAYWRIGHT_MCP_TIMEOUT_MS=300000`
+- `PLAYWRIGHT_MCP_MAX_RESULTS=5`
+
+Browser-close auto-stop settings:
+- `CLIENT_AUTOSTOP_ENABLED=1`
+- `CLIENT_HEARTBEAT_INTERVAL_MS=15000`
+- `CLIENT_HEARTBEAT_STALE_MS=45000`
+- `CLIENT_AUTOSTOP_IDLE_MS=30000`
+- `CLIENT_HEARTBEAT_SWEEP_MS=5000`
+- `CLIENT_AUTOSTOP_REQUEST_GRACE_MS=30000`
+
+Long-running stream stability:
+- `STREAM_KEEPALIVE_INTERVAL_MS=10000`
+- During active HTTP/stream requests, auto-stop is paused.
+
+RunPod upstream transient retry:
+- `RUNPOD_HTTP_RETRY_MAX_ATTEMPTS=4`
+- `RUNPOD_HTTP_RETRY_DELAY_MS=1500`
+- `RUNPOD_HTTP_RETRY_MAX_DELAY_MS=6000`
+- Applies to `/v1/models` and `/v1/chat/completions` calls.
+
+RunPod startup connection test retry:
+- `RUNPOD_CONNECTION_TEST_MODE=soft|strict` (`soft` default)
+- `RUNPOD_CONNECTION_TEST_MAX_ATTEMPTS=4`
+- `RUNPOD_CONNECTION_TEST_RETRY_DELAY_SEC=2`
+- `RUNPOD_CONNECTION_TEST_TIMEOUT_SEC=8`
+- Transient HTTP `502/503/504/429` and timeout-type errors are retried automatically.
+- In `soft` mode, startup continues with warning even if retries are exhausted.
+
+Relative date handling (today/tomorrow):
+- `APP_TIME_ZONE=Asia/Tokyo` (default)
+- Auto tool chat injects `current_date_jst/current_utc_iso` into system context.
+- For weather "today" prompts, mismatched explicit past/future calendar dates are normalized.
+
+Generation best-practice settings:
+- `GENERATION_TEMPERATURE=0.6`
+- `GENERATION_TOP_P=0.95`
+- `GENERATION_TOP_K=20`
+- `GENERATION_MIN_P=0`
+- `GENERATION_MAX_CONTEXT_TOKENS=32768`
+- Server trims message history by approximate budget to keep context within cap.
+- If upstream rejects non-standard fields (`top_k`/`min_p`), server retries without them.
+
+Notes:
+- First web search may trigger browser installation (`browser_install`) automatically.
+- Some search pages may show anti-bot challenge; in that case result extraction can fail.
+- When all browser tabs are closed, server exits after idle timeout.
 
 ## Autonomous Loop (plan -> diff -> auto apply)
 

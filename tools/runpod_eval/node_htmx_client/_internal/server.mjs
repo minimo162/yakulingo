@@ -64,7 +64,14 @@ function getOrCreateSession(req, res) {
 }
 
 function send(res, statusCode, body, contentType = "text/plain; charset=utf-8") {
-  const payload = typeof body === "string" ? body : JSON.stringify(body);
+  let payload;
+  if (Buffer.isBuffer(body)) {
+    payload = body;
+  } else if (typeof body === "string") {
+    payload = body;
+  } else {
+    payload = JSON.stringify(body);
+  }
   res.statusCode = statusCode;
   res.setHeader("Content-Type", contentType);
   res.setHeader("Cache-Control", "no-store");
@@ -312,14 +319,25 @@ const server = http.createServer(async (req, res) => {
         "text/html; charset=utf-8",
       );
     } catch (err) {
-      const statusCode = Number.isInteger(err?.statusCode) ? err.statusCode : 502;
       let msg = "Failed to call RunPod endpoint.";
       if (err?.name === "AbortError") {
         msg = `RunPod request timed out (${timeoutMs} ms).`;
       } else if (typeof err?.message === "string" && err.message) {
         msg = err.message;
       }
-      send(res, statusCode, renderError(msg), "text/html; charset=utf-8");
+      const statusCode = Number.isInteger(err?.statusCode) ? err.statusCode : 502;
+      const payloadText =
+        err?.payload && typeof err.payload === "object"
+          ? JSON.stringify(err.payload)
+          : "";
+      if (payloadText) {
+        msg = `${msg}\nHTTP ${statusCode}\n${payloadText.slice(0, 1200)}`;
+      } else {
+        msg = `${msg}\nHTTP ${statusCode}`;
+      }
+
+      // htmx is easier to operate when chat endpoint always returns 200 with html fragment.
+      send(res, 200, renderError(msg), "text/html; charset=utf-8");
     }
     return;
   }

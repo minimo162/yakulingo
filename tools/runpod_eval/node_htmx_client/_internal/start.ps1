@@ -27,26 +27,6 @@ function Get-EnvValue {
   return (($line -split "=", 2)[1]).Trim()
 }
 
-function Set-EnvValue {
-  param(
-    [Parameter(Mandatory = $true)] [string]$Key,
-    [Parameter(Mandatory = $true)] [string]$Value,
-    [Parameter(Mandatory = $true)] [string]$FilePath
-  )
-  $lines = @()
-  if (Test-Path $FilePath) { $lines = Get-Content $FilePath }
-  $updated = $false
-  for ($i = 0; $i -lt $lines.Count; $i++) {
-    if ($lines[$i] -match "^\s*$Key=") {
-      $lines[$i] = "$Key=$Value"
-      $updated = $true
-      break
-    }
-  }
-  if (-not $updated) { $lines += "$Key=$Value" }
-  Set-Content -Path $FilePath -Value $lines -Encoding UTF8
-}
-
 function Test-PlaceholderValue {
   param([string]$Value)
   if ([string]::IsNullOrWhiteSpace($Value)) { return $true }
@@ -135,55 +115,39 @@ function Resolve-NodeExe {
 
 $userSlug = Get-UserSlug
 $userDir = Join-Path $env:LOCALAPPDATA "YakuLingoRunpodHtmx"
-$userEnvFile = Join-Path $userDir "runpod-htmx.env"
 $apiKeyStoreFile = Join-Path $userDir "runpod_api_key.dpapi"
 $pidFile = Join-Path $userDir "runpod-htmx-$userSlug.pid"
 $logDir = Join-Path $userDir "logs"
 $outLog = Join-Path $logDir "runpod-htmx-$userSlug.out.log"
 $errLog = Join-Path $logDir "runpod-htmx-$userSlug.err.log"
-$templateEnv = Join-Path $PSScriptRoot ".env.example"
+$configEnvFile = Join-Path $PSScriptRoot ".env.example"
 $sharedObfFile = Join-Path $PSScriptRoot "runpod_api_key.obf"
-$apiKeyMarker = "__USE_DPAPI__"
 
 New-Item -ItemType Directory -Force -Path $userDir | Out-Null
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
-if (!(Test-Path $templateEnv)) {
-  Write-Host "Template env file not found:"
-  Write-Host "  $templateEnv"
+if (!(Test-Path $configEnvFile)) {
+  Write-Host "Config env file not found:"
+  Write-Host "  $configEnvFile"
   exit 1
 }
 
-if (!(Test-Path $userEnvFile)) {
-  Copy-Item $templateEnv $userEnvFile
-  Write-Host "Created per-user env file:"
-  Write-Host "  $userEnvFile"
-}
-
-if ($PSBoundParameters.ContainsKey("Port") -and $Port -gt 0) {
-  Set-EnvValue -Key "APP_PORT" -Value "$Port" -FilePath $userEnvFile
-}
-
-$baseUrl = Get-EnvValue -Key "RUNPOD_BASE_URL" -FilePath $userEnvFile
+$baseUrl = Get-EnvValue -Key "RUNPOD_BASE_URL" -FilePath $configEnvFile
 if (Test-PlaceholderValue -Value $baseUrl) {
   Write-Host "Please update these values in:"
-  Write-Host "  $userEnvFile"
+  Write-Host "  $configEnvFile"
   Write-Host ""
   Write-Host "Required:"
   Write-Host "  RUNPOD_BASE_URL=https://<pod-id>-11434.proxy.runpod.net/v1"
   Write-Host "  RUNPOD_API_KEY=__USE_DPAPI__   (keep this marker)"
   Write-Host ""
-  Start-Process notepad.exe $userEnvFile | Out-Null
+  Start-Process notepad.exe $configEnvFile | Out-Null
   exit 1
 }
 
-$keyInEnv = Get-EnvValue -Key "RUNPOD_API_KEY" -FilePath $userEnvFile
+$keyInEnv = Get-EnvValue -Key "RUNPOD_API_KEY" -FilePath $configEnvFile
 if (-not (Test-PlaceholderValue -Value $keyInEnv)) {
   Save-RunPodApiKey -ApiKey $keyInEnv -FilePath $apiKeyStoreFile
-  Set-EnvValue -Key "RUNPOD_API_KEY" -Value $apiKeyMarker -FilePath $userEnvFile
-}
-elseif ([string]::IsNullOrWhiteSpace($keyInEnv)) {
-  Set-EnvValue -Key "RUNPOD_API_KEY" -Value $apiKeyMarker -FilePath $userEnvFile
 }
 
 $runPodApiKey = Load-RunPodApiKey -FilePath $apiKeyStoreFile
@@ -211,7 +175,7 @@ if ([string]::IsNullOrWhiteSpace($runPodApiKey)) {
 }
 
 if (-not $SkipConnectionTest) {
-  & (Join-Path $PSScriptRoot "test-runpod-connection.ps1") -EnvFile $userEnvFile -ApiKey $runPodApiKey
+  & (Join-Path $PSScriptRoot "test-runpod-connection.ps1") -EnvFile $configEnvFile -ApiKey $runPodApiKey
 }
 
 $nodeExe = Resolve-NodeExe -BaseDir $BaseDir
@@ -245,8 +209,11 @@ if (Test-Path $pidFile) {
   if ($existingPid -gt 0) {
     $p = Get-Process -Id $existingPid -ErrorAction SilentlyContinue
     if ($p) {
-      $existingPort = Get-EnvValue -Key "APP_PORT" -FilePath $userEnvFile
-      if ([string]::IsNullOrWhiteSpace($existingPort)) { $existingPort = "$Port" }
+      $existingPort = Get-EnvValue -Key "APP_PORT" -FilePath $configEnvFile
+      if ($PSBoundParameters.ContainsKey("Port") -and $Port -gt 0) {
+        $existingPort = "$Port"
+      }
+      if ([string]::IsNullOrWhiteSpace($existingPort)) { $existingPort = "3030" }
       Write-Host "RunPod HTMX client already running (PID=$existingPid)."
       if (-not $NoOpenBrowser) { Start-Process "http://localhost:$existingPort/" | Out-Null }
       exit 0
@@ -255,21 +222,22 @@ if (Test-Path $pidFile) {
   Remove-Item -Force $pidFile -ErrorAction SilentlyContinue
 }
 
-$defaultModel = Get-EnvValue -Key "DEFAULT_MODEL" -FilePath $userEnvFile
+$defaultModel = Get-EnvValue -Key "DEFAULT_MODEL" -FilePath $configEnvFile
 if ([string]::IsNullOrWhiteSpace($defaultModel)) {
   $defaultModel = "gpt-oss-swallow-120b-iq4xs"
 }
 
-$appPort = Get-EnvValue -Key "APP_PORT" -FilePath $userEnvFile
+$appPort = Get-EnvValue -Key "APP_PORT" -FilePath $configEnvFile
+if ($PSBoundParameters.ContainsKey("Port") -and $Port -gt 0) { $appPort = "$Port" }
 if ([string]::IsNullOrWhiteSpace($appPort)) { $appPort = "3030" }
 [int]$parsedAppPort = 0
 [void][int]::TryParse($appPort, [ref]$parsedAppPort)
 if ($parsedAppPort -le 0) { $appPort = "3030" }
 
-$appBind = Get-EnvValue -Key "APP_BIND" -FilePath $userEnvFile
+$appBind = Get-EnvValue -Key "APP_BIND" -FilePath $configEnvFile
 if ([string]::IsNullOrWhiteSpace($appBind)) { $appBind = "127.0.0.1" }
 
-$timeoutMs = Get-EnvValue -Key "RUNPOD_REQUEST_TIMEOUT_MS" -FilePath $userEnvFile
+$timeoutMs = Get-EnvValue -Key "RUNPOD_REQUEST_TIMEOUT_MS" -FilePath $configEnvFile
 if ([string]::IsNullOrWhiteSpace($timeoutMs)) { $timeoutMs = "90000" }
 
 $envVars = @{
@@ -334,7 +302,7 @@ if (-not $NoOpenBrowser) {
 Write-Host "RunPod HTMX client started."
 Write-Host "PID: $($proc.Id)"
 Write-Host "Node: $nodeExe"
-Write-Host "Env file: $userEnvFile"
+Write-Host "Config file: $configEnvFile"
 Write-Host "Secure key store: $apiKeyStoreFile"
 Write-Host "Endpoint: $(Mask-Url -Url $baseUrl)"
 Write-Host "URL: $url"

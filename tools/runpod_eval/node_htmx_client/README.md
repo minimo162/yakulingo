@@ -35,12 +35,16 @@ Everything else is in `_internal`.
 
 ## Per-User Behavior
 
-At first launch, each user gets local files under:
-- `%LOCALAPPDATA%\YakuLingoRunpodHtmx\runpod-htmx.env`
+Each launch reads config from shared file:
+- `tools/runpod_eval/node_htmx_client/_internal/.env.example`
+
+Per-user local files are:
 - `%LOCALAPPDATA%\YakuLingoRunpodHtmx\runpod_api_key.dpapi`
+- `%LOCALAPPDATA%\YakuLingoRunpodHtmx\runpod-htmx-<username>.pid`
+- `%LOCALAPPDATA%\YakuLingoRunpodHtmx\logs\...`
 
 `start.bat` behavior:
-- Copies `.env.example` to per-user env if needed.
+- Always uses shared `_internal/.env.example` as config source.
 - Uses local DPAPI key if available.
 - If no local key, imports shared obfuscated key from `_internal/runpod_api_key.obf`.
 - Starts local Node server and opens browser.

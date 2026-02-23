@@ -28,6 +28,21 @@
     }
   });
 
+  document.body.addEventListener("htmx:responseError", function (event) {
+    if (!chatLog) return;
+    const xhr = event?.detail?.xhr;
+    const status = xhr?.status || 0;
+    const text = xhr?.responseText || "Request failed.";
+    const article = document.createElement("article");
+    article.className = "turn turn-error";
+    article.innerHTML = [
+      '<header class="turn-header">Error</header>',
+      `<pre class="turn-body">HTTP ${status}\n${String(text).slice(0, 1200)}</pre>`,
+    ].join("");
+    chatLog.appendChild(article);
+    scrollBottom();
+  });
+
   if (promptInput) {
     promptInput.focus();
   }

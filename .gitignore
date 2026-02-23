@@ -243,6 +243,13 @@ config/user_settings.json
 
 # Temporary files (development/testing)
 .tmp/
+.tmp-lobe-chat-ref/
+.tmp-remote-morning.yml
+.tmp-runlogs.zip
+
+# Local migration notes / discarded prototypes
+docs/RUNPOD_OPENWEBUI_CLIENT_APP.md
+tools/runpod_eval/openwebui_client/
 
 # Screenshots (local UI checks)
 yakulingo_ui*.png

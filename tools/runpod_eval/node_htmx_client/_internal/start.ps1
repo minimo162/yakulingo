@@ -141,6 +141,7 @@ function Resolve-PythonExe {
   param([Parameter(Mandatory = $true)][string]$BaseDir)
   $runtimeRoot = Join-Path $BaseDir ".runtime"
   $binFile = Join-Path $runtimeRoot "python-bin.txt"
+  $stampFile = Join-Path $runtimeRoot "python-runtime.stamp"
   if (Test-Path $binFile) {
     $candidate = (Get-Content -Raw $binFile).Trim()
     if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path $candidate)) {
@@ -150,6 +151,15 @@ function Resolve-PythonExe {
         return $candidate
       }
     }
+  }
+
+  if (-not (Test-Path $stampFile)) {
+    return $null
+  }
+
+  $venvPython = Join-Path $runtimeRoot "python-venv\Scripts\python.exe"
+  if (Test-Path $venvPython) {
+    return $venvPython
   }
 
   $managedRoot = Join-Path $runtimeRoot "python-managed"
@@ -292,7 +302,7 @@ if ([string]::IsNullOrWhiteSpace($runPodApiKey)) {
 
 $connectionTestMode = Get-ConfigValue -Key "RUNPOD_CONNECTION_TEST_MODE" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($connectionTestMode)) {
-  $connectionTestMode = "soft"
+  $connectionTestMode = "strict"
 }
 $connectionTestModeNormalized = $connectionTestMode.Trim().ToLowerInvariant()
 if ($connectionTestModeNormalized -ne "strict") {
@@ -436,6 +446,7 @@ if (!(Test-Path $workspaceRoot)) {
   New-Item -ItemType Directory -Path $workspaceRoot -Force | Out-Null
 }
 $workspaceRoot = (Resolve-Path $workspaceRoot).Path
+$workspaceStateFile = Join-Path $userDir "workspace-state.json"
 
 $localShellTimeout = Get-ConfigValue -Key "LOCAL_SHELL_TIMEOUT_MS" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($localShellTimeout)) { $localShellTimeout = "20000" }
@@ -528,6 +539,7 @@ $envVars = @{
   "RUNPOD_HTTP_RETRY_DELAY_MS" = $runPodRetryDelayMs
   "RUNPOD_HTTP_RETRY_MAX_DELAY_MS" = $runPodRetryMaxDelayMs
   "WORKSPACE_ROOT"          = $workspaceRoot
+  "WORKSPACE_STATE_FILE"    = $workspaceStateFile
   "LOCAL_SHELL_TIMEOUT_MS"  = $localShellTimeout
   "LOCAL_SHELL_ALLOWLIST"   = $localShellAllowlist
   "AUTONOMOUS_LOOP_MAX_ITERS" = $autoLoopMaxIters
@@ -616,6 +628,7 @@ Write-Host "  local: $localEnvFile"
 Write-Host "  shared: $configEnvFile"
 Write-Host "Secure key store: $apiKeyStoreFile"
 Write-Host "Workspace root: $workspaceRoot"
+Write-Host "Workspace state file: $workspaceStateFile"
 Write-Host "Endpoint: $(Mask-Url -Url $baseUrl)"
 Write-Host "Connection test mode: $connectionTestModeNormalized"
 Write-Host "URL: $url"

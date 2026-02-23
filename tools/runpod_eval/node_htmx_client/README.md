@@ -45,8 +45,10 @@ Recommended additional settings for local coding mode:
 - `LOCAL_SHELL_TIMEOUT_MS=20000`
 - `LOCAL_SHELL_ALLOWLIST=` (empty = built-in safe defaults)
 
-Workspace root is fixed to:
+Workspace root default:
 - `tools/runpod_eval/node_htmx_client/workspace`
+- You can change workspace at runtime from UI ("Select Workspace...").
+- Selected workspace is persisted and restored on next launch.
 
 ## Per-User Behavior
 
@@ -58,6 +60,7 @@ Per-user local files are:
 - `%LOCALAPPDATA%\YakuLingoRunpodHtmx\runpod_api_key.dpapi`
 - `%LOCALAPPDATA%\YakuLingoRunpodHtmx\runpod-htmx-<username>.pid`
 - `%LOCALAPPDATA%\YakuLingoRunpodHtmx\logs\...`
+- `%LOCALAPPDATA%\YakuLingoRunpodHtmx\workspace-state.json`
 
 `start.bat` behavior:
 - Uses `_internal/.env.local` first, then `_internal/.env.example`.
@@ -128,8 +131,8 @@ using "Include local tool context". This lets RunPod model answers reference
 actual local repository data.
 
 Safety guardrails:
-- All file operations are restricted to the fixed workspace folder (`tools/runpod_eval/node_htmx_client/workspace`).
-- `read` / `read_file` / `list_dir` / `write` / `apply_patch` require workspace-relative paths.
+- `read` / `read_file` can access local files outside workspace and can also read `http(s)` URLs.
+- `list_dir` / `write` / `apply_patch` remain restricted to the currently selected workspace folder.
 - Shell commands are filtered by allowed prefixes (`LOCAL_SHELL_ALLOWLIST`).
 - Shell command chaining chars (`;`, `&`, `|`, `>`, `<`, backtick, newline)
   are blocked.
@@ -139,6 +142,10 @@ Codex-like behavior:
 - Model can auto-select `list_dir -> read_file -> apply_patch -> shell` workflow.
 - Partial edits can be applied without rewriting full file content.
 - Plan snapshots can be stored in-session via `update_plan`.
+- Tool decisions support Codex-style `tool_call` schema with `call_id` and `arguments`.
+- Runtime normalizes `tool_call`/`tool_output` pairs and auto-completes missing outputs.
+- Session history now uses compaction checkpoints (summary + recent turns) instead of tail-only trimming.
+- Tool harness schema can be fetched via `GET /api/tools/specs`.
 
 Office read/write notes:
 - `read` extracts text from `.xlsx/.docx/.pptx` and returns normalized plain text.
@@ -193,6 +200,11 @@ Generation best-practice settings:
 - `GENERATION_MAX_CONTEXT_TOKENS=32768`
 - Server trims message history by approximate budget to keep context within cap.
 - If upstream rejects non-standard fields (`top_k`/`min_p`), server retries without them.
+
+Context compaction knobs:
+- `HISTORY_COMPACTION_KEEP_RECENT_PAIRS=4`
+- `HISTORY_COMPACTION_SUMMARY_MAX_CHARS=18000`
+- `CONTEXT_RETRY_KEEP_RECENT_MESSAGES=8`
 
 Notes:
 - First web search may trigger browser installation (`browser_install`) automatically.

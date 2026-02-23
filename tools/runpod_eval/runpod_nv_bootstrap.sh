@@ -22,6 +22,13 @@ GPU_PROFILE="${GPU_PROFILE:-a40x2}"
 CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1}"
 LMS_SERVER_PORT="${LMS_SERVER_PORT:-1234}"
 SWALLOW_PROXY_PORT="${SWALLOW_PROXY_PORT:-11434}"
+MODEL_LOAD_BLOCKING="${MODEL_LOAD_BLOCKING:-0}"
+MODEL_READY_MAX_WAIT_SEC="${MODEL_READY_MAX_WAIT_SEC:-180}"
+MODEL_READY_POLL_SEC="${MODEL_READY_POLL_SEC:-2}"
+MODEL_LOAD_TIMEOUT_SEC="${MODEL_LOAD_TIMEOUT_SEC:-1800}"
+MODEL_KEY_RETRY_MAX="${MODEL_KEY_RETRY_MAX:-20}"
+MODEL_KEY_RETRY_DELAY_SEC="${MODEL_KEY_RETRY_DELAY_SEC:-3}"
+MODEL_KEY_REQUIRED="${MODEL_KEY_REQUIRED:-0}"
 
 AUTO_START="${AUTO_START:-1}"
 INSTALL_NODE_TOOLCHAIN="${INSTALL_NODE_TOOLCHAIN:-0}"
@@ -242,6 +249,15 @@ GPU_PROFILE=${GPU_PROFILE}
 CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}
 CONTEXT_LENGTH=${CONTEXT_LENGTH}
 MODEL_ID=${MODEL_ID}
+MODEL_REPO=${MODEL_REPO}
+LMS_SERVER_PORT=${LMS_SERVER_PORT}
+MODEL_LOAD_BLOCKING=${MODEL_LOAD_BLOCKING}
+MODEL_READY_MAX_WAIT_SEC=${MODEL_READY_MAX_WAIT_SEC}
+MODEL_READY_POLL_SEC=${MODEL_READY_POLL_SEC}
+MODEL_LOAD_TIMEOUT_SEC=${MODEL_LOAD_TIMEOUT_SEC}
+MODEL_KEY_RETRY_MAX=${MODEL_KEY_RETRY_MAX}
+MODEL_KEY_RETRY_DELAY_SEC=${MODEL_KEY_RETRY_DELAY_SEC}
+MODEL_KEY_REQUIRED=${MODEL_KEY_REQUIRED}
 EOF
   chmod 600 "${RUNTIME_ENV_FILE}"
   log "wrote ${RUNTIME_ENV_FILE}"
@@ -313,43 +329,50 @@ set -a
 source /workspace/runtime.env
 set +a
 
+LMS_SERVER_PORT="${LMS_SERVER_PORT:-1234}"
+MODEL_LOAD_BLOCKING="${MODEL_LOAD_BLOCKING:-0}"
+MODEL_READY_MAX_WAIT_SEC="${MODEL_READY_MAX_WAIT_SEC:-180}"
+MODEL_READY_POLL_SEC="${MODEL_READY_POLL_SEC:-2}"
+MODEL_LOAD_TIMEOUT_SEC="${MODEL_LOAD_TIMEOUT_SEC:-1800}"
+MODEL_KEY_RETRY_MAX="${MODEL_KEY_RETRY_MAX:-20}"
+MODEL_KEY_RETRY_DELAY_SEC="${MODEL_KEY_RETRY_DELAY_SEC:-3}"
+MODEL_KEY_REQUIRED="${MODEL_KEY_REQUIRED:-0}"
+MODEL_REPO="${MODEL_REPO:-mmnga-o/GPT-OSS-Swallow-120B-RL-v0.1-gguf}"
+MODEL_LOAD_LOG="${MODEL_LOAD_LOG:-/workspace/lmstudio-model-load.log}"
+MODEL_LOAD_STATUS_FILE="${MODEL_LOAD_STATUS_FILE:-/workspace/model-load.status}"
+
+normalize_int() {
+  local raw="$1"
+  local fallback="$2"
+  if [[ "$raw" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "$raw"
+  else
+    printf '%s\n' "$fallback"
+  fi
+}
+
+MODEL_LOAD_TIMEOUT_SEC="$(normalize_int "${MODEL_LOAD_TIMEOUT_SEC}" 1800)"
+MODEL_KEY_RETRY_MAX="$(normalize_int "${MODEL_KEY_RETRY_MAX}" 20)"
+MODEL_KEY_RETRY_DELAY_SEC="$(normalize_int "${MODEL_KEY_RETRY_DELAY_SEC}" 3)"
+MODEL_READY_MAX_WAIT_SEC="$(normalize_int "${MODEL_READY_MAX_WAIT_SEC}" 180)"
+MODEL_READY_POLL_SEC="$(normalize_int "${MODEL_READY_POLL_SEC}" 2)"
+
 lms daemon up >/dev/null || true
 
-LMS_MODELS_JSON=/tmp/lms_models_list.json
-lms ls --json > "$LMS_MODELS_JSON"
-MODEL_KEY=$(jq -r '.[] | select((.path|test("GPT-OSS-Swallow-120B-RL-v0.1-gguf"; "i")) and (.path|test("iq4_xs"; "i"))) | .modelKey' "$LMS_MODELS_JSON" | head -1)
-[ -n "$MODEL_KEY" ] || { echo "ERROR: MODEL_KEY not found"; exit 1; }
-
-if ! lms ps --json | jq -e --arg id "$MODEL_ID" '.[] | select(.identifier == $id)' >/dev/null 2>&1; then
-  if ! lms load "$MODEL_KEY" --identifier "$MODEL_ID" --context-length "$CONTEXT_LENGTH" --gpu max; then
-    if lms ps --json | jq -e --arg id "$MODEL_ID" '.[] | select(.identifier == $id)' >/dev/null 2>&1; then
-      echo "[INFO] model already loaded, continue"
-    else
-      echo "ERROR: failed to load model: $MODEL_ID"
-      exit 1
-    fi
-  fi
-else
-  echo "[INFO] model already loaded, skip load"
-fi
-
 if ! lms server status --json --quiet | jq -e '.running == true' >/dev/null 2>&1; then
-  nohup lms server start --port 1234 > /workspace/lmstudio-server.log 2>&1 &
+  nohup lms server start --port "${LMS_SERVER_PORT}" > /workspace/lmstudio-server.log 2>&1 &
 fi
 
-READY=0
-for _ in $(seq 1 90); do
-  if curl -fsS http://127.0.0.1:1234/v1/models >/tmp/lms_models_start.json 2>/dev/null; then
-    if jq -e --arg id "$MODEL_ID" '.data[]? | select(.id == $id)' /tmp/lms_models_start.json >/dev/null 2>&1; then
-      READY=1
-      break
-    fi
+API_READY=0
+for _ in $(seq 1 45); do
+  if curl -fsS "http://127.0.0.1:${LMS_SERVER_PORT}/v1/models" >/tmp/lms_models_api_ready.json 2>/dev/null; then
+    API_READY=1
+    break
   fi
-  sleep 2
+  sleep 1
 done
-if [ "$READY" -ne 1 ]; then
-  echo "ERROR: model $MODEL_ID is not ready on /v1/models"
-  exit 1
+if [ "${API_READY}" -ne 1 ]; then
+  echo "[WARN] LM Studio API is not reachable yet on :${LMS_SERVER_PORT}; continue startup."
 fi
 
 nginx -c /workspace/nginx-swallow/nginx.conf -s quit 2>/dev/null || true
@@ -357,7 +380,137 @@ rm -f /workspace/nginx-swallow/nginx.pid
 nginx -t -c /workspace/nginx-swallow/nginx.conf
 nginx -c /workspace/nginx-swallow/nginx.conf
 
-echo "start.sh done"
+LMS_MODELS_JSON=/tmp/lms_models_list.json
+resolve_model_key() {
+  local attempts delay try key
+  attempts="${MODEL_KEY_RETRY_MAX}"
+  delay="${MODEL_KEY_RETRY_DELAY_SEC}"
+  key=""
+
+  if [ "${attempts}" -lt 1 ]; then
+    attempts=1
+  fi
+  if [ "${delay}" -lt 1 ]; then
+    delay=1
+  fi
+
+  for try in $(seq 1 "${attempts}"); do
+    if ! lms ls --json > "${LMS_MODELS_JSON}"; then
+      echo "[WARN] lms ls failed (try ${try}/${attempts})"
+    fi
+
+    key="$(jq -r --arg repo "${MODEL_REPO}" '
+      .[]?
+      | select((.path | test($repo; "i")) and (.path | test("iq4_xs"; "i")))
+      | .modelKey
+    ' "${LMS_MODELS_JSON}" | head -1)"
+    if [ -z "${key}" ]; then
+      key="$(jq -r --arg repo "${MODEL_REPO}" '
+        .[]?
+        | select(.path | test($repo; "i"))
+        | .modelKey
+      ' "${LMS_MODELS_JSON}" | head -1)"
+    fi
+    if [ -n "${key}" ]; then
+      printf '%s\n' "${key}"
+      return 0
+    fi
+
+    if [ "${try}" -lt "${attempts}" ]; then
+      sleep "${delay}"
+    fi
+  done
+
+  return 1
+}
+
+MODEL_KEY="$(resolve_model_key || true)"
+if [ -z "${MODEL_KEY}" ]; then
+  echo "[WARN] MODEL_KEY not found in lms catalog after retries."
+  if [ "${MODEL_KEY_REQUIRED}" = "1" ] || [ "${MODEL_LOAD_BLOCKING}" = "1" ]; then
+    echo "ERROR: MODEL_KEY is required for current mode."
+    exit 1
+  fi
+fi
+
+load_model_once() {
+  if [ -z "${MODEL_KEY}" ]; then
+    echo "[WARN] skip model load because MODEL_KEY is empty."
+    return 1
+  fi
+
+  local load_rc=0
+  if command -v timeout >/dev/null 2>&1 && [ "${MODEL_LOAD_TIMEOUT_SEC}" -gt 0 ]; then
+    timeout "${MODEL_LOAD_TIMEOUT_SEC}" \
+      lms load "${MODEL_KEY}" --identifier "${MODEL_ID}" --context-length "${CONTEXT_LENGTH}" --gpu max || load_rc=$?
+  else
+    lms load "${MODEL_KEY}" --identifier "${MODEL_ID}" --context-length "${CONTEXT_LENGTH}" --gpu max || load_rc=$?
+  fi
+
+  if [ "${load_rc}" -eq 0 ]; then
+    return 0
+  fi
+  if [ "${load_rc}" -eq 124 ]; then
+    echo "[WARN] lms load timed out (${MODEL_LOAD_TIMEOUT_SEC}s)."
+  fi
+
+  if lms ps --json | jq -e --arg id "$MODEL_ID" '.[] | select(.identifier == $id)' >/dev/null 2>&1; then
+    echo "[INFO] model already loaded, continue"
+    return 0
+  fi
+
+  echo "ERROR: failed to load model: $MODEL_ID"
+  return 1
+}
+
+if lms ps --json | jq -e --arg id "$MODEL_ID" '.[] | select(.identifier == $id)' >/dev/null 2>&1; then
+  echo "[INFO] model already loaded, skip load"
+else
+  if [ "${MODEL_LOAD_BLOCKING}" = "1" ]; then
+    if ! load_model_once; then
+      exit 1
+    fi
+  else
+    (
+      started_at="$(date --iso-8601=seconds 2>/dev/null || date)"
+      echo "start ${started_at}"
+      if load_model_once; then
+        finished_at="$(date --iso-8601=seconds 2>/dev/null || date)"
+        echo "ok ${finished_at}" > "${MODEL_LOAD_STATUS_FILE}"
+      else
+        finished_at="$(date --iso-8601=seconds 2>/dev/null || date)"
+        echo "failed ${finished_at}" > "${MODEL_LOAD_STATUS_FILE}"
+      fi
+    ) >> "${MODEL_LOAD_LOG}" 2>&1 &
+    echo "[INFO] model load started in background (log: ${MODEL_LOAD_LOG})"
+  fi
+fi
+
+if [ "${MODEL_LOAD_BLOCKING}" = "1" ]; then
+  READY=0
+  max_wait_loops=1
+  if [ "${MODEL_READY_POLL_SEC}" -gt 0 ]; then
+    max_wait_loops=$((MODEL_READY_MAX_WAIT_SEC / MODEL_READY_POLL_SEC))
+  fi
+  if [ "${max_wait_loops}" -lt 1 ]; then
+    max_wait_loops=1
+  fi
+  for _ in $(seq 1 "${max_wait_loops}"); do
+    if curl -fsS "http://127.0.0.1:${LMS_SERVER_PORT}/v1/models" >/tmp/lms_models_start.json 2>/dev/null; then
+      if jq -e --arg id "$MODEL_ID" '.data[]? | select(.id == $id)' /tmp/lms_models_start.json >/dev/null 2>&1; then
+        READY=1
+        break
+      fi
+    fi
+    sleep "${MODEL_READY_POLL_SEC}"
+  done
+  if [ "${READY}" -ne 1 ]; then
+    echo "ERROR: model $MODEL_ID is not ready on /v1/models"
+    exit 1
+  fi
+fi
+
+echo "start.sh done (MODEL_LOAD_BLOCKING=${MODEL_LOAD_BLOCKING})"
 EOF
   chmod +x "${START_SCRIPT_FILE}"
   log "wrote ${START_SCRIPT_FILE}"

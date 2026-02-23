@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, unlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -36,15 +36,33 @@ const configuredPythonBin = (process.env.PYTHON_BIN || "").trim();
 
 const appPort = Number.parseInt(process.env.APP_PORT || "3030", 10);
 const appBind = process.env.APP_BIND || "127.0.0.1";
-const timeoutMs = Number.parseInt(process.env.RUNPOD_REQUEST_TIMEOUT_MS || "90000", 10);
+const timeoutMs = Number.parseInt(process.env.RUNPOD_REQUEST_TIMEOUT_MS || "45000", 10);
 const appTimeZone = (process.env.APP_TIME_ZONE || "Asia/Tokyo").trim() || "Asia/Tokyo";
-const runPodHttpRetryMaxAttempts = parseIntEnv(process.env.RUNPOD_HTTP_RETRY_MAX_ATTEMPTS, 4, 1, 12);
-const runPodHttpRetryDelayMs = parseIntEnv(process.env.RUNPOD_HTTP_RETRY_DELAY_MS, 1500, 0, 30000);
-const runPodHttpRetryMaxDelayMs = parseIntEnv(process.env.RUNPOD_HTTP_RETRY_MAX_DELAY_MS, 6000, 0, 120000);
+const runPodHttpRetryMaxAttempts = parseIntEnv(process.env.RUNPOD_HTTP_RETRY_MAX_ATTEMPTS, 2, 1, 12);
+const runPodHttpRetryDelayMs = parseIntEnv(process.env.RUNPOD_HTTP_RETRY_DELAY_MS, 800, 0, 30000);
+const runPodHttpRetryMaxDelayMs = parseIntEnv(process.env.RUNPOD_HTTP_RETRY_MAX_DELAY_MS, 2000, 0, 120000);
 const runPodBaseUrl = (process.env.RUNPOD_BASE_URL || "").trim().replace(/\/+$/, "");
 const runPodApiKey = (process.env.RUNPOD_API_KEY || "").trim();
 const defaultModel = (process.env.DEFAULT_MODEL || "gpt-oss-swallow-120b-iq4xs").trim();
 const maxHistoryPairs = Number.parseInt(process.env.MAX_HISTORY_PAIRS || "8", 10);
+const historyCompactionKeepRecentPairs = parseIntEnv(
+  process.env.HISTORY_COMPACTION_KEEP_RECENT_PAIRS,
+  4,
+  1,
+  64,
+);
+const historyCompactionSummaryMaxChars = parseIntEnv(
+  process.env.HISTORY_COMPACTION_SUMMARY_MAX_CHARS,
+  18000,
+  2000,
+  120000,
+);
+const contextRetryKeepRecentMessages = parseIntEnv(
+  process.env.CONTEXT_RETRY_KEEP_RECENT_MESSAGES,
+  8,
+  4,
+  48,
+);
 const maxToolLogs = Number.parseInt(process.env.MAX_TOOL_LOGS || "10", 10);
 const toolContextEntries = Number.parseInt(process.env.TOOL_CONTEXT_ENTRIES || "6", 10);
 const maxToolOutputChars = Number.parseInt(process.env.MAX_TOOL_OUTPUT_CHARS || "12000", 10);
@@ -90,8 +108,26 @@ const clientHeartbeatSweepMs = Number.parseInt(process.env.CLIENT_HEARTBEAT_SWEE
 const clientAutostopRequestGraceMs = Number.parseInt(process.env.CLIENT_AUTOSTOP_REQUEST_GRACE_MS || "30000", 10);
 const streamKeepaliveIntervalMs = Number.parseInt(process.env.STREAM_KEEPALIVE_INTERVAL_MS || "10000", 10);
 const defaultWorkspaceRoot = path.join(__dirname, "..", "workspace");
-const workspaceRoot = path.resolve(defaultWorkspaceRoot);
-await mkdir(workspaceRoot, { recursive: true });
+const configuredWorkspaceRoot = path.resolve((process.env.WORKSPACE_ROOT || defaultWorkspaceRoot).trim() || defaultWorkspaceRoot);
+const configuredWorkspaceStateFile = (process.env.WORKSPACE_STATE_FILE || "").trim();
+const workspaceStateFile = resolveWorkspaceStateFile();
+let workspaceRoot = configuredWorkspaceRoot;
+const restoredWorkspaceRoot = await loadWorkspaceRootFromStateFile();
+if (restoredWorkspaceRoot) {
+  workspaceRoot = restoredWorkspaceRoot;
+}
+try {
+  await mkdir(workspaceRoot, { recursive: true });
+} catch (err) {
+  if (restoredWorkspaceRoot) {
+    console.warn(`[node-htmx] failed to use restored workspace root (${workspaceRoot}): ${err?.message || String(err)}`);
+    workspaceRoot = configuredWorkspaceRoot;
+    await mkdir(workspaceRoot, { recursive: true });
+  } else {
+    throw err;
+  }
+}
+await persistWorkspaceRootState();
 const configuredAllowPrefixes = (process.env.LOCAL_SHELL_ALLOWLIST || "")
   .split(",")
   .map((item) => item.trim().toLowerCase())
@@ -113,25 +149,195 @@ const shellAllowlist = configuredAllowPrefixes.length > 0
       "type",
       "cat",
     ];
+const autoToolNames = [
+  "read",
+  "read_file",
+  "list_dir",
+  "search",
+  "shell",
+  "write",
+  "apply_patch",
+  "update_plan",
+  "web_search",
+];
+const autoToolDecisionSchemaDescription = {
+  oneOf: [
+    {
+      type: "tool_call",
+      call_id: "string (recommended, optional; generated if omitted)",
+      tool_name: autoToolNames.join("|"),
+      arguments: "{...}",
+      reason: "short reason",
+    },
+    {
+      type: "final",
+      message: "final answer for the user in Japanese",
+    },
+  ],
+  compatibility: [
+    '{"type":"tool","tool":"...","args":{...}}',
+    '{"type":"answer","message":"..."}',
+  ],
+};
+const autoToolSpecs = [
+  {
+    name: "read",
+    strict: false,
+    description: "Read local file or URL. Supports PDF and Office text extraction.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        path: { type: "string", description: "Local absolute/relative path or http(s) URL." },
+      },
+      required: ["path"],
+    },
+  },
+  {
+    name: "read_file",
+    strict: false,
+    description: "Read text file slices (line-based). Also supports URL fetch.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        path: { type: "string" },
+        offset: { type: "number" },
+        limit: { type: "number" },
+      },
+      required: ["path"],
+    },
+  },
+  {
+    name: "list_dir",
+    strict: false,
+    description: "List files/dirs under workspace root.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        path: { type: "string" },
+        recursive: { type: "boolean" },
+        max_depth: { type: "number" },
+        limit: { type: "number" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "search",
+    strict: false,
+    description: "Search text/regex in workspace files.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        pattern: { type: "string" },
+        glob: { type: "string" },
+      },
+      required: ["pattern"],
+    },
+  },
+  {
+    name: "shell",
+    strict: false,
+    description: "Run one allowlisted local shell command.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        command: { type: "string" },
+      },
+      required: ["command"],
+    },
+  },
+  {
+    name: "write",
+    strict: false,
+    description: "Write file content into workspace root only.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        path: { type: "string" },
+        content: {
+          anyOf: [
+            { type: "string" },
+            { type: "object" },
+            { type: "array" },
+            { type: "number" },
+            { type: "boolean" },
+            { type: "null" },
+          ],
+        },
+      },
+      required: ["path", "content"],
+    },
+  },
+  {
+    name: "apply_patch",
+    strict: false,
+    description: "Apply codex-style patch text inside workspace root only.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        patch: { type: "string" },
+      },
+      required: ["patch"],
+    },
+  },
+  {
+    name: "update_plan",
+    strict: false,
+    description: "Update in-session plan snapshot.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        explanation: { type: "string" },
+        plan: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              step: { type: "string" },
+              status: { type: "string" },
+            },
+            required: ["step", "status"],
+          },
+        },
+      },
+      required: ["plan"],
+    },
+  },
+  {
+    name: "web_search",
+    strict: false,
+    description: "Search web via Playwright MCP and return summarized results.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        query: { type: "string" },
+        max_results: { type: "number" },
+      },
+      required: ["query"],
+    },
+  },
+];
 const autoToolSystemPrompt = [
   "You are a practical coding agent for a local repository.",
   "Return ONLY one JSON object. Do not include markdown.",
-  "You must choose exactly one format:",
-  '{"type":"tool","tool":"read|read_file|list_dir|search|shell|write|apply_patch|update_plan|web_search","args":{},"reason":"short reason"}',
-  '{"type":"final","message":"final answer for the user in Japanese"}',
-  "Tool args schema:",
-  'read: {"path":"workspace-relative path"}',
-  'read_file: {"path":"workspace-relative path","offset":"optional 1-index line","limit":"optional 1-400"}',
-  'list_dir: {"path":"optional workspace-relative dir","recursive":"optional true|false","max_depth":"optional 0-6","limit":"optional 1-500"}',
-  'search: {"pattern":"text or regex","glob":"optional glob"}',
-  'shell: {"command":"single allowlisted command"}',
-  'write: {"path":"relative/path","content":"full file content"}',
-  'write office hints: .docx content can be plain text or {"paragraphs":[...]}; .xlsx can use {"sheets":[{"name":"Sheet1","rows":[["A1","B1"]]}]}; .pptx can use {"slides":[{"title":"...","lines":[...]}]}',
-  'apply_patch: {"patch":"codex apply_patch style patch text"}',
-  'update_plan: {"explanation":"optional","plan":[{"step":"string","status":"pending|in_progress|completed"}]}',
-  'web_search: {"query":"internet search query","max_results":"optional 1-10"}',
+  "Prefer codex-like format with call_id and explicit tool_name.",
+  "Decision schema:",
+  JSON.stringify(autoToolDecisionSchemaDescription),
+  "Tool specs (JSON schema style):",
+  JSON.stringify(autoToolSpecs),
   "For web_search, always provide a non-empty query string.",
-  "read is allowed only inside workspace_root. It can extract PDF and Office (.xlsx/.docx/.pptx) text.",
+  "read can read any local file path and also http(s) URLs. It can extract PDF and Office (.xlsx/.docx/.pptx) text.",
+  "When answering after URL reads, focus on the user's question and ignore navigation/ads/link lists unless explicitly asked.",
   "Prefer read_file for text/code files to avoid oversized context.",
   "write is allowed only inside workspace_root.",
   "For .xlsx/.docx/.pptx write, content can be plain text or JSON.",
@@ -145,15 +351,32 @@ const autoToolSystemPrompt = [
   "For weather/news questions asking about today, do not invent arbitrary calendar dates.",
   "Use one tool call at a time and wait for the tool result.",
   "Prefer list_dir/read_file/search before write/apply_patch. Use shell only when needed.",
+  "Every tool_call should include a stable call_id. If omitted, runtime will assign one.",
+  "When you call a tool, use arguments object (not args string).",
+  "Assume the runtime enforces tool_call/output pairing and may synthesize missing outputs.",
+  "Read compacted session summary (if provided) and keep thread continuity.",
+  "Keep the original user question in focus across all steps. Do not drift to a side detail.",
+  "Before returning final, verify it still answers the original user question.",
   "When task is complete, return type=final.",
 ].join("\n");
 const autoToolJsonRepairSystemPrompt = [
   "You repair malformed JSON emitted by another assistant.",
   "Output ONLY one valid JSON object. No markdown.",
-  "Target schema (choose one):",
-  '{"type":"tool","tool":"read|read_file|list_dir|search|shell|write|apply_patch|update_plan|web_search","args":{},"reason":"short reason"}',
-  '{"type":"final","message":"final answer for the user in Japanese"}',
+  "Target schema:",
+  JSON.stringify(autoToolDecisionSchemaDescription),
+  "Tool specs:",
+  JSON.stringify(autoToolSpecs),
   "Preserve original intent. If unclear, return type=final.",
+].join("\n");
+const autoToolFinalRewriteSystemPrompt = [
+  "You are a response quality guard for a tool-augmented assistant.",
+  "Return ONLY the final user-facing answer in Japanese.",
+  "Answer the latest user question directly and concisely.",
+  "Preserve the requested scope; do not collapse broad questions into one narrow detail.",
+  "If the user asked for latest news/summary/list, provide multiple concrete items when evidence exists.",
+  "Use tool evidence when available; ignore unrelated navigation, ads, and boilerplate links.",
+  "If evidence is insufficient, say so plainly and avoid fabrication.",
+  "Do not output JSON, markdown headings, or raw tool dumps.",
 ].join("\n");
 const autonomousPlannerSystemPrompt = [
   "You are an autonomous coding planner.",
@@ -274,10 +497,88 @@ function normalizeForCompare(value) {
   return process.platform === "win32" ? value.toLowerCase() : value;
 }
 
+function resolveWorkspaceStateFile() {
+  if (configuredWorkspaceStateFile) {
+    return path.resolve(configuredWorkspaceStateFile);
+  }
+  const localAppData = (process.env.LOCALAPPDATA || "").trim();
+  if (localAppData) {
+    return path.join(localAppData, "YakuLingoRunpodHtmx", "workspace-state.json");
+  }
+  const xdgStateHome = (process.env.XDG_STATE_HOME || "").trim();
+  if (xdgStateHome) {
+    return path.join(xdgStateHome, "localingo", "workspace-state.json");
+  }
+  return path.join(homedir(), ".local", "state", "localingo", "workspace-state.json");
+}
+
+async function loadWorkspaceRootFromStateFile() {
+  try {
+    const raw = await readFile(workspaceStateFile, "utf8");
+    const parsed = JSON.parse(raw);
+    const candidate = String(parsed?.workspaceRoot || "").trim();
+    if (!candidate) return null;
+    return path.resolve(candidate);
+  } catch (err) {
+    if (err?.code !== "ENOENT") {
+      console.warn(`[node-htmx] failed to read workspace state (${workspaceStateFile}): ${err?.message || String(err)}`);
+    }
+    return null;
+  }
+}
+
+async function persistWorkspaceRootState() {
+  const payload = {
+    version: 1,
+    workspaceRoot,
+    updatedAt: new Date().toISOString(),
+  };
+  await mkdir(path.dirname(workspaceStateFile), { recursive: true });
+  await writeFile(workspaceStateFile, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+}
+
 function isInsideWorkspace(absPath) {
   const normalizedPath = normalizeForCompare(path.resolve(absPath));
   const normalizedRoot = normalizeForCompare(workspaceRoot);
   return normalizedPath === normalizedRoot || normalizedPath.startsWith(`${normalizedRoot}${path.sep}`);
+}
+
+async function setWorkspaceRoot(nextPath, { createIfMissing = true } = {}) {
+  const raw = String(nextPath || "").trim();
+  if (!raw) {
+    throw new Error("Workspace path is empty.");
+  }
+  const resolved = path.resolve(raw);
+  let info = null;
+  try {
+    info = await stat(resolved);
+  } catch (err) {
+    if (err?.code !== "ENOENT" || !createIfMissing) {
+      throw err;
+    }
+    await mkdir(resolved, { recursive: true });
+    info = await stat(resolved);
+  }
+  if (!info?.isDirectory || !info.isDirectory()) {
+    throw new Error(`Workspace is not a directory: ${resolved}`);
+  }
+  workspaceRoot = resolved;
+  await persistWorkspaceRootState();
+  return workspaceRoot;
+}
+
+function getWorkspaceState() {
+  return {
+    workspaceRoot,
+    defaultWorkspaceRoot: path.resolve(defaultWorkspaceRoot),
+    shellAllowlist,
+    readScope: "local_files_anywhere_and_http_urls",
+    listDirScope: "workspace_root_only",
+    writeScope: "workspace_root_only",
+    uvBin: configuredUvBin || "",
+    pythonBin: configuredPythonBin || "",
+    workspaceStateFile,
+  };
 }
 
 function resolveWorkspacePath(rawPath) {
@@ -290,6 +591,46 @@ function resolveWorkspacePath(rawPath) {
     throw new Error("Path is outside workspace root.");
   }
   return resolved;
+}
+
+function isHttpUrlPath(rawPath) {
+  return /^https?:\/\//i.test(String(rawPath || "").trim());
+}
+
+function resolveReadTarget(rawPath) {
+  const input = String(rawPath || "").trim();
+  if (!input) {
+    throw new Error("Path is empty.");
+  }
+  if (isHttpUrlPath(input)) {
+    let normalized = input;
+    try {
+      normalized = new URL(input).toString();
+    } catch {
+      throw new Error(`Invalid URL: ${input}`);
+    }
+    return {
+      kind: "url",
+      pathInput: input,
+      url: normalized,
+    };
+  }
+
+  const resolvedPath = path.isAbsolute(input)
+    ? path.resolve(input)
+    : path.resolve(workspaceRoot, input);
+  return {
+    kind: "file",
+    pathInput: input,
+    resolvedPath,
+  };
+}
+
+function toReadableDisplayPath(absPath) {
+  if (isInsideWorkspace(absPath)) {
+    return toWorkspaceRelative(absPath).replaceAll("\\", "/");
+  }
+  return path.resolve(absPath);
 }
 
 function isLikelyBinaryBuffer(buffer) {
@@ -334,27 +675,57 @@ function parseCookies(cookieHeader = "") {
   return output;
 }
 
+function createSessionState() {
+  return {
+    messages: [],
+    toolLogs: [],
+    plan: [],
+    turnJournal: [],
+    compactSummary: "",
+    compactVersion: 0,
+    nextToolCallSeq: 1,
+  };
+}
+
+function ensureSessionShape(session) {
+  const target = session && typeof session === "object" ? session : createSessionState();
+  if (!Array.isArray(target.messages)) {
+    target.messages = [];
+  }
+  if (!Array.isArray(target.toolLogs)) {
+    target.toolLogs = [];
+  }
+  if (!Array.isArray(target.plan)) {
+    target.plan = [];
+  }
+  if (!Array.isArray(target.turnJournal)) {
+    target.turnJournal = [];
+  }
+  if (typeof target.compactSummary !== "string") {
+    target.compactSummary = "";
+  }
+  if (!Number.isInteger(target.compactVersion) || target.compactVersion < 0) {
+    target.compactVersion = 0;
+  }
+  if (!Number.isInteger(target.nextToolCallSeq) || target.nextToolCallSeq < 1) {
+    target.nextToolCallSeq = 1;
+  }
+  return target;
+}
+
 function getOrCreateSession(req, res) {
   const cookies = parseCookies(req.headers.cookie || "");
   let sid = cookies.sid;
   if (!sid || !sessions.has(sid)) {
     sid = randomBytes(16).toString("hex");
-    sessions.set(sid, { messages: [], toolLogs: [], plan: [] });
+    sessions.set(sid, createSessionState());
     res.setHeader("Set-Cookie", `sid=${encodeURIComponent(sid)}; HttpOnly; SameSite=Lax; Path=/`);
   }
   if (!sessions.has(sid)) {
-    sessions.set(sid, { messages: [], toolLogs: [], plan: [] });
+    sessions.set(sid, createSessionState());
   }
-  const session = sessions.get(sid);
-  if (!Array.isArray(session.messages)) {
-    session.messages = [];
-  }
-  if (!Array.isArray(session.toolLogs)) {
-    session.toolLogs = [];
-  }
-  if (!Array.isArray(session.plan)) {
-    session.plan = [];
-  }
+  const session = ensureSessionShape(sessions.get(sid));
+  sessions.set(sid, session);
   return session;
 }
 
@@ -465,6 +836,478 @@ function rewriteMismatchedExplicitDatesAsToday(text, todayYmd) {
     text: replaced,
     mismatchCount,
   };
+}
+
+function isLowValueSnapshotLine(line) {
+  const text = String(line || "");
+  if (!text) return true;
+  if (/taboola|sponsored|advertising unit|^pr$|^-pr-$/i.test(text)) return true;
+  if (/javascript:void\(0\)/i.test(text)) return true;
+  if (/new tab|opens dialog|learn about this recommendation/i.test(text)) return true;
+  return false;
+}
+
+function normalizeSnapshotLine(rawLine) {
+  return String(rawLine || "")
+    .replaceAll("\\n", " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractStructuredWebPageText(rawText, pageUrl) {
+  const text = String(rawText || "");
+  if (!text.trim()) return "";
+
+  const pageTitleMatch = text.match(/- Page Title:\s*([^\r\n]+)/);
+  const pageTitle = String(pageTitleMatch?.[1] || "").trim();
+  const headings = [];
+  const weatherLines = [];
+  const bodyLines = [];
+  const links = [];
+  const seen = new Set();
+
+  const weatherPattern = /天気|予報|気温|最高|最低|降水|風|湿度|晴|曇|雨|雪|thunder|weather|forecast|temperature|\b\d{1,2}\/\d{1,2}\b|\d{1,2}\s*℃/i;
+
+  const lines = text.split(/\r?\n/);
+  for (const rawLine of lines) {
+    const line = normalizeSnapshotLine(rawLine);
+    if (!line) continue;
+
+    const headingMatch = line.match(/^- heading "([^"]+)"/);
+    if (headingMatch) {
+      const value = normalizeSnapshotLine(headingMatch[1]);
+      if (value && !isLowValueSnapshotLine(value) && !seen.has(`h:${value}`)) {
+        seen.add(`h:${value}`);
+        headings.push(value);
+      }
+      continue;
+    }
+
+    const paragraphMatch = line.match(/^- paragraph(?: \[[^\]]+\])?:\s*(.+)$/);
+    if (paragraphMatch) {
+      const value = normalizeSnapshotLine(paragraphMatch[1]);
+      if (value && !isLowValueSnapshotLine(value) && !seen.has(`p:${value}`)) {
+        seen.add(`p:${value}`);
+        bodyLines.push(value);
+        if (weatherPattern.test(value)) {
+          weatherLines.push(value);
+        }
+      }
+      continue;
+    }
+
+    const textMatch = line.match(/^- text:\s*(.+)$/);
+    if (textMatch) {
+      const value = normalizeSnapshotLine(textMatch[1]);
+      if (value && !isLowValueSnapshotLine(value) && !seen.has(`t:${value}`)) {
+        seen.add(`t:${value}`);
+        bodyLines.push(value);
+        if (weatherPattern.test(value)) {
+          weatherLines.push(value);
+        }
+      }
+      continue;
+    }
+
+    const linkMatch = line.match(/^- link "([^"]+)"/);
+    if (linkMatch) {
+      const value = normalizeSnapshotLine(linkMatch[1]);
+      if (value && !isLowValueSnapshotLine(value) && !seen.has(`l:${value}`)) {
+        seen.add(`l:${value}`);
+        links.push(value);
+      }
+      continue;
+    }
+  }
+
+  const out = [];
+  out.push(`Page URL: ${pageUrl}`);
+  if (pageTitle) {
+    out.push(`Page Title: ${pageTitle}`);
+  }
+  out.push("");
+
+  const weatherUnique = [...new Set(weatherLines)]
+    .filter((line) => !isLowValueSnapshotLine(line))
+    .slice(0, 16);
+  if (weatherUnique.length > 0) {
+    out.push("Weather clues:");
+    for (const row of weatherUnique) {
+      out.push(`- ${row}`);
+    }
+    out.push("");
+  }
+
+  const headingUnique = [...new Set(headings)]
+    .filter((line) => !isLowValueSnapshotLine(line))
+    .slice(0, 12);
+  if (headingUnique.length > 0) {
+    out.push("Headings:");
+    for (const row of headingUnique) {
+      out.push(`- ${row}`);
+    }
+    out.push("");
+  }
+
+  const bodyUnique = [...new Set(bodyLines)]
+    .filter((line) => !isLowValueSnapshotLine(line))
+    .slice(0, 20);
+  if (bodyUnique.length > 0) {
+    out.push("Key text:");
+    for (const row of bodyUnique) {
+      out.push(`- ${row}`);
+    }
+    out.push("");
+  }
+
+  const linkUnique = [...new Set(links)]
+    .filter((line) => !isLowValueSnapshotLine(line))
+    .slice(0, 10);
+  if (linkUnique.length > 0) {
+    out.push("Top links:");
+    for (const row of linkUnique) {
+      out.push(`- ${row}`);
+    }
+  }
+
+  return out.join("\n").trim();
+}
+
+function extractPromptKeywords(rawPrompt) {
+  const text = String(rawPrompt || "").toLowerCase();
+  const stopWords = new Set([
+    "です",
+    "ます",
+    "ください",
+    "して",
+    "について",
+    "お願い",
+    "こと",
+    "もの",
+    "the",
+    "and",
+    "for",
+    "with",
+    "this",
+    "that",
+  ]);
+  const tokens = new Set();
+  const re = /[a-z0-9]{3,}|[\u4e00-\u9fff]{1,}|[\u3040-\u309f]{2,}|[\u30a0-\u30ff]{2,}/g;
+  const matches = text.match(re) || [];
+  for (const raw of matches) {
+    const token = String(raw || "").trim();
+    if (!token) continue;
+    if (stopWords.has(token)) continue;
+    if (/^\d+$/.test(token)) continue;
+    tokens.add(token);
+  }
+  return [...tokens].slice(0, 24);
+}
+
+function countKeywordOverlap(keywords, rawText) {
+  const haystack = String(rawText || "").toLowerCase();
+  let hit = 0;
+  for (const kw of keywords) {
+    if (!kw) continue;
+    if (haystack.includes(kw.toLowerCase())) {
+      hit += 1;
+    }
+  }
+  return hit;
+}
+
+function looksLikeLinkDump(rawText) {
+  const text = String(rawText || "");
+  const urlMatches = text.match(/https?:\/\/\S+/g) || [];
+  const bulletCount = text.split(/\r?\n/).filter((line) => /^\s*[-*・]\s+/.test(line)).length;
+  if (/主なリンク|提供された構造データ|抽出したリンク/i.test(text)) return true;
+  if (urlMatches.length >= 3 && bulletCount >= 3) return true;
+  return false;
+}
+
+function shouldRunFocusedFinalRewrite({ prompt, draftText, toolCallCount }) {
+  if (!Number.isInteger(toolCallCount) || toolCallCount <= 0) return false;
+  const draft = String(draftText || "").trim();
+  if (!draft) return true;
+  if (looksLikeLinkDump(draft) && !/リンク|url|一覧|list/i.test(String(prompt || ""))) {
+    return true;
+  }
+  const keywords = extractPromptKeywords(prompt);
+  if (keywords.length === 0) return false;
+  const overlap = countKeywordOverlap(keywords, draft);
+  const requiredOverlap = keywords.length >= 3 ? 2 : 1;
+  return overlap < requiredOverlap;
+}
+
+function detectPromptIntent(rawPrompt) {
+  const prompt = String(rawPrompt || "").trim();
+  const lower = prompt.toLowerCase();
+  const asksNews = /(news|ニュース|報道|トピック)/i.test(prompt);
+  const asksLatest = /(latest|recent|最新|直近|今日|本日|いま|現在|now|today|current)/i.test(prompt);
+  const asksList = /(まとめ|一覧|list|top|箇条書き|教えて|紹介|要約|summary)/i.test(prompt);
+  const asksSingleFact = /(とは|what is|意味|定義|who is|なに|何)/i.test(prompt);
+  const requiresBreadth = (asksNews && (asksLatest || asksList)) || (asksList && !asksSingleFact);
+  const expectedMinItems = requiresBreadth ? (asksNews ? 3 : 2) : 1;
+  return {
+    prompt,
+    lower,
+    asksNews,
+    asksLatest,
+    asksList,
+    asksSingleFact,
+    requiresBreadth,
+    expectedMinItems,
+  };
+}
+
+function countLikelyAnswerItems(rawText) {
+  const text = String(rawText || "");
+  if (!text.trim()) return 0;
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  let count = 0;
+  for (const line of lines) {
+    if (/^[-*•]\s+/.test(line)) {
+      count += 1;
+      continue;
+    }
+    if (/^\d{1,2}[.)]\s+/.test(line)) {
+      count += 1;
+      continue;
+    }
+    if (/^\[\d{1,2}\]/.test(line)) {
+      count += 1;
+      continue;
+    }
+    if (/^20\d{2}\s*[\/\-.年]\s*\d{1,2}/.test(line)) {
+      count += 1;
+      continue;
+    }
+    if (/^\|/.test(line) && /\|/.test(line.slice(1))) {
+      if (!/^\|?\s*-{2,}\s*\|/.test(line)) {
+        count += 1;
+      }
+    }
+  }
+
+  if (count > 0) return count;
+  const dateLikeHits = text.match(/20\d{2}\s*[\/\-.年]\s*\d{1,2}/g) || [];
+  return dateLikeHits.length;
+}
+
+function createToolStats() {
+  return {
+    executedToolCalls: 0,
+    failedToolCalls: 0,
+    webSearchCalls: 0,
+    readCalls: 0,
+    readUrlCount: 0,
+    searchResultItems: 0,
+    evidenceUrlSet: new Set(),
+    recentTools: [],
+  };
+}
+
+function summarizeToolStats(toolStats) {
+  const stats = toolStats && typeof toolStats === "object" ? toolStats : createToolStats();
+  return [
+    `executed=${stats.executedToolCalls || 0}`,
+    `failed=${stats.failedToolCalls || 0}`,
+    `web_search=${stats.webSearchCalls || 0}`,
+    `read=${stats.readCalls || 0}`,
+    `evidence_urls=${stats.readUrlCount || 0}`,
+    `search_items=${stats.searchResultItems || 0}`,
+    stats.recentTools && stats.recentTools.length > 0
+      ? `recent_tools=${stats.recentTools.join(" > ")}`
+      : "",
+  ].filter(Boolean).join(" ");
+}
+
+function recordToolEvidence(toolStats, modelResult) {
+  if (!toolStats || typeof toolStats !== "object") return;
+  const result = modelResult && typeof modelResult === "object" ? modelResult : {};
+  const tool = String(result.tool || "").trim().toLowerCase();
+  if (!tool) return;
+
+  toolStats.executedToolCalls += 1;
+  toolStats.recentTools.push(tool);
+  if (toolStats.recentTools.length > 8) {
+    toolStats.recentTools = toolStats.recentTools.slice(-8);
+  }
+
+  if (result.ok !== true) {
+    toolStats.failedToolCalls += 1;
+    return;
+  }
+
+  if (tool === "web_search") {
+    toolStats.webSearchCalls += 1;
+    if (Array.isArray(result.results)) {
+      toolStats.searchResultItems += result.results.length;
+      for (const item of result.results) {
+        const url = String(item?.url || "").trim();
+        if (url) {
+          toolStats.evidenceUrlSet.add(url);
+        }
+      }
+    }
+  }
+
+  if (tool === "read" || tool === "read_file") {
+    toolStats.readCalls += 1;
+    const source = String(result.source || "").trim().toLowerCase();
+    const pathValue = String(result.path || "").trim();
+    if (source === "url" || /^https?:\/\//i.test(pathValue)) {
+      if (pathValue) {
+        toolStats.evidenceUrlSet.add(pathValue);
+      }
+    }
+  }
+
+  toolStats.readUrlCount = toolStats.evidenceUrlSet.size;
+}
+
+function buildTaskFocusSystemMessage({ prompt, promptIntent, toolStats, step }) {
+  const intent = promptIntent && typeof promptIntent === "object" ? promptIntent : detectPromptIntent(prompt);
+  const rows = [
+    "Task focus guard (controller hint):",
+    `original_user_question=${String(prompt || "").trim()}`,
+    `step=${Number.isInteger(step) ? step : 0}`,
+    `requires_breadth=${intent.requiresBreadth ? "yes" : "no"}`,
+    intent.requiresBreadth ? `expected_min_items=${intent.expectedMinItems}` : "",
+    `tool_progress=${summarizeToolStats(toolStats)}`,
+    "Never lose the original user question.",
+    "When question asks latest/news/summary, avoid finishing with a single narrow detail.",
+    "Before returning final, ensure the answer directly addresses the original question.",
+  ];
+  return rows.filter(Boolean).join("\n");
+}
+
+function evaluateFinalAnswerCoverage({
+  prompt,
+  finalText,
+  promptIntent,
+  toolStats,
+}) {
+  const reasons = [];
+  const answer = String(finalText || "").trim();
+  const intent = promptIntent && typeof promptIntent === "object" ? promptIntent : detectPromptIntent(prompt);
+  const stats = toolStats && typeof toolStats === "object" ? toolStats : createToolStats();
+
+  if (!answer) {
+    reasons.push("final answer is empty");
+  }
+
+  const keywords = extractPromptKeywords(prompt);
+  if (keywords.length > 0) {
+    const overlap = countKeywordOverlap(keywords, answer);
+    if (overlap <= 0) {
+      reasons.push("answer-topic overlap with user prompt is too low");
+    }
+  }
+
+  if (intent.requiresBreadth) {
+    const itemCount = countLikelyAnswerItems(answer);
+    if (itemCount < intent.expectedMinItems) {
+      reasons.push(`answer item count is too small (${itemCount}/${intent.expectedMinItems})`);
+    }
+    if ((stats.webSearchCalls || 0) <= 0 && (stats.readUrlCount || 0) <= 0) {
+      reasons.push("insufficient external evidence");
+    }
+    if ((stats.searchResultItems || 0) <= 0 && (stats.readUrlCount || 0) <= 0) {
+      reasons.push("no search/read evidence captured");
+    }
+  }
+
+  return {
+    ok: reasons.length === 0,
+    reasons,
+  };
+}
+
+function compactToolResultForFinal(rawResult) {
+  const result = rawResult && typeof rawResult === "object" ? rawResult : {};
+  const compact = {
+    ok: result.ok === true,
+    tool: String(result.tool || "").trim(),
+  };
+
+  if (typeof result.query === "string" && result.query.trim()) {
+    compact.query = result.query.trim();
+  }
+  if (typeof result.path === "string" && result.path.trim()) {
+    compact.path = result.path.trim();
+  }
+  if (typeof result.source === "string" && result.source.trim()) {
+    compact.source = result.source.trim();
+  }
+  if (typeof result.currentDateJst === "string" && result.currentDateJst.trim()) {
+    compact.currentDateJst = result.currentDateJst.trim();
+  }
+  if (typeof result.content === "string" && result.content.trim()) {
+    compact.content = truncateText(result.content.trim(), 2000);
+  }
+  if (typeof result.output === "string" && result.output.trim()) {
+    compact.output = truncateText(result.output.trim(), 1200);
+  }
+  if (typeof result.error === "string" && result.error.trim()) {
+    compact.error = truncateText(result.error.trim(), 800);
+  }
+  if (Array.isArray(result.results)) {
+    compact.results = result.results.slice(0, 5).map((item) => ({
+      title: truncateText(String(item?.title || "").trim(), 180),
+      url: truncateText(String(item?.url || "").trim(), 280),
+      snippet: truncateText(String(item?.snippet || "").trim(), 240),
+    }));
+  }
+
+  return compact;
+}
+
+async function rewriteFinalAnswerWithToolEvidence({
+  prompt,
+  draftText,
+  model,
+  temperature,
+  toolResults,
+  temporalContext,
+  promptIntent,
+  toolStats,
+}) {
+  const compactResults = Array.isArray(toolResults) ? toolResults.slice(-5) : [];
+  const intent = promptIntent && typeof promptIntent === "object" ? promptIntent : detectPromptIntent(prompt);
+  const progressSummary = summarizeToolStats(toolStats);
+  const messages = [
+    { role: "system", content: autoToolFinalRewriteSystemPrompt },
+    {
+      role: "user",
+      content: [
+        `question: ${String(prompt || "").trim()}`,
+        "",
+        `draft_answer: ${truncateText(String(draftText || "").trim(), 2000)}`,
+        "",
+        `current_utc_iso: ${String(temporalContext?.utcIso || "")}`,
+        `current_date_jst: ${String(temporalContext?.currentDateJst || "")}`,
+        `requires_breadth: ${intent.requiresBreadth ? "yes" : "no"}`,
+        intent.requiresBreadth ? `expected_min_items: ${intent.expectedMinItems}` : "",
+        `tool_progress: ${progressSummary}`,
+        "",
+        "tool_evidence_json:",
+        truncateText(JSON.stringify(compactResults, null, 2), 7000),
+      ].join("\n"),
+    },
+  ];
+
+  const rewritten = await callRunPodChatText({
+    model,
+    temperature: Number.isFinite(temperature) ? Math.min(0.4, Math.max(0, temperature)) : 0.2,
+    messages,
+    maxTokens: 900,
+  });
+  return String(rewritten || "").trim();
 }
 
 function extractAssistantText(payload) {
@@ -705,7 +1548,7 @@ function appendWithLimit(current, chunk, limit = maxProcessOutputChars) {
   return merged.slice(merged.length - limit);
 }
 
-function runProcessCapture(command, args, { cwd = workspaceRoot, timeoutMs = localShellTimeoutMs, env = process.env } = {}) {
+function runProcessCapture(command, args, { cwd = workspaceRoot, timeoutMs = localShellTimeoutMs, env = process.env, windowsHide = true } = {}) {
   return new Promise((resolve) => {
     const started = Date.now();
     let stdout = "";
@@ -718,7 +1561,7 @@ function runProcessCapture(command, args, { cwd = workspaceRoot, timeoutMs = loc
     const child = spawn(command, args, {
       cwd,
       env,
-      windowsHide: true,
+      windowsHide: !!windowsHide,
       stdio: ["ignore", "pipe", "pipe"],
     });
 
@@ -771,6 +1614,87 @@ function runProcessCapture(command, args, { cwd = workspaceRoot, timeoutMs = loc
       finish();
     });
   });
+}
+
+async function openNativeFolderPicker(initialPath = workspaceRoot) {
+  if (process.platform !== "win32") {
+    throw new Error("Native folder picker is currently supported on Windows only.");
+  }
+
+  const normalizedInitial = String(initialPath || "").replaceAll("'", "''");
+  const script = [
+    "$ErrorActionPreference='Stop'",
+    "Add-Type -AssemblyName System.Windows.Forms",
+    "Add-Type -AssemblyName System.Drawing",
+    "$dialog = New-Object System.Windows.Forms.OpenFileDialog",
+    "$dialog.Title = 'Select workspace folder'",
+    "$dialog.Filter = 'Folders|*.none'",
+    "$dialog.CheckFileExists = $false",
+    "$dialog.CheckPathExists = $true",
+    "$dialog.ValidateNames = $false",
+    "$dialog.RestoreDirectory = $true",
+    "$dialog.ShowHelp = $true",
+    "$dialog.FileName = 'Select this folder'",
+    `$initial = '${normalizedInitial}'`,
+    "if ($initial -and (Test-Path $initial)) {",
+    "  $item = Get-Item $initial",
+    "  if ($item.PSIsContainer) { $dialog.InitialDirectory = $item.FullName } else { $dialog.InitialDirectory = $item.DirectoryName }",
+    "}",
+    "$owner = New-Object System.Windows.Forms.Form",
+    "$owner.Text = 'LocaLingo Picker Host'",
+    "$owner.TopMost = $true",
+    "$owner.ShowInTaskbar = $false",
+    "$owner.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual",
+    "$owner.Location = New-Object System.Drawing.Point(-32000, -32000)",
+    "$owner.Size = New-Object System.Drawing.Size(1, 1)",
+    "$owner.Opacity = 0",
+    "$owner.Show()",
+    "$owner.Activate()",
+    "[System.Windows.Forms.Application]::DoEvents()",
+    "$result = $dialog.ShowDialog($owner)",
+    "$owner.Close()",
+    "$owner.Dispose()",
+    "if ($result -eq [System.Windows.Forms.DialogResult]::OK) {",
+    "  $candidate = [string]$dialog.FileName",
+    "  if (-not [string]::IsNullOrWhiteSpace($candidate)) {",
+    "    if (Test-Path $candidate) {",
+    "      $pick = Get-Item $candidate",
+    "      if ($pick.PSIsContainer) { [Console]::Out.Write($pick.FullName) }",
+    "      else { [Console]::Out.Write($pick.DirectoryName) }",
+    "    } else {",
+    "      $parent = Split-Path -Parent $candidate",
+    "      if ($parent -and (Test-Path $parent)) { [Console]::Out.Write((Resolve-Path $parent).Path) }",
+    "    }",
+    "  }",
+    "}",
+  ].join("; ");
+
+  const run = await runProcessCapture("powershell", [
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-STA",
+    "-Command",
+    script,
+  ], {
+    timeoutMs: Math.max(30000, Math.min(180000, localShellTimeoutMs * 6)),
+    windowsHide: false,
+  });
+
+  if (run.spawnError) {
+    throw new Error(run.spawnError);
+  }
+  if (run.timedOut) {
+    throw new Error("Folder picker timed out.");
+  }
+  if (run.exitCode !== 0) {
+    throw new Error(`Folder picker failed (exit=${run.exitCode}). ${truncateText(run.stderr || run.stdout, 500)}`);
+  }
+  const selected = String(run.stdout || "").trim();
+  if (!selected) {
+    return "";
+  }
+  return path.resolve(selected);
 }
 
 function getNpxCommandCandidates() {
@@ -1239,6 +2163,50 @@ async function runPlaywrightWebSearch(query, requestedMaxResults) {
   ].join("\n"));
 }
 
+async function readRemoteUrlForTool(rawPath) {
+  const target = resolveReadTarget(rawPath);
+  if (target.kind !== "url") {
+    throw new Error("URL path is required.");
+  }
+  if (!playwrightMcpEnabled) {
+    throw new Error("URL read requires Playwright MCP. Set PLAYWRIGHT_MCP_ENABLED=1.");
+  }
+
+  const navigation = await runPlaywrightNavigateWithInstall(target.url);
+  const snapshotTextRaw = String(navigation.text || "").trim();
+  const pageUrl = extractPageUrlFromMcpText(snapshotTextRaw) || target.url;
+  const structuredContent = extractStructuredWebPageText(snapshotTextRaw, pageUrl);
+  const contentRaw = structuredContent || snapshotTextRaw || "(No snapshot text returned by Playwright MCP.)";
+  const content = truncateText(contentRaw, Math.max(maxToolOutputChars * 2, 20000));
+  const truncated = content !== contentRaw;
+  const sizeBytes = Buffer.byteLength(contentRaw, "utf8");
+  const meta = [
+    "source=url",
+    `bytes=${sizeBytes}`,
+    `structured=${structuredContent ? "yes" : "no"}`,
+    `truncated=${truncated ? "yes" : "no"}`,
+    `elapsed=${Math.max(0, Number.parseInt(String(navigation.elapsedMs || 0), 10) || 0)}ms`,
+    `page=${pageUrl}`,
+  ].join(" ");
+
+  return {
+    resolvedPath: target.url,
+    displayPath: pageUrl,
+    sizeBytes,
+    meta,
+    content,
+    shown: truncateText(content, maxToolOutputChars),
+    modelPayload: {
+      format: "url",
+      pageUrl,
+      structured: Boolean(structuredContent),
+      truncated,
+      elapsedMs: navigation.elapsedMs,
+      command: navigation.command,
+    },
+  };
+}
+
 function buildPythonSpawnCandidates(basePythonArgs) {
   const pyArgs = Array.isArray(basePythonArgs) ? basePythonArgs : [];
   const candidates = [];
@@ -1519,7 +2487,12 @@ async function writeOfficeFileViaPython(absPath, content) {
 }
 
 async function readLocalFileForTool(rawPath) {
-  const resolvedPath = resolveWorkspacePath(rawPath);
+  const target = resolveReadTarget(rawPath);
+  if (target.kind === "url") {
+    return readRemoteUrlForTool(target.url);
+  }
+
+  const resolvedPath = target.resolvedPath;
   const info = await stat(resolvedPath);
   if (!info.isFile()) {
     throw new Error(`Not a file: ${rawPath}`);
@@ -1536,7 +2509,7 @@ async function readLocalFileForTool(rawPath) {
     throw new Error(`File too large (${info.size} bytes). ${limitName}=${allowedReadBytes}.`);
   }
 
-  const displayPath = toWorkspaceRelative(resolvedPath);
+  const displayPath = toReadableDisplayPath(resolvedPath);
   let content = "";
   let meta = `bytes=${info.size}`;
   let modelPayload = {};
@@ -1703,14 +2676,36 @@ function splitTextLines(text) {
 }
 
 async function readTextFileSliceForTool(rawPath, offsetRaw, limitRaw) {
-  const relPath = sanitizeModelPath(rawPath);
-  if (!relPath) {
-    throw new Error("Path is empty.");
+  const target = resolveReadTarget(rawPath);
+  if (target.kind === "url") {
+    const remote = await readRemoteUrlForTool(target.url);
+    const split = splitTextLines(remote.content);
+    const totalLines = split.lines.length;
+    const offset = clampInteger(offsetRaw, 1, 1, Math.max(1, totalLines || 1));
+    const limit = clampInteger(limitRaw, 120, 1, 400);
+    const fromIndex = offset - 1;
+    const toIndexExclusive = Math.min(totalLines, fromIndex + limit);
+    const selected = split.lines.slice(fromIndex, toIndexExclusive);
+    const numbered = selected.map((line, idx) => {
+      const lineNo = fromIndex + idx + 1;
+      return `${String(lineNo).padStart(6, " ")}\t${line}`;
+    });
+
+    return {
+      relPath: remote.displayPath,
+      sizeBytes: remote.sizeBytes,
+      totalLines,
+      offset,
+      limit,
+      returnedLines: selected.length,
+      content: numbered.join("\n"),
+    };
   }
-  const resolvedPath = resolveWorkspacePath(relPath);
+
+  const resolvedPath = target.resolvedPath;
   const info = await stat(resolvedPath);
   if (!info.isFile()) {
-    throw new Error(`Not a file: ${relPath}`);
+    throw new Error(`Not a file: ${target.pathInput}`);
   }
   if (info.size > Math.max(1024, maxReadBytes)) {
     throw new Error(`File is too large (${info.size} bytes). MAX_READ_BYTES=${Math.max(1024, maxReadBytes)}.`);
@@ -1738,7 +2733,7 @@ async function readTextFileSliceForTool(rawPath, offsetRaw, limitRaw) {
   });
 
   return {
-    relPath: toWorkspaceRelative(resolvedPath).replaceAll("\\", "/"),
+    relPath: toReadableDisplayPath(resolvedPath),
     sizeBytes: info.size,
     totalLines,
     offset,
@@ -2234,6 +3229,131 @@ function parseModelJsonObject(rawText) {
   throw new Error(`Model JSON parse failed. raw=${truncateText(text, 1200)}`);
 }
 
+function decodeEscapedText(rawValue) {
+  let text = String(rawValue || "");
+  text = text.replace(/\\u([0-9a-fA-F]{4})/g, (_m, hex) => {
+    try {
+      return String.fromCharCode(Number.parseInt(hex, 16));
+    } catch {
+      return _m;
+    }
+  });
+  text = text
+    .replace(/\\r/g, "\r")
+    .replace(/\\n/g, "\n")
+    .replace(/\\t/g, "\t")
+    .replace(/\\"/g, "\"")
+    .replace(/\\\\/g, "\\");
+  return text;
+}
+
+function cleanupRecoveredMessage(rawValue) {
+  let text = decodeEscapedText(rawValue);
+  text = text
+    .replace(/\s*"\s*}\s*$/s, "")
+    .replace(/\s*}\s*$/s, "")
+    .trim();
+  return text;
+}
+
+function extractPossiblyMalformedFinalMessage(rawText) {
+  const text = String(rawText || "");
+  if (!text) return "";
+
+  const keyMatch = text.match(/["']message["']\s*:\s*/i);
+  if (!keyMatch || keyMatch.index === undefined) {
+    return "";
+  }
+  const startIdx = keyMatch.index + keyMatch[0].length;
+  let tail = text.slice(startIdx).trimStart();
+  if (!tail) return "";
+
+  const first = tail[0];
+  if (first !== "\"" && first !== "'") {
+    const direct = tail.match(/^([^\r\n}]+)/);
+    return cleanupRecoveredMessage(direct ? direct[1] : tail);
+  }
+
+  const quote = first;
+  tail = tail.slice(1);
+  let out = "";
+  let escaped = false;
+  for (let i = 0; i < tail.length; i += 1) {
+    const ch = tail[i];
+    if (escaped) {
+      out += ch;
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      out += ch;
+      escaped = true;
+      continue;
+    }
+    if (ch === quote) {
+      const rest = tail.slice(i + 1);
+      if (/^\s*(,|\}|$)/.test(rest)) {
+        return cleanupRecoveredMessage(out);
+      }
+    }
+    out += ch;
+  }
+  // Truncated string: return the best-effort partial message.
+  return cleanupRecoveredMessage(out);
+}
+
+function recoverAgentDecisionFromMalformedText(rawText) {
+  const text = String(rawText || "").trim();
+  if (!text) return null;
+
+  const hasJsonShape = text.startsWith("{") || text.includes("\"type\"") || text.includes("'type'");
+  const hasToolHint = /["']tool["']\s*:|["']type["']\s*:\s*["']tool["']/i.test(text);
+  const hasFinalHint = /["']type["']\s*:\s*["']final["']/i.test(text);
+
+  if (hasFinalHint) {
+    const message = extractPossiblyMalformedFinalMessage(text);
+    if (message) {
+      return {
+        type: "final",
+        message,
+      };
+    }
+  }
+
+  if (!hasJsonShape) {
+    return {
+      type: "final",
+      message: text,
+    };
+  }
+
+  if (!hasToolHint) {
+    const message = extractPossiblyMalformedFinalMessage(text);
+    if (message) {
+      return {
+        type: "final",
+        message,
+      };
+    }
+  }
+
+  const toolMatch = text.match(/["'](?:tool_name|tool)["']\s*:\s*["']([a-zA-Z0-9_:-]+)["']/i);
+  const rawTool = String(toolMatch?.[1] || "").trim().toLowerCase();
+  if (autoToolNames.includes(rawTool)) {
+    const callIdMatch = text.match(/["']call_id["']\s*:\s*["']([^"']+)["']/i);
+    const callId = String(callIdMatch?.[1] || "").trim();
+    return {
+      type: "tool",
+      tool: rawTool,
+      args: {},
+      reason: "recovered_from_malformed_json",
+      callId,
+    };
+  }
+
+  return null;
+}
+
 async function repairModelJsonObjectViaModel({ rawText, model }) {
   const repairedRaw = await callRunPodChatText({
     model,
@@ -2327,17 +3447,7 @@ function normalizeProposalObject(rawObject) {
 function normalizeAgentDecision(rawObject) {
   const obj = rawObject && typeof rawObject === "object" ? rawObject : {};
   const rawType = String(obj.type || obj.kind || obj.mode || obj.action || "").trim().toLowerCase();
-  const directTool = [
-    "read",
-    "read_file",
-    "list_dir",
-    "search",
-    "shell",
-    "write",
-    "apply_patch",
-    "update_plan",
-    "web_search",
-  ].includes(rawType) ? rawType : "";
+  const directTool = autoToolNames.includes(rawType) ? rawType : "";
 
   const message = String(
     obj.message || obj.final_message || obj.finalMessage || obj.answer || obj.response || "",
@@ -2349,8 +3459,21 @@ function normalizeAgentDecision(rawObject) {
     };
   }
 
-  const tool = String(obj.tool || obj.tool_name || obj.toolName || obj.name || directTool).trim().toLowerCase();
-  if (rawType === "tool" || rawType === "call" || directTool || tool) {
+  const rawTool = String(
+    obj.tool_name || obj.tool || obj.toolName || obj.name || obj.function || directTool,
+  ).trim().toLowerCase();
+  const tool = autoToolNames.includes(rawTool) ? rawTool : "";
+  const isToolLikeType = [
+    "tool_call",
+    "tool",
+    "call",
+    "function_call",
+  ].includes(rawType);
+  if (isToolLikeType || directTool || tool) {
+    const callId = String(obj.call_id || obj.callId || obj.id || "")
+      .trim()
+      .replace(/[^A-Za-z0-9:_-]/g, "")
+      .slice(0, 80);
     const directArgs = obj.args || obj.arguments || obj.input || obj.params || null;
     let args = {};
     if (directArgs && typeof directArgs === "object" && !Array.isArray(directArgs)) {
@@ -2373,6 +3496,13 @@ function normalizeAgentDecision(rawObject) {
         "answer",
         "response",
         "reason",
+        "call_id",
+        "callId",
+        "id",
+        "arguments",
+        "args",
+        "params",
+        "input",
       ]);
       for (const key of Object.keys(passthrough)) {
         if (!reservedKeys.has(key)) {
@@ -2380,11 +3510,18 @@ function normalizeAgentDecision(rawObject) {
         }
       }
     }
+    if (!tool) {
+      return {
+        type: "invalid",
+        message: "",
+      };
+    }
     return {
       type: "tool",
       tool,
       args,
       reason: String(obj.reason || "").trim(),
+      callId,
     };
   }
 
@@ -2405,15 +3542,15 @@ function summarizeToolArgs(toolName, args) {
   const tool = String(toolName || "").trim().toLowerCase();
   const payload = args && typeof args === "object" ? args : {};
   if (tool === "read") {
-    const rel = sanitizeModelPath(payload.path || payload.file || payload.target || "");
-    return rel ? `path=${rel}` : "(path missing)";
+    const rawPath = String(payload.path || payload.file || payload.target || "").trim();
+    return rawPath ? `path=${rawPath}` : "(path missing)";
   }
   if (tool === "read_file") {
-    const rel = sanitizeModelPath(payload.path || payload.file || payload.target || "");
+    const rawPath = String(payload.path || payload.file || payload.target || "").trim();
     const offset = clampInteger(payload.offset || payload.line || payload.start_line, 1, 1, 1_000_000);
     const limit = clampInteger(payload.limit || payload.max_lines || payload.lines, 120, 1, 400);
-    if (!rel) return "(path missing)";
-    return `path=${rel} offset=${offset} limit=${limit}`;
+    if (!rawPath) return "(path missing)";
+    return `path=${rawPath} offset=${offset} limit=${limit}`;
   }
   if (tool === "list_dir") {
     const rel = sanitizeModelPath(payload.path || payload.dir || payload.target || ".") || ".";
@@ -3016,7 +4153,10 @@ async function executeAutoToolCall({ session, toolName, args, fallbackWebSearchQ
 }
 
 async function runAutoToolChat({ session, prompt, model, temperature, onEvent = null }) {
+  const safeSession = ensureSessionShape(session);
   const temporalContext = getTemporalContext();
+  const promptIntent = detectPromptIntent(prompt);
+  const toolStats = createToolStats();
   const emit = typeof onEvent === "function"
     ? (payload) => {
         try {
@@ -3026,7 +4166,7 @@ async function runAutoToolChat({ session, prompt, model, temperature, onEvent = 
         }
       }
     : null;
-  const chatMessages = [
+  let chatMessages = [
     { role: "system", content: autoToolSystemPrompt },
     {
       role: "system",
@@ -3038,38 +4178,61 @@ async function runAutoToolChat({ session, prompt, model, temperature, onEvent = 
         `app_time_zone=${temporalContext.appTimeZone}`,
         `max_read_bytes=${maxReadBytes}`,
         `shell_allowlist=${shellAllowlist.join(", ")}`,
-        "available_tools=read,read_file,list_dir,search,shell,write,apply_patch,update_plan,web_search",
+        `available_tools=${autoToolNames.join(",")}`,
+        "read_scope=local_files_anywhere_and_http_urls",
+        "read_file_scope=local_files_anywhere_and_http_urls",
+        "list_dir_scope=workspace_root_only",
         "allow_write=yes",
         "allow_apply_patch=yes",
         "write_scope=workspace_root_only",
         `web_search_enabled=${playwrightMcpEnabled ? "yes" : "no"}`,
         `web_search_max_results=${Math.max(1, Math.min(10, playwrightMcpMaxResults))}`,
         `playwright_browser=${playwrightMcpBrowser}`,
+        "harness_mode=codex_style_tool_call",
       ].join("\n"),
+    },
+    {
+      role: "system",
+      content: buildTaskFocusSystemMessage({
+        prompt,
+        promptIntent,
+        toolStats,
+        step: 0,
+      }),
     },
   ];
 
-  const toolContext = buildToolContext(session);
+  const compactedSessionContext = buildSessionCompactedContextMessage(safeSession);
+  if (compactedSessionContext) {
+    chatMessages.push({
+      role: "system",
+      content: compactedSessionContext,
+    });
+  }
+  const toolContext = buildToolContext(safeSession);
   if (toolContext) {
     chatMessages.push({
       role: "system",
       content: `Recent local tool logs:\n${toolContext}`,
     });
   }
-  if (Array.isArray(session.plan) && session.plan.length > 0) {
+  if (Array.isArray(safeSession.plan) && safeSession.plan.length > 0) {
     chatMessages.push({
       role: "system",
-      content: `Current plan snapshot:\n${JSON.stringify(session.plan)}`,
+      content: `Current plan snapshot:\n${JSON.stringify(safeSession.plan)}`,
     });
   }
 
-  for (const msg of session.messages) {
+  for (const msg of safeSession.messages) {
     chatMessages.push(msg);
   }
   chatMessages.push({ role: "user", content: prompt });
+  chatMessages = normalizeHarnessMessagesForPrompt(chatMessages);
 
   const htmlParts = [];
   let finalText = "";
+  let executedToolCount = 0;
+  const compactToolResults = [];
   const pushCard = (html) => {
     const card = String(html || "");
     if (!card) return;
@@ -3090,25 +4253,40 @@ async function runAutoToolChat({ session, prompt, model, temperature, onEvent = 
         message: `step ${step}: deciding next action`,
       });
     }
+    const stepFocusMessage = {
+      role: "system",
+      content: buildTaskFocusSystemMessage({
+        prompt,
+        promptIntent,
+        toolStats,
+        step,
+      }),
+    };
+
     let raw = "";
     try {
       raw = await callRunPodChatText({
         model,
         temperature: Number.isFinite(temperature) ? temperature : autoToolTemperature,
-        messages: chatMessages,
+        messages: [...chatMessages, stepFocusMessage],
         maxTokens: Math.max(256, autoToolMaxTokens),
       });
     } catch (err) {
       if (!isContextExceededError(err)) {
         throw err;
       }
-      const compacted = compactMessagesForContextRetry(chatMessages);
-      if (compacted.length >= chatMessages.length) {
+      const compacted = compactMessagesForContextRetry(chatMessages, {
+        step,
+        reason: "context_exceeded",
+      });
+      const compactedWeight = estimateMessagesCharWeight(compacted);
+      const originalWeight = estimateMessagesCharWeight(chatMessages);
+      if (compacted.length >= chatMessages.length && compactedWeight >= originalWeight) {
         throw err;
       }
       chatMessages.length = 0;
       chatMessages.push(...compacted);
-      appendToolLog(session, {
+      appendToolLog(safeSession, {
         title: "auto-tool context trimmed",
         summary: `step=${step}`,
         detail: "Context size exceeded. Trimmed chat history and retrying once.",
@@ -3121,13 +4299,14 @@ async function runAutoToolChat({ session, prompt, model, temperature, onEvent = 
       raw = await callRunPodChatText({
         model,
         temperature: Number.isFinite(temperature) ? temperature : autoToolTemperature,
-        messages: chatMessages,
+        messages: [...chatMessages, stepFocusMessage],
         maxTokens: Math.max(256, autoToolMaxTokens),
       });
     }
 
     let decisionObject = null;
     let parseRecovered = false;
+    let parseRecoveredByFallback = false;
     let parseErrorMessage = "";
     try {
       decisionObject = parseModelJsonObject(raw);
@@ -3145,7 +4324,16 @@ async function runAutoToolChat({ session, prompt, model, temperature, onEvent = 
     }
 
     if (!decisionObject) {
-      appendToolLog(session, {
+      const fallbackDecision = recoverAgentDecisionFromMalformedText(raw);
+      if (fallbackDecision) {
+        decisionObject = fallbackDecision;
+        parseRecovered = true;
+        parseRecoveredByFallback = true;
+      }
+    }
+
+    if (!decisionObject) {
+      appendToolLog(safeSession, {
         title: "auto-tool json parse failed",
         summary: `step=${step}`,
         detail: [
@@ -3174,21 +4362,74 @@ async function runAutoToolChat({ session, prompt, model, temperature, onEvent = 
     }
 
     if (parseRecovered) {
-      appendToolLog(session, {
+      appendToolLog(safeSession, {
         title: "auto-tool json recovered",
         summary: `step=${step}`,
-        detail: "Recovered malformed JSON response via repair pass.",
+        detail: parseRecoveredByFallback
+          ? "Recovered malformed response via local fallback parser."
+          : "Recovered malformed JSON response via repair pass.",
       });
       pushCard(renderToolResult({
         title: "Auto tool JSON recovered",
         meta: `step=${step}`,
-        body: "Recovered malformed JSON response and continued.",
+        body: parseRecoveredByFallback
+          ? "Recovered malformed response locally and continued."
+          : "Recovered malformed JSON response and continued.",
       }));
     }
 
     const decision = normalizeAgentDecision(decisionObject);
     if (decision.type === "final") {
-      finalText = decision.message || "(empty response)";
+      const candidateFinalText = decision.message || "(empty response)";
+      const coverage = evaluateFinalAnswerCoverage({
+        prompt,
+        finalText: candidateFinalText,
+        promptIntent,
+        toolStats,
+      });
+      if (!coverage.ok && step < Math.max(1, autoToolMaxSteps)) {
+        const reasonText = coverage.reasons.join("; ");
+        appendToolLog(safeSession, {
+          title: "auto-tool final rejected",
+          summary: `step=${step}`,
+          detail: [
+            "Controller rejected premature final answer.",
+            `reasons=${reasonText}`,
+            "",
+            "candidate_final:",
+            truncateText(candidateFinalText, 1200),
+          ].join("\n"),
+        });
+        pushCard(renderToolResult({
+          title: "Auto tool final rejected",
+          meta: `step=${step}`,
+          body: `Controller requested continuation: ${reasonText}`,
+          isError: true,
+        }));
+        chatMessages.push({
+          role: "assistant",
+          content: JSON.stringify({
+            type: "final",
+            message: candidateFinalText,
+          }),
+        });
+        chatMessages.push({
+          role: "user",
+          content: [
+            "Controller validation failed for your previous final answer.",
+            `reasons: ${reasonText}`,
+            `original_user_question: ${prompt}`,
+            `task_progress: ${summarizeToolStats(toolStats)}`,
+            promptIntent.requiresBreadth
+              ? `requirement: provide at least ${promptIntent.expectedMinItems} concrete items if evidence allows.`
+              : "",
+            "Continue with additional tool calls and then return a better final answer.",
+          ].filter(Boolean).join("\n"),
+        });
+        chatMessages = normalizeHarnessMessagesForPrompt(chatMessages);
+        continue;
+      }
+      finalText = candidateFinalText;
       break;
     }
     if (decision.type !== "tool" || !decision.tool) {
@@ -3196,8 +4437,10 @@ async function runAutoToolChat({ session, prompt, model, temperature, onEvent = 
       break;
     }
 
+    const toolCallId = decision.callId || nextSessionToolCallId(safeSession);
     const callMeta = [
       `step=${step}`,
+      `call_id=${toolCallId}`,
       decision.reason ? `reason=${decision.reason}` : "",
     ].filter(Boolean).join(" ");
     pushCard(renderToolResult({
@@ -3207,25 +4450,40 @@ async function runAutoToolChat({ session, prompt, model, temperature, onEvent = 
     }));
 
     const toolOutcome = await executeAutoToolCall({
-      session,
+      session: safeSession,
       toolName: decision.tool,
       args: decision.args,
       fallbackWebSearchQuery: prompt,
     });
     pushCard(toolOutcome.html);
+    recordToolEvidence(toolStats, toolOutcome.modelResult);
+    executedToolCount += 1;
+    compactToolResults.push(compactToolResultForFinal(toolOutcome.modelResult));
+    if (compactToolResults.length > 8) {
+      compactToolResults.shift();
+    }
 
     chatMessages.push({
       role: "assistant",
       content: JSON.stringify({
-        type: "tool",
-        tool: decision.tool,
-        args: decision.args,
+        type: "tool_call",
+        call_id: toolCallId,
+        tool_name: decision.tool,
+        arguments: decision.args,
+        reason: decision.reason || "",
       }),
     });
     chatMessages.push({
       role: "user",
-      content: `Tool result:\n${JSON.stringify(toolOutcome.modelResult)}`,
+      content: JSON.stringify({
+        type: "tool_output",
+        call_id: toolCallId,
+        tool_name: decision.tool,
+        ok: toolOutcome?.modelResult?.ok === true,
+        result: toolOutcome.modelResult,
+      }),
     });
+    chatMessages = normalizeHarnessMessagesForPrompt(chatMessages);
   }
 
   if (!finalText) {
@@ -3235,12 +4493,53 @@ async function runAutoToolChat({ session, prompt, model, temperature, onEvent = 
     ].join("\n");
   }
 
+  if (shouldRunFocusedFinalRewrite({
+    prompt,
+    draftText: finalText,
+    toolCallCount: executedToolCount,
+  })) {
+    try {
+      const rewritten = await rewriteFinalAnswerWithToolEvidence({
+        prompt,
+        draftText: finalText,
+        model,
+        temperature,
+        toolResults: compactToolResults,
+        temporalContext,
+        promptIntent,
+        toolStats,
+      });
+      if (rewritten) {
+        appendToolLog(safeSession, {
+          title: "auto-tool final rewritten",
+          summary: `tool_calls=${executedToolCount}`,
+          detail: [
+            "Final answer was rewritten to improve question relevance.",
+            "",
+            "[before]",
+            truncateText(finalText, 1200),
+            "",
+            "[after]",
+            truncateText(rewritten, 1200),
+          ].join("\n"),
+        });
+        finalText = rewritten;
+      }
+    } catch (rewriteErr) {
+      appendToolLog(safeSession, {
+        title: "auto-tool final rewrite skipped",
+        summary: "failed",
+        detail: rewriteErr?.message || String(rewriteErr),
+      });
+    }
+  }
+
   // Guardrail for weather "today" prompts: avoid stale explicit calendar dates.
   if (promptAsksTodayWeather(prompt)) {
     const rewrite = rewriteMismatchedExplicitDatesAsToday(finalText, temporalContext.currentDateJst);
     finalText = rewrite.text;
     if (rewrite.mismatchCount > 0) {
-      appendToolLog(session, {
+      appendToolLog(safeSession, {
         title: "auto-tool temporal date normalized",
         summary: `rewritten_dates=${rewrite.mismatchCount}`,
         detail: [
@@ -3255,6 +4554,8 @@ async function runAutoToolChat({ session, prompt, model, temperature, onEvent = 
   return {
     html: htmlParts.join(""),
     assistantText: finalText,
+    executedToolCount,
+    toolStats,
   };
 }
 
@@ -3937,10 +5238,338 @@ async function serveStatic(req, res, pathname) {
   send(res, 200, content, typeMap[ext] || "application/octet-stream");
 }
 
+function safeJsonStringify(value) {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "";
+  }
+}
+
+function tryParseJsonObjectText(rawText) {
+  const text = String(rawText || "").trim();
+  if (!text || text[0] !== "{") {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+function isToolCallMessageRow(row) {
+  if (!row || row.role !== "assistant") return false;
+  const parsed = tryParseJsonObjectText(row.content);
+  if (!parsed) return false;
+  const type = String(parsed.type || "").trim().toLowerCase();
+  return type === "tool_call" || type === "tool";
+}
+
+function isToolOutputMessageRow(row) {
+  if (!row || row.role !== "user") return false;
+  const parsed = tryParseJsonObjectText(row.content);
+  if (!parsed) return false;
+  const type = String(parsed.type || "").trim().toLowerCase();
+  return type === "tool_output" || type === "tool_result" || type === "tool_response";
+}
+
+function normalizeHarnessMessagesForPrompt(messages) {
+  const rows = normalizeChatMessages(messages);
+  if (rows.length === 0) return rows;
+
+  const rewritten = [];
+  const toolCallIds = new Set();
+  const toolOutputIds = new Set();
+
+  for (let i = 0; i < rows.length; i += 1) {
+    const row = { ...rows[i] };
+    if (isToolCallMessageRow(row)) {
+      const parsed = tryParseJsonObjectText(row.content) || {};
+      const toolName = String(parsed.tool_name || parsed.tool || "").trim().toLowerCase();
+      const fallbackCallId = `call-auto-${i + 1}`;
+      const callIdRaw = String(
+        parsed.call_id || parsed.callId || parsed.id || fallbackCallId,
+      ).trim();
+      const callId = callIdRaw || fallbackCallId;
+      const normalizedPayload = {
+        type: "tool_call",
+        call_id: callId,
+        tool_name: toolName,
+        arguments: parsed.arguments && typeof parsed.arguments === "object"
+          ? parsed.arguments
+          : (parsed.args && typeof parsed.args === "object" ? parsed.args : {}),
+        reason: String(parsed.reason || "").trim(),
+      };
+      row.content = safeJsonStringify(normalizedPayload) || row.content;
+      rewritten.push(row);
+      toolCallIds.add(callId);
+      continue;
+    }
+
+    if (isToolOutputMessageRow(row)) {
+      const parsed = tryParseJsonObjectText(row.content) || {};
+      const callId = String(parsed.call_id || parsed.callId || "").trim();
+      if (!callId) {
+        // Drop malformed outputs with no call_id.
+        continue;
+      }
+      if (!toolCallIds.has(callId)) {
+        // Remove orphan tool outputs to keep call/output pairing invariant.
+        continue;
+      }
+      const normalizedPayload = {
+        type: "tool_output",
+        call_id: callId,
+        tool_name: String(parsed.tool_name || parsed.tool || "").trim().toLowerCase(),
+        ok: parsed.ok === true,
+        result: parsed.result && typeof parsed.result === "object" ? parsed.result : {},
+      };
+      row.content = safeJsonStringify(normalizedPayload) || row.content;
+      rewritten.push(row);
+      toolOutputIds.add(callId);
+      continue;
+    }
+
+    rewritten.push(row);
+  }
+
+  // Ensure every tool_call has a corresponding tool_output.
+  for (const callId of toolCallIds) {
+    if (toolOutputIds.has(callId)) continue;
+    rewritten.push({
+      role: "user",
+      content: safeJsonStringify({
+        type: "tool_output",
+        call_id: callId,
+        tool_name: "",
+        ok: false,
+        result: { error: "aborted" },
+      }),
+    });
+  }
+
+  return rewritten;
+}
+
+function buildCompactionCheckpointFromMessages(messages, {
+  maxChars = 2600,
+  includeHeader = true,
+} = {}) {
+  const rows = normalizeChatMessages(messages).filter((row) => {
+    const content = String(row.content || "").trim();
+    return Boolean(content);
+  });
+  if (rows.length === 0) {
+    return "";
+  }
+
+  const parts = [];
+  if (includeHeader) {
+    parts.push("Context checkpoint (compacted history):");
+  }
+  const latestItems = rows.slice(-32);
+  for (const row of latestItems) {
+    const parsed = tryParseJsonObjectText(row.content);
+    const role = row.role;
+    if (parsed && String(parsed.type || "").trim().toLowerCase() === "tool_call") {
+      const toolName = String(parsed.tool_name || parsed.tool || "").trim();
+      const callId = String(parsed.call_id || "").trim();
+      const argsPreview = truncateText(safeJsonStringify(parsed.arguments || {}), 220);
+      parts.push(`[assistant/tool_call] ${toolName} call_id=${callId} args=${argsPreview}`);
+      continue;
+    }
+    if (parsed && String(parsed.type || "").trim().toLowerCase() === "tool_output") {
+      const callId = String(parsed.call_id || "").trim();
+      const ok = parsed.ok === true ? "ok" : "error";
+      const resultPreview = truncateText(safeJsonStringify(parsed.result || {}), 240);
+      parts.push(`[user/tool_output] call_id=${callId} ${ok} result=${resultPreview}`);
+      continue;
+    }
+    parts.push(`[${role}] ${truncateText(row.content, 320)}`);
+  }
+  let summary = parts.join("\n");
+  if (summary.length > maxChars) {
+    summary = truncateText(summary, maxChars);
+  }
+  return summary;
+}
+
+function compactMessagesForContextRetry(messages, options = {}) {
+  const rows = normalizeHarnessMessagesForPrompt(messages);
+  if (rows.length <= Math.max(6, contextRetryKeepRecentMessages + 2)) {
+    return rows;
+  }
+
+  const keepIndexes = new Set();
+  const stableSystemMax = Math.min(3, rows.length);
+  for (let i = 0; i < stableSystemMax; i += 1) {
+    if (rows[i].role === "system") {
+      keepIndexes.add(i);
+    }
+  }
+  const tailCount = Math.max(4, contextRetryKeepRecentMessages);
+  const tailStart = Math.max(0, rows.length - tailCount);
+  for (let i = tailStart; i < rows.length; i += 1) {
+    keepIndexes.add(i);
+  }
+
+  const dropped = [];
+  const selected = [];
+  for (let i = 0; i < rows.length; i += 1) {
+    if (keepIndexes.has(i)) {
+      selected.push(rows[i]);
+    } else {
+      dropped.push(rows[i]);
+    }
+  }
+
+  const summary = buildCompactionCheckpointFromMessages(dropped, {
+    maxChars: 2600,
+    includeHeader: true,
+  });
+  const result = [];
+  let insertedSummary = false;
+  for (const row of selected) {
+    const isStableSystem = row.role === "system" && !insertedSummary;
+    result.push(row);
+    if (isStableSystem && summary) {
+      result.push({
+        role: "system",
+        content: [
+          "<context_checkpoint>",
+          summary,
+          options?.reason ? `reason=${String(options.reason).trim()}` : "",
+          options?.step ? `step=${Number(options.step) || 0}` : "",
+          "</context_checkpoint>",
+        ].filter(Boolean).join("\n"),
+      });
+      insertedSummary = true;
+    }
+  }
+  if (!insertedSummary && summary) {
+    result.unshift({
+      role: "system",
+      content: `<context_checkpoint>\n${summary}\n</context_checkpoint>`,
+    });
+  }
+  return normalizeHarnessMessagesForPrompt(result);
+}
+
+function nextSessionToolCallId(session) {
+  const safeSession = ensureSessionShape(session);
+  const seq = safeSession.nextToolCallSeq;
+  safeSession.nextToolCallSeq += 1;
+  return `call-${String(seq).padStart(4, "0")}`;
+}
+
 function trimHistory(messages) {
   const maxMessages = Math.max(1, maxHistoryPairs) * 2;
-  if (messages.length <= maxMessages) return messages;
+  if (!Array.isArray(messages) || messages.length <= maxMessages) return messages;
   return messages.slice(messages.length - maxMessages);
+}
+
+function recordSessionTurnJournal(session, {
+  prompt,
+  assistantText,
+  toolCallCount = 0,
+  toolStats = null,
+}) {
+  const safeSession = ensureSessionShape(session);
+  const stats = toolStats && typeof toolStats === "object"
+    ? summarizeToolStats(toolStats)
+    : "";
+  safeSession.turnJournal.push({
+    prompt: truncateText(String(prompt || "").trim(), 1600),
+    assistant: truncateText(String(assistantText || "").trim(), 2400),
+    toolCallCount: Number.isInteger(toolCallCount) ? toolCallCount : 0,
+    stats,
+    createdAt: new Date().toISOString(),
+  });
+  if (safeSession.turnJournal.length > 40) {
+    safeSession.turnJournal = safeSession.turnJournal.slice(-40);
+  }
+}
+
+function compactSessionHistoryIfNeeded(session) {
+  const safeSession = ensureSessionShape(session);
+  const maxMessages = Math.max(1, maxHistoryPairs) * 2;
+  if (safeSession.messages.length <= maxMessages) {
+    return;
+  }
+  const keepRecentMessages = Math.max(2, historyCompactionKeepRecentPairs) * 2;
+  const keepStart = Math.max(0, safeSession.messages.length - keepRecentMessages);
+  const dropped = safeSession.messages.slice(0, keepStart);
+  const kept = safeSession.messages.slice(keepStart);
+  const checkpoint = buildCompactionCheckpointFromMessages(dropped, {
+    maxChars: 4200,
+    includeHeader: false,
+  });
+  if (checkpoint) {
+    const block = [
+      `# compact checkpoint v${safeSession.compactVersion + 1}`,
+      `created_at=${new Date().toISOString()}`,
+      checkpoint,
+    ].join("\n");
+    safeSession.compactSummary = safeSession.compactSummary
+      ? `${safeSession.compactSummary}\n\n${block}`
+      : block;
+    safeSession.compactVersion += 1;
+    if (safeSession.compactSummary.length > historyCompactionSummaryMaxChars) {
+      safeSession.compactSummary = safeSession.compactSummary.slice(
+        safeSession.compactSummary.length - historyCompactionSummaryMaxChars,
+      );
+    }
+  }
+  safeSession.messages = trimHistory(kept);
+}
+
+function recordSessionConversationTurn(session, {
+  prompt,
+  assistantText,
+  toolCallCount = 0,
+  toolStats = null,
+}) {
+  const safeSession = ensureSessionShape(session);
+  safeSession.messages.push({ role: "user", content: String(prompt || "").trim() });
+  safeSession.messages.push({ role: "assistant", content: String(assistantText || "").trim() });
+  recordSessionTurnJournal(safeSession, {
+    prompt,
+    assistantText,
+    toolCallCount,
+    toolStats,
+  });
+  compactSessionHistoryIfNeeded(safeSession);
+  safeSession.messages = trimHistory(safeSession.messages);
+}
+
+function buildSessionCompactedContextMessage(session) {
+  const safeSession = ensureSessionShape(session);
+  const blocks = [];
+  if (safeSession.compactSummary) {
+    blocks.push("Compacted prior context:");
+    blocks.push(safeSession.compactSummary);
+  }
+  if (safeSession.turnJournal.length > 0) {
+    const recentTurns = safeSession.turnJournal.slice(-6);
+    blocks.push("Recent turn journal:");
+    for (let i = 0; i < recentTurns.length; i += 1) {
+      const item = recentTurns[i];
+      blocks.push([
+        `- turn ${i + 1}:`,
+        `question=${item.prompt}`,
+        `answer=${truncateText(item.assistant, 600)}`,
+        `tool_calls=${item.toolCallCount}`,
+        item.stats ? `stats=${item.stats}` : "",
+      ].filter(Boolean).join("\n  "));
+    }
+  }
+  const text = blocks.join("\n");
+  return truncateText(text, 7000);
 }
 
 function isContextExceededError(err) {
@@ -3955,21 +5584,6 @@ function isContextExceededError(err) {
     || "",
   );
   return /context size has been exceeded/i.test(payloadError);
-}
-
-function compactMessagesForContextRetry(messages) {
-  const rows = Array.isArray(messages) ? messages : [];
-  if (rows.length <= 6) {
-    return rows;
-  }
-  const stableSystem = rows
-    .filter((row, index) => index < 2 && row?.role === "system")
-    .map((row) => ({ role: row.role, content: row.content }));
-  const tail = rows
-    .slice(-6)
-    .filter((row) => row && typeof row === "object")
-    .map((row) => ({ role: row.role, content: row.content }));
-  return [...stableSystem, ...tail];
 }
 
 function renderUserTurn(userPrompt) {
@@ -4075,15 +5689,116 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && pathname === "/api/workspace/info") {
+    const state = getWorkspaceState();
     const text = [
-      `root: ${workspaceRoot}`,
-      `shell allowlist: ${shellAllowlist.join(", ")}`,
-      `uv_bin: ${configuredUvBin || "(auto lookup)"}`,
-      `python_bin: ${configuredPythonBin || "(auto lookup)"}`,
+      `root: ${state.workspaceRoot}`,
+      `default: ${state.defaultWorkspaceRoot}`,
+      `shell allowlist: ${state.shellAllowlist.join(", ")}`,
+      "read_scope: local files (anywhere) + http(s) URLs",
+      "list_dir_scope: workspace root only",
+      "write_scope: workspace root only",
+      `uv_bin: ${state.uvBin || "(auto lookup)"}`,
+      `python_bin: ${state.pythonBin || "(auto lookup)"}`,
       `generation: temperature=${generationTemperatureDefault} top_p=${generationTopP} top_k=${generationTopK} min_p=${generationMinP}`,
       `generation context: max_tokens=${generationMaxContextTokens} reserve=${generationContextReserveTokens}`,
     ].join("\n");
     send(res, 200, `<pre class="workspace-box">${escapeHtml(text)}</pre>`, "text/html; charset=utf-8");
+    return;
+  }
+
+  if (req.method === "GET" && pathname === "/api/workspace/state") {
+    const state = getWorkspaceState();
+    send(res, 200, {
+      ok: true,
+      ...state,
+    }, "application/json; charset=utf-8");
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/workspace/reset") {
+    try {
+      const nextRoot = await setWorkspaceRoot(defaultWorkspaceRoot, { createIfMissing: true });
+      send(res, 200, {
+        ok: true,
+        workspaceRoot: nextRoot,
+      }, "application/json; charset=utf-8");
+    } catch (err) {
+      send(res, 200, {
+        ok: false,
+        error: err?.message || String(err),
+      }, "application/json; charset=utf-8");
+    }
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/workspace/set") {
+    try {
+      const bodyText = await readBody(req);
+      const contentType = String(req.headers["content-type"] || "").toLowerCase();
+      let nextPath = "";
+      if (contentType.includes("application/json")) {
+        try {
+          const payload = JSON.parse(bodyText || "{}");
+          nextPath = String(payload?.path || payload?.workspaceRoot || "").trim();
+        } catch {
+          nextPath = "";
+        }
+      } else {
+        const form = new URLSearchParams(bodyText || "");
+        nextPath = String(form.get("path") || form.get("workspaceRoot") || "").trim();
+      }
+      if (!nextPath) {
+        send(res, 200, {
+          ok: false,
+          error: "Workspace path is required.",
+          workspaceRoot,
+        }, "application/json; charset=utf-8");
+        return;
+      }
+      console.log(`[node-htmx] workspace set requested: ${nextPath}`);
+      const nextRoot = await setWorkspaceRoot(nextPath, { createIfMissing: true });
+      console.log(`[node-htmx] workspace set applied: ${nextRoot}`);
+      send(res, 200, {
+        ok: true,
+        workspaceRoot: nextRoot,
+      }, "application/json; charset=utf-8");
+    } catch (err) {
+      console.warn(`[node-htmx] workspace set failed: ${err?.message || String(err)}`);
+      send(res, 200, {
+        ok: false,
+        error: err?.message || String(err),
+        workspaceRoot,
+      }, "application/json; charset=utf-8");
+    }
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/workspace/select") {
+    try {
+      console.log("[node-htmx] workspace select requested");
+      const selected = await openNativeFolderPicker(workspaceRoot);
+      if (!selected) {
+        console.log("[node-htmx] workspace select canceled");
+        send(res, 200, {
+          ok: false,
+          canceled: true,
+          workspaceRoot,
+        }, "application/json; charset=utf-8");
+        return;
+      }
+      const nextRoot = await setWorkspaceRoot(selected, { createIfMissing: false });
+      console.log(`[node-htmx] workspace select applied: ${nextRoot}`);
+      send(res, 200, {
+        ok: true,
+        workspaceRoot: nextRoot,
+      }, "application/json; charset=utf-8");
+    } catch (err) {
+      console.warn(`[node-htmx] workspace select failed: ${err?.message || String(err)}`);
+      send(res, 200, {
+        ok: false,
+        error: err?.message || String(err),
+      }, "application/json; charset=utf-8");
+    }
     return;
   }
 
@@ -4111,11 +5826,26 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && pathname === "/api/tools/specs") {
+    send(res, 200, {
+      ok: true,
+      harness: "codex_style_tool_call",
+      decisionSchema: autoToolDecisionSchemaDescription,
+      tools: autoToolSpecs,
+      toolNames: autoToolNames,
+    }, "application/json; charset=utf-8");
+    return;
+  }
+
   if (req.method === "POST" && pathname === "/api/session/reset") {
     const session = getOrCreateSession(req, res);
     session.messages = [];
     session.toolLogs = [];
     session.plan = [];
+    session.turnJournal = [];
+    session.compactSummary = "";
+    session.compactVersion = 0;
+    session.nextToolCallSeq = 1;
     send(res, 200, "", "text/html; charset=utf-8");
     return;
   }
@@ -4635,9 +6365,12 @@ const server = http.createServer(async (req, res) => {
       const assistantText = autoResult.assistantText || "(empty response)";
       const elapsedMs = Date.now() - started;
 
-      session.messages.push({ role: "user", content: prompt });
-      session.messages.push({ role: "assistant", content: assistantText });
-      session.messages = trimHistory(session.messages);
+      recordSessionConversationTurn(session, {
+        prompt,
+        assistantText,
+        toolCallCount: Number(autoResult.executedToolCount || 0),
+        toolStats: autoResult.toolStats || null,
+      });
 
       send(
         res,
@@ -4759,9 +6492,12 @@ const server = http.createServer(async (req, res) => {
       const assistantText = autoResult.assistantText || "(empty response)";
       const elapsedMs = Date.now() - started;
 
-      session.messages.push({ role: "user", content: prompt });
-      session.messages.push({ role: "assistant", content: assistantText });
-      session.messages = trimHistory(session.messages);
+      recordSessionConversationTurn(session, {
+        prompt,
+        assistantText,
+        toolCallCount: Number(autoResult.executedToolCount || 0),
+        toolStats: autoResult.toolStats || null,
+      });
 
       writeNdjson(res, {
         type: "assistant_turn",

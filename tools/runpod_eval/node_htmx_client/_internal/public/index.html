@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>RunPod Local Coder (Node + htmx)</title>
+  <title>LocaLingo</title>
   <link rel="stylesheet" href="/styles.css">
   <script src="/vendor/htmx.min.js"></script>
   <script src="/app.js" defer></script>
@@ -11,211 +11,38 @@
 <body>
   <main class="layout">
     <header class="hero">
-      <h1>RunPod Local Coder</h1>
-      <p class="muted">Node.js + htmx lightweight coding assistant</p>
+      <h1>LocaLingo</h1>
     </header>
 
     <section class="panel controls">
-      <form
-        id="chat-form"
-        hx-post="/api/chat/form"
-        hx-target="#chat-log"
-        hx-swap="beforeend"
-        hx-indicator="#req-indicator"
-      >
-        <div class="row">
-          <label for="model">Model</label>
-          <select id="model" name="model" hx-get="/api/models/options" hx-trigger="load" hx-target="#model" hx-swap="innerHTML">
-            <option>Loading...</option>
-          </select>
+      <div class="workspace-info">
+        <label for="workspace-root">Workspace Root</label>
+        <div id="workspace-root" class="workspace-root">Loading workspace...</div>
+        <div class="actions">
+          <button type="button" id="workspace-select-btn">Select Workspace...</button>
         </div>
+      </div>
 
-        <div class="row">
-          <label for="temperature">Temperature</label>
-          <input id="temperature" name="temperature" type="number" min="0" max="2" step="0.1" value="0.7">
-        </div>
-
-        <div class="row">
-          <label for="systemPrompt">System Prompt (optional)</label>
-          <textarea id="systemPrompt" name="systemPrompt" rows="2" placeholder="You are a helpful assistant."></textarea>
-        </div>
-
+      <form id="chat-form">
         <div class="row">
           <label for="prompt">Prompt</label>
-          <textarea id="prompt" name="prompt" rows="4" placeholder="Type your message..." required></textarea>
-        </div>
-
-        <div class="row check-row">
-          <label class="checkbox-inline">
-            <input type="checkbox" name="codingMode" checked>
-            Use coding-focused system hint
-          </label>
-          <label class="checkbox-inline">
-            <input type="checkbox" name="includeToolContext" checked>
-            Include local tool context
-          </label>
+          <textarea id="prompt" name="prompt" rows="5" placeholder="Describe the task you want to run" required></textarea>
         </div>
 
         <div class="actions">
-          <button type="submit">Send</button>
+          <button type="submit">Run</button>
           <button
             type="button"
             hx-post="/api/session/reset"
             hx-target="#chat-log"
             hx-swap="innerHTML"
-          >Clear Session</button>
-          <button
-            type="button"
-            hx-post="/api/tools/reset"
-            hx-target="#tool-log"
-            hx-swap="innerHTML"
-          >Clear Tools</button>
-          <span id="req-indicator" class="indicator htmx-indicator">Sending...</span>
+          >Clear</button>
+          <span id="req-indicator" class="indicator">Idle</span>
         </div>
       </form>
     </section>
 
     <section class="panel">
-      <h2>Local Tools</h2>
-      <div id="workspace-info" class="workspace-info" hx-get="/api/workspace/info" hx-trigger="load" hx-swap="innerHTML">Loading workspace...</div>
-
-      <div class="tool-grid">
-        <form
-          id="tool-read-form"
-          class="tool-form"
-          hx-post="/api/tools/read"
-          hx-target="#tool-log"
-          hx-swap="beforeend"
-          hx-indicator="#tool-indicator"
-        >
-          <h3>Read File</h3>
-          <label for="tool-read-path">Path (workspace relative)</label>
-          <input id="tool-read-path" name="path" type="text" placeholder="yakulingo/services/translation_service.py" required>
-          <button type="submit">Read</button>
-        </form>
-
-        <form
-          id="tool-search-form"
-          class="tool-form"
-          hx-post="/api/tools/search"
-          hx-target="#tool-log"
-          hx-swap="beforeend"
-          hx-indicator="#tool-indicator"
-        >
-          <h3>Search Text</h3>
-          <label for="tool-search-pattern">Pattern</label>
-          <input id="tool-search-pattern" name="pattern" type="text" placeholder="TODO|FIXME" required>
-          <label for="tool-search-glob">Glob (optional)</label>
-          <input id="tool-search-glob" name="glob" type="text" placeholder="**/*.py">
-          <button type="submit">Search</button>
-        </form>
-
-        <form
-          id="tool-shell-form"
-          class="tool-form"
-          hx-post="/api/tools/shell"
-          hx-target="#tool-log"
-          hx-swap="beforeend"
-          hx-indicator="#tool-indicator"
-        >
-          <h3>Run Shell (safe list only)</h3>
-          <label for="tool-shell-command">Command</label>
-          <input id="tool-shell-command" name="command" type="text" placeholder="git status" required>
-          <label class="checkbox-inline">
-            <input id="tool-shell-approved" name="approved" type="checkbox">
-            I approve this command
-          </label>
-          <button type="submit">Run</button>
-        </form>
-
-        <form
-          id="tool-write-form"
-          class="tool-form"
-          hx-post="/api/tools/write"
-          hx-target="#tool-log"
-          hx-swap="beforeend"
-          hx-indicator="#tool-indicator"
-        >
-          <h3>Write File</h3>
-          <label for="tool-write-path">Path (workspace relative)</label>
-          <input id="tool-write-path" name="path" type="text" placeholder="notes/plan.md" required>
-          <label for="tool-write-content">Content</label>
-          <textarea id="tool-write-content" name="content" rows="5" placeholder="Write content here..."></textarea>
-          <label class="checkbox-inline">
-            <input id="tool-write-approved" name="confirmWrite" type="checkbox">
-            I approve writing this file
-          </label>
-          <button type="submit">Write</button>
-        </form>
-      </div>
-      <div class="actions">
-        <span id="tool-indicator" class="indicator htmx-indicator">Running tool...</span>
-      </div>
-    </section>
-
-    <section class="panel">
-      <h2>Autonomous Loop</h2>
-      <form
-        id="autoloop-form"
-        class="autoloop-form"
-        hx-post="/api/autoloop/run"
-        hx-target="#tool-log"
-        hx-swap="beforeend"
-        hx-indicator="#autoloop-indicator"
-      >
-        <div class="row">
-          <label for="autoloop-objective">Objective</label>
-          <textarea id="autoloop-objective" name="objective" rows="4" placeholder="例: server.mjs の /api/chat/form を関数分割して可読性を上げる" required></textarea>
-        </div>
-
-        <div class="autoloop-grid">
-          <div class="row">
-            <label for="autoloop-model">Model</label>
-            <input id="autoloop-model" name="model" type="text" placeholder="gpt-oss-swallow-120b-iq4xs">
-          </div>
-          <div class="row">
-            <label for="autoloop-temperature">Temperature</label>
-            <input id="autoloop-temperature" name="temperature" type="number" min="0" max="2" step="0.1" value="0.2">
-          </div>
-          <div class="row">
-            <label for="autoloop-iters">Iterations</label>
-            <input id="autoloop-iters" name="maxIterations" type="number" min="1" max="3" value="1">
-          </div>
-        </div>
-
-        <div class="row check-row">
-          <label class="checkbox-inline">
-            <input type="checkbox" name="includeToolContext" checked>
-            Include local tool context
-          </label>
-          <label class="checkbox-inline">
-            <input type="checkbox" name="autoApply" checked>
-            Auto apply changes
-          </label>
-          <label class="checkbox-inline">
-            <input type="checkbox" name="runValidation">
-            Run validation commands from plan
-          </label>
-          <label class="checkbox-inline">
-            <input id="autoloop-approve" type="checkbox" name="approveAutoApply">
-            I approve autonomous apply
-          </label>
-        </div>
-
-        <div class="actions">
-          <button type="submit">Run Autonomous Loop</button>
-          <span id="autoloop-indicator" class="indicator htmx-indicator">Running autonomous loop...</span>
-        </div>
-      </form>
-    </section>
-
-    <section class="panel">
-      <h2>Tool Log</h2>
-      <div id="tool-log" class="chat-log tool-log"></div>
-    </section>
-
-    <section class="panel">
-      <h2>Chat</h2>
       <div id="chat-log" class="chat-log"></div>
     </section>
   </main>

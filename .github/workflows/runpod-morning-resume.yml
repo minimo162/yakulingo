@@ -57,31 +57,29 @@ jobs:
             mkdir -p "${LOG_DIR}" /workspace/scripts
             echo "[auto-bootstrap] start $(date -Is)" >> "${LOG_FILE}"
 
-            if [ ! -x /workspace/scripts/runpod_nv_bootstrap.sh ]; then
-              if ! command -v git >/dev/null 2>&1; then
-                export DEBIAN_FRONTEND=noninteractive
-                apt-get update >> "${LOG_FILE}" 2>&1
-                apt-get install -y git >> "${LOG_FILE}" 2>&1
-              fi
+            if ! command -v git >/dev/null 2>&1; then
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update >> "${LOG_FILE}" 2>&1
+              apt-get install -y git >> "${LOG_FILE}" 2>&1
+            fi
 
-              if [ ! -d "${REPO_DIR}/.git" ]; then
+            if [ ! -d "${REPO_DIR}/.git" ]; then
+              rm -rf "${REPO_DIR}"
+              git clone --depth 1 --branch main https://github.com/minimo162/yakulingo.git "${REPO_DIR}" >> "${LOG_FILE}" 2>&1
+            else
+              git -C "${REPO_DIR}" fetch origin main --depth 1 >> "${LOG_FILE}" 2>&1 || true
+              if ! git -C "${REPO_DIR}" checkout main >> "${LOG_FILE}" 2>&1 || ! git -C "${REPO_DIR}" pull --ff-only origin main >> "${LOG_FILE}" 2>&1; then
                 rm -rf "${REPO_DIR}"
                 git clone --depth 1 --branch main https://github.com/minimo162/yakulingo.git "${REPO_DIR}" >> "${LOG_FILE}" 2>&1
-              else
-                git -C "${REPO_DIR}" fetch origin main --depth 1 >> "${LOG_FILE}" 2>&1 || true
-                if ! git -C "${REPO_DIR}" checkout main >> "${LOG_FILE}" 2>&1 || ! git -C "${REPO_DIR}" pull --ff-only origin main >> "${LOG_FILE}" 2>&1; then
-                  rm -rf "${REPO_DIR}"
-                  git clone --depth 1 --branch main https://github.com/minimo162/yakulingo.git "${REPO_DIR}" >> "${LOG_FILE}" 2>&1
-                fi
               fi
-
-              cp "${REPO_DIR}/tools/runpod_eval/runpod_nv_bootstrap.sh" /workspace/scripts/runpod_nv_bootstrap.sh
-              if [ -f "${REPO_DIR}/tools/runpod_eval/runpod_lobehub_bootstrap.sh" ]; then
-                cp "${REPO_DIR}/tools/runpod_eval/runpod_lobehub_bootstrap.sh" /workspace/scripts/runpod_lobehub_bootstrap.sh
-                chmod +x /workspace/scripts/runpod_lobehub_bootstrap.sh
-              fi
-              chmod +x /workspace/scripts/runpod_nv_bootstrap.sh
             fi
+
+            cp "${REPO_DIR}/tools/runpod_eval/runpod_nv_bootstrap.sh" /workspace/scripts/runpod_nv_bootstrap.sh
+            if [ -f "${REPO_DIR}/tools/runpod_eval/runpod_lobehub_bootstrap.sh" ]; then
+              cp "${REPO_DIR}/tools/runpod_eval/runpod_lobehub_bootstrap.sh" /workspace/scripts/runpod_lobehub_bootstrap.sh
+              chmod +x /workspace/scripts/runpod_lobehub_bootstrap.sh
+            fi
+            chmod +x /workspace/scripts/runpod_nv_bootstrap.sh
 
             FAST_START=1 bash /workspace/scripts/runpod_nv_bootstrap.sh >> "${LOG_FILE}" 2>&1
             if [ -f /workspace/.enable_lobehub_bootstrap ] && [ -x /workspace/scripts/runpod_lobehub_bootstrap.sh ]; then

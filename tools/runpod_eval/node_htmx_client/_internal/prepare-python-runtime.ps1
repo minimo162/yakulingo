@@ -49,6 +49,7 @@ $runtimeRoot = Join-Path $baseDir ".runtime"
 $uvDir = Join-Path $runtimeRoot "uv"
 $uvExe = Join-Path $uvDir "uv.exe"
 $pythonManagedDir = Join-Path $runtimeRoot "python-managed"
+$pythonVenvDir = Join-Path $runtimeRoot "python-venv"
 $pythonBinFile = Join-Path $runtimeRoot "python-bin.txt"
 $stampFile = Join-Path $runtimeRoot "python-runtime.stamp"
 
@@ -61,6 +62,7 @@ $requirements = @(
 
 $stamp = @(
   "python_spec=$PythonSpec",
+  "install_mode=uv_venv",
   "requirements=$($requirements -join ';')"
 ) -join "`n"
 
@@ -141,20 +143,39 @@ try {
     throw "Resolved Python path is outside runtime root: $pythonPath"
   }
 
+  if (Test-Path $pythonVenvDir) {
+    Remove-Item -Recurse -Force $pythonVenvDir -ErrorAction SilentlyContinue
+  }
+
+  Write-Host "Creating runtime virtual environment (managed by uv):"
+  Write-Host "  venv: $pythonVenvDir"
+  & $uvExe venv --python $pythonPath $pythonVenvDir
+  if ($LASTEXITCODE -ne 0) {
+    throw "uv venv failed (exit=$LASTEXITCODE)."
+  }
+
+  $venvPython = Join-Path $pythonVenvDir "Scripts\python.exe"
+  if (!(Test-Path $venvPython)) {
+    throw "Virtual environment python was not found: $venvPython"
+  }
+  if (-not (Test-PathPrefix -PathValue $venvPython -PrefixPath $runtimeRoot)) {
+    throw "Resolved venv Python path is outside runtime root: $venvPython"
+  }
+
   Write-Host "Installing runtime Python packages:"
   Write-Host "  $($requirements -join ', ')"
-  & $uvExe pip install --python $pythonPath @requirements
+  & $uvExe pip install --python $venvPython @requirements
   if ($LASTEXITCODE -ne 0) {
     throw "uv pip install failed (exit=$LASTEXITCODE)."
   }
 
-  Set-Content -Path $pythonBinFile -Value $pythonPath -Encoding ASCII
+  Set-Content -Path $pythonBinFile -Value $venvPython -Encoding ASCII
   Set-Content -Path $stampFile -Value $stamp -Encoding UTF8
 
   Write-Host "Bundled Python runtime prepared:"
   Write-Host "  uv: $uvExe"
-  Write-Host "  python: $pythonPath"
-  & $pythonPath -V
+  Write-Host "  python: $venvPython"
+  & $venvPython -V
 } finally {
   foreach ($key in $savedEnv.Keys) {
     if ($null -eq $savedEnv[$key]) {

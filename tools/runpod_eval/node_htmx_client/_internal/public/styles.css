@@ -168,16 +168,22 @@ button[type="submit"] {
   margin-bottom: 12px;
 }
 
-.workspace-box {
+.workspace-box,
+.workspace-root {
   margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 8px;
   color: var(--muted);
   background: #0f182a;
   font-size: 12px;
+}
+
+.workspace-root {
+  margin-bottom: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .turn {

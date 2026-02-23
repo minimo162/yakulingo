@@ -338,7 +338,9 @@ ensure_lobehub_build_for_start() {
     set +a
     local node_opts="${NODE_OPTIONS:---max-old-space-size=8192}"
     # Use direct next build to avoid heavy prebuild/lint pipeline from package scripts.
-    if ! NODE_OPTIONS="${node_opts}" pnpm exec next build --no-lint; then
+    if pnpm exec next build --help 2>/dev/null | grep -q -- '--no-lint'; then
+      NODE_OPTIONS="${node_opts}" pnpm exec next build --no-lint
+    else
       NODE_OPTIONS="${node_opts}" pnpm exec next build
     fi
   )

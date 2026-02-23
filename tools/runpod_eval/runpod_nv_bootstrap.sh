@@ -28,9 +28,47 @@ INSTALL_NODE_TOOLCHAIN="${INSTALL_NODE_TOOLCHAIN:-0}"
 SYNC_YAKULINGO="${SYNC_YAKULINGO:-1}"
 SKIP_BASE_PACKAGES="${SKIP_BASE_PACKAGES:-0}"
 FAST_START="${FAST_START:-0}"
+CLEANUP_WORKSPACE="${CLEANUP_WORKSPACE:-1}"
+CLEANUP_LOG_RETENTION_DAYS="${CLEANUP_LOG_RETENTION_DAYS:-7}"
+BACKUP_KEEP_COUNT="${BACKUP_KEEP_COUNT:-0}"
 
 log() {
   printf '[bootstrap] %s\n' "$*"
+}
+
+prune_backup_dirs() {
+  local base_dir="$1"
+  local keep_count="$2"
+  local -a sorted=()
+
+  mapfile -t sorted < <(ls -1dt "${base_dir}.backup."* 2>/dev/null || true)
+  if [ "${#sorted[@]}" -le "${keep_count}" ]; then
+    return
+  fi
+
+  local idx=0
+  local d
+  for d in "${sorted[@]}"; do
+    idx=$((idx + 1))
+    if [ "${idx}" -le "${keep_count}" ]; then
+      continue
+    fi
+    rm -rf "${d}"
+    log "cleanup removed backup: ${d}"
+  done
+}
+
+cleanup_workspace_artifacts() {
+  if [ "${CLEANUP_WORKSPACE}" != "1" ]; then
+    log "skip workspace cleanup (CLEANUP_WORKSPACE=${CLEANUP_WORKSPACE})"
+    return
+  fi
+
+  mkdir -p "${LOG_DIR}"
+  find "${LOG_DIR}" -maxdepth 1 -type f -name '*.log' -mtime +"${CLEANUP_LOG_RETENTION_DAYS}" -delete 2>/dev/null || true
+  rm -rf "${WORKSPACE_DIR}/_yakulingo_bootstrap" "${WORKSPACE_DIR}/.tmp-lobe-chat-ref"
+  prune_backup_dirs "${WORKSPACE_DIR}/yakulingo" "${BACKUP_KEEP_COUNT}"
+  prune_backup_dirs "${WORKSPACE_DIR}/lobe-chat" "${BACKUP_KEEP_COUNT}"
 }
 
 apply_fast_start_defaults() {
@@ -327,6 +365,7 @@ EOF
 
 main() {
   apply_fast_start_defaults
+  cleanup_workspace_artifacts
   ensure_base_packages
   sync_yakulingo_repo
   sync_bootstrap_script_copy

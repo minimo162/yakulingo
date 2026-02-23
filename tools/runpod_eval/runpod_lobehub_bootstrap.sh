@@ -44,9 +44,48 @@ LOBE_RUN_MODE="${LOBE_RUN_MODE:-start}" # start|dev
 LOBE_START_LOG_FILE="${LOG_DIR}/lobehub-start.log"
 LOBE_DEV_LOG_FILE="${LOG_DIR}/lobehub-dev.log"
 LOBE_ACTIVE_LOG_FILE="${LOBE_START_LOG_FILE}"
+CLEANUP_WORKSPACE="${CLEANUP_WORKSPACE:-1}"
+CLEANUP_LOG_RETENTION_DAYS="${CLEANUP_LOG_RETENTION_DAYS:-7}"
+LOBE_CHAT_BACKUP_KEEP_COUNT="${LOBE_CHAT_BACKUP_KEEP_COUNT:-0}"
+KEEP_LOBE_CHAT_BACKUP_ON_SYNC_FAIL="${KEEP_LOBE_CHAT_BACKUP_ON_SYNC_FAIL:-0}"
 
 log() {
   printf '[lobehub-bootstrap] %s\n' "$*"
+}
+
+prune_backup_dirs() {
+  local base_dir="$1"
+  local keep_count="$2"
+  local -a sorted=()
+
+  mapfile -t sorted < <(ls -1dt "${base_dir}.backup."* 2>/dev/null || true)
+  if [ "${#sorted[@]}" -le "${keep_count}" ]; then
+    return
+  fi
+
+  local idx=0
+  local d
+  for d in "${sorted[@]}"; do
+    idx=$((idx + 1))
+    if [ "${idx}" -le "${keep_count}" ]; then
+      continue
+    fi
+    rm -rf "${d}"
+    log "cleanup removed backup: ${d}"
+  done
+}
+
+cleanup_workspace_artifacts() {
+  if [ "${CLEANUP_WORKSPACE}" != "1" ]; then
+    log "skip workspace cleanup (CLEANUP_WORKSPACE=${CLEANUP_WORKSPACE})"
+    return
+  fi
+
+  mkdir -p "${LOG_DIR}"
+  find "${LOG_DIR}" -maxdepth 1 -type f -name '*.log' -mtime +"${CLEANUP_LOG_RETENTION_DAYS}" -delete 2>/dev/null || true
+  rm -rf "${WORKSPACE_DIR}/_yakulingo_bootstrap" "${WORKSPACE_DIR}/.tmp-lobe-chat-ref"
+  prune_backup_dirs "${WORKSPACE_DIR}/lobe-chat" "${LOBE_CHAT_BACKUP_KEEP_COUNT}"
+  prune_backup_dirs "${WORKSPACE_DIR}/yakulingo" "${LOBE_CHAT_BACKUP_KEEP_COUNT}"
 }
 
 apply_fast_start_defaults() {
@@ -121,8 +160,13 @@ sync_lobe_chat_repo() {
   fi
 
   backup="${LOBE_CHAT_DIR}.backup.$(date +%Y%m%d-%H%M%S)"
-  log "WARN: repo update failed. backup current dir -> ${backup}"
-  mv "${LOBE_CHAT_DIR}" "${backup}"
+  if [ "${KEEP_LOBE_CHAT_BACKUP_ON_SYNC_FAIL}" = "1" ]; then
+    log "WARN: repo update failed. backup current dir -> ${backup}"
+    mv "${LOBE_CHAT_DIR}" "${backup}"
+  else
+    log "WARN: repo update failed. remove current dir and re-clone (no backup)"
+    rm -rf "${LOBE_CHAT_DIR}"
+  fi
   git clone --depth 1 --branch "${LOBE_CHAT_REF}" "${LOBE_CHAT_REPO_URL}" "${LOBE_CHAT_DIR}"
 }
 
@@ -445,6 +489,7 @@ health_check() {
 
 main() {
   apply_fast_start_defaults
+  cleanup_workspace_artifacts
   ensure_base_packages
   ensure_node_toolchain
   ensure_pnpm_build_policy

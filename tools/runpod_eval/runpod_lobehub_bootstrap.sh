@@ -40,6 +40,10 @@ FAST_START="${FAST_START:-0}"
 PGVECTOR_VERSION="${PGVECTOR_VERSION:-v0.8.1}"
 POSTGRES_CLUSTER_VERSION="${POSTGRES_CLUSTER_VERSION:-}"
 POSTGRES_CLUSTER_NAME="${POSTGRES_CLUSTER_NAME:-}"
+LOBE_RUN_MODE="${LOBE_RUN_MODE:-start}" # start|dev
+LOBE_START_LOG_FILE="${LOG_DIR}/lobehub-start.log"
+LOBE_DEV_LOG_FILE="${LOG_DIR}/lobehub-dev.log"
+LOBE_ACTIVE_LOG_FILE="${LOBE_START_LOG_FILE}"
 
 log() {
   printf '[lobehub-bootstrap] %s\n' "$*"
@@ -271,14 +275,54 @@ run_db_migration() {
   )
 }
 
-start_lobehub_dev() {
+ensure_lobehub_build_for_start() {
+  if [ "${LOBE_RUN_MODE}" != "start" ]; then
+    return
+  fi
+
+  if [ -f "${LOBE_CHAT_DIR}/.next/BUILD_ID" ]; then
+    log "next build cache found. skip build for next start"
+    return
+  fi
+
+  log "build lobehub for next start (first time may take long)"
+  (
+    cd "${LOBE_CHAT_DIR}"
+    set -a
+    # shellcheck disable=SC1090
+    source "${LOBE_ENV_FILE}"
+    set +a
+    local node_opts="${NODE_OPTIONS:---max-old-space-size=8192}"
+    NODE_OPTIONS="${node_opts}" pnpm build
+  )
+}
+
+start_lobehub_app() {
   mkdir -p "${LOG_DIR}"
   pkill -f "next dev -H 0.0.0.0 -p ${LOBE_PORT}" 2>/dev/null || true
-  nohup bash -lc "cd '${LOBE_CHAT_DIR}' && set -a && source '${LOBE_ENV_FILE}' && set +a && pnpm exec next dev -H 0.0.0.0 -p ${LOBE_PORT} --webpack" \
-    > "${LOG_DIR}/lobehub-dev.log" 2>&1 &
+  pkill -f "next start -H 0.0.0.0 -p ${LOBE_PORT}" 2>/dev/null || true
+
+  local launch_cmd max_wait_loops
+  if [ "${LOBE_RUN_MODE}" = "start" ]; then
+    ensure_lobehub_build_for_start
+    launch_cmd="pnpm exec next start -H 0.0.0.0 -p ${LOBE_PORT}"
+    LOBE_ACTIVE_LOG_FILE="${LOBE_START_LOG_FILE}"
+    max_wait_loops=180
+  elif [ "${LOBE_RUN_MODE}" = "dev" ]; then
+    launch_cmd="pnpm exec next dev -H 0.0.0.0 -p ${LOBE_PORT} --webpack"
+    LOBE_ACTIVE_LOG_FILE="${LOBE_DEV_LOG_FILE}"
+    max_wait_loops=300
+  else
+    log "ERROR: unsupported LOBE_RUN_MODE=${LOBE_RUN_MODE} (allowed: start|dev)"
+    exit 1
+  fi
+
+  log "launch lobehub mode=${LOBE_RUN_MODE}"
+  nohup bash -lc "cd '${LOBE_CHAT_DIR}' && set -a && source '${LOBE_ENV_FILE}' && set +a && ${launch_cmd}" \
+    > "${LOBE_ACTIVE_LOG_FILE}" 2>&1 &
 
   local ready=0
-  for _ in $(seq 1 180); do
+  for _ in $(seq 1 "${max_wait_loops}"); do
     if curl -fsS "http://127.0.0.1:${LOBE_PORT}/" >/dev/null 2>&1; then
       ready=1
       break
@@ -287,7 +331,7 @@ start_lobehub_dev() {
   done
   if [ "${ready}" -ne 1 ]; then
     log "ERROR: lobehub did not become ready on port ${LOBE_PORT}"
-    tail -n 80 "${LOG_DIR}/lobehub-dev.log" || true
+    tail -n 120 "${LOBE_ACTIVE_LOG_FILE}" || true
     exit 1
   fi
 }
@@ -393,8 +437,8 @@ health_check() {
   if [ "${ok}" -ne 1 ]; then
     log "ERROR: unexpected health status for lobehub auth proxy"
     curl -sS "http://127.0.0.1:${LOBE_PORT}/" -o /tmp/lobehub-3210-error.html || true
-    log "hint: /tmp/lobehub-3210-error.html and ${LOG_DIR}/lobehub-dev.log"
-    tail -n 120 "${LOG_DIR}/lobehub-dev.log" || true
+    log "hint: /tmp/lobehub-3210-error.html and ${LOBE_ACTIVE_LOG_FILE}"
+    tail -n 120 "${LOBE_ACTIVE_LOG_FILE}" || true
     exit 1
   fi
 }
@@ -410,7 +454,7 @@ main() {
   ensure_db_and_env
   ensure_lobehub_dependencies
   run_db_migration
-  start_lobehub_dev
+  start_lobehub_app
   ensure_basic_auth_users
   write_lobehub_auth_nginx
   start_lobehub_auth_proxy

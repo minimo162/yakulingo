@@ -628,6 +628,8 @@ bash /workspace/scripts/runpod_lobehub_bootstrap.sh
 補足:
 - 初回のみ `pnpm install` が長時間かかる。
 - 認証ユーザーは既定で6人作成され、`/workspace/lobehub_basic_auth_users.txt` に保存される。
+- `lobe-chat` にローカル変更がある場合は、`/workspace/lobe-chat.backup.YYYYMMDD-HHMMSS` へ自動退避して再cloneする。
+- `pgvector` が無い環境では、`postgresql-<major>-pgvector` の導入を試み、無い場合はソースビルドで導入する。
 
 ```bash
 cat > /workspace/start.sh << 'SCRIPT_EOF'
@@ -3078,6 +3080,34 @@ FIRST_GGUF="$(ls /workspace/models/swallow-120b/IQ4_XS/*.gguf | sort | head -1)"
 TARGET_LINK="/root/.lmstudio/models/mmnga-o/GPT-OSS-Swallow-120B-RL-v0.1-gguf/$(basename "$FIRST_GGUF")"
 rm -f "$TARGET_LINK"
 lms import "$FIRST_GGUF" --user-repo mmnga-o/GPT-OSS-Swallow-120B-RL-v0.1-gguf --symbolic-link -y
+```
+
+### LobeHubマイグレーションで `extension "vector" is not available` が出る
+
+症状:
+- `runpod_lobehub_bootstrap.sh` 実行中の migrate で `CREATE EXTENSION vector` が失敗する。
+
+対処:
+1. 最新の `runpod_lobehub_bootstrap.sh` を使う（`pgvector` 自動導入対応済み）。
+2. 既に古いスクリプトを `/workspace/scripts` へ同期済みなら、`runpod_nv_bootstrap.sh` を再実行して同期し直す。
+3. その後に LobeHub 復旧を再実行する。
+```bash
+bash /workspace/scripts/runpod_nv_bootstrap.sh
+bash /workspace/scripts/runpod_lobehub_bootstrap.sh
+```
+
+### LobeHub更新で `package.json` ローカル変更により `git checkout` 失敗
+
+症状:
+- `error: Your local changes to the following files would be overwritten by checkout: package.json`
+
+対処:
+1. 最新の `runpod_lobehub_bootstrap.sh` を使う（失敗時に自動バックアップ+再clone）。
+2. 即時回避が必要なら手動退避して再実行する。
+```bash
+TS="$(date +%Y%m%d-%H%M%S)"
+mv /workspace/lobe-chat "/workspace/lobe-chat.backup.${TS}" 2>/dev/null || true
+bash /workspace/scripts/runpod_lobehub_bootstrap.sh
 ```
 
 ### `huggingface-cli: command not found` になる

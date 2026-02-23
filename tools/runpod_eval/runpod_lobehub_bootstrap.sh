@@ -34,6 +34,9 @@ AUTH_SECRET_FILE="${AUTH_SECRET_FILE:-${LOBE_ENV_DIR}/.auth_secret}"
 KEY_VAULTS_SECRET_FILE="${KEY_VAULTS_SECRET_FILE:-${LOBE_ENV_DIR}/.key_vaults_secret}"
 
 SKIP_PNPM_INSTALL="${SKIP_PNPM_INSTALL:-0}"
+PGVECTOR_VERSION="${PGVECTOR_VERSION:-v0.8.1}"
+POSTGRES_CLUSTER_VERSION="${POSTGRES_CLUSTER_VERSION:-}"
+POSTGRES_CLUSTER_NAME="${POSTGRES_CLUSTER_NAME:-}"
 
 log() {
   printf '[lobehub-bootstrap] %s\n' "$*"
@@ -61,6 +64,7 @@ ensure_node_toolchain() {
 }
 
 sync_lobe_chat_repo() {
+  local backup
   if [ ! -d "${LOBE_CHAT_DIR}/.git" ]; then
     log "clone lobe-chat repo -> ${LOBE_CHAT_DIR}"
     rm -rf "${LOBE_CHAT_DIR}"
@@ -69,17 +73,16 @@ sync_lobe_chat_repo() {
   fi
 
   log "update lobe-chat repo (${LOBE_CHAT_REF})"
-  if ! git -C "${LOBE_CHAT_DIR}" fetch origin "${LOBE_CHAT_REF}" --depth 1; then
-    log "WARN: git fetch failed. keep existing checkout."
+  if git -C "${LOBE_CHAT_DIR}" fetch origin "${LOBE_CHAT_REF}" --depth 1 &&
+    git -C "${LOBE_CHAT_DIR}" checkout "${LOBE_CHAT_REF}" &&
+    git -C "${LOBE_CHAT_DIR}" pull --ff-only origin "${LOBE_CHAT_REF}"; then
     return
   fi
-  if ! git -C "${LOBE_CHAT_DIR}" checkout "${LOBE_CHAT_REF}"; then
-    log "WARN: git checkout failed. keep existing branch."
-    return
-  fi
-  if ! git -C "${LOBE_CHAT_DIR}" pull --ff-only origin "${LOBE_CHAT_REF}"; then
-    log "WARN: git pull failed (local changes?). keep existing checkout."
-  fi
+
+  backup="${LOBE_CHAT_DIR}.backup.$(date +%Y%m%d-%H%M%S)"
+  log "WARN: repo update failed. backup current dir -> ${backup}"
+  mv "${LOBE_CHAT_DIR}" "${backup}"
+  git clone --depth 1 --branch "${LOBE_CHAT_REF}" "${LOBE_CHAT_REPO_URL}" "${LOBE_CHAT_DIR}"
 }
 
 ensure_postgres_started() {
@@ -94,11 +97,58 @@ ensure_postgres_started() {
     ver="$(echo "${first}" | awk '{print $1}')"
     name="$(echo "${first}" | awk '{print $2}')"
     status="$(echo "${first}" | awk '{print $3}')"
+    POSTGRES_CLUSTER_VERSION="${ver}"
+    POSTGRES_CLUSTER_NAME="${name}"
     if [ "${status}" != "online" ]; then
       pg_ctlcluster "${ver}" "${name}" start
     fi
   else
     service postgresql start || true
+  fi
+}
+
+restart_postgres() {
+  if [ -n "${POSTGRES_CLUSTER_VERSION}" ] && [ -n "${POSTGRES_CLUSTER_NAME}" ] && command -v pg_ctlcluster >/dev/null 2>&1; then
+    pg_ctlcluster "${POSTGRES_CLUSTER_VERSION}" "${POSTGRES_CLUSTER_NAME}" restart
+  else
+    service postgresql restart || true
+  fi
+}
+
+ensure_pgvector_extension() {
+  if runuser -u postgres -- psql -tAc "SELECT 1 FROM pg_available_extensions WHERE name='vector'" | grep -q 1; then
+    log "pgvector already available"
+    return
+  fi
+
+  local pg_major
+  pg_major="${POSTGRES_CLUSTER_VERSION}"
+  if [ -z "${pg_major}" ]; then
+    pg_major="$(runuser -u postgres -- psql -tAc 'SHOW server_version_num' | cut -c1-2)"
+  fi
+  if [ -z "${pg_major}" ]; then
+    log "ERROR: failed to detect PostgreSQL major version"
+    exit 1
+  fi
+
+  log "install pgvector for PostgreSQL ${pg_major}"
+  if apt-get install -y "postgresql-${pg_major}-pgvector"; then
+    log "installed pgvector from apt"
+  else
+    log "pgvector apt package not found, build from source (${PGVECTOR_VERSION})"
+    apt-get install -y build-essential "postgresql-server-dev-${pg_major}" git
+    local tmp_dir
+    tmp_dir="$(mktemp -d)"
+    git clone --depth 1 --branch "${PGVECTOR_VERSION}" https://github.com/pgvector/pgvector.git "${tmp_dir}/pgvector"
+    make -C "${tmp_dir}/pgvector"
+    make -C "${tmp_dir}/pgvector" install
+    rm -rf "${tmp_dir}"
+  fi
+
+  restart_postgres
+  if ! runuser -u postgres -- psql -tAc "SELECT 1 FROM pg_available_extensions WHERE name='vector'" | grep -q 1; then
+    log "ERROR: pgvector extension is unavailable after install"
+    exit 1
   fi
 }
 
@@ -135,7 +185,7 @@ ensure_db_and_env() {
     runuser -u postgres -- psql -c "CREATE ROLE ${DB_USER} LOGIN PASSWORD '${db_pass}';"
   runuser -u postgres -- psql -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | grep -q 1 || \
     runuser -u postgres -- psql -c "CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};"
-  runuser -u postgres -- psql -d "${DB_NAME}" -c "CREATE EXTENSION IF NOT EXISTS vector;" >/dev/null 2>&1 || true
+  runuser -u postgres -- psql -d "${DB_NAME}" -c "CREATE EXTENSION IF NOT EXISTS vector;" >/dev/null
 
   local db_url
   db_url="postgresql://${DB_USER}:${db_pass}@127.0.0.1:5432/${DB_NAME}"
@@ -159,11 +209,6 @@ EOF
 ensure_lobehub_dependencies() {
   if [ "${SKIP_PNPM_INSTALL}" = "1" ]; then
     log "skip pnpm install (SKIP_PNPM_INSTALL=1)"
-    return
-  fi
-
-  if [ -d "${LOBE_CHAT_DIR}/node_modules" ]; then
-    log "node_modules exists. skip pnpm install"
     return
   fi
 
@@ -305,6 +350,7 @@ main() {
   ensure_node_toolchain
   sync_lobe_chat_repo
   ensure_postgres_started
+  ensure_pgvector_extension
   ensure_db_and_env
   ensure_lobehub_dependencies
   run_db_migration
@@ -317,4 +363,3 @@ main() {
 }
 
 main "$@"
-

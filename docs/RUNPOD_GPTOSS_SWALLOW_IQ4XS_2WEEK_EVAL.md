@@ -3057,6 +3057,7 @@ FAST_START=1 bash /workspace/scripts/runpod_nv_bootstrap.sh
 FAST_START=1 bash /workspace/scripts/runpod_lobehub_bootstrap.sh
 ```
 2. 依存や手順を更新した日だけ通常モードで実行する（`FAST_START` なし）。
+3. `Terminate` 後でも、必要コマンド（`nginx` / `jq` / `psql` など）が欠けていれば自動で通常インストールにフォールバックする。
 
 ### Pod再作成後に `lms: command not found` になる
 

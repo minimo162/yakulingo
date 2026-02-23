@@ -43,8 +43,18 @@ apply_fast_start_defaults() {
 
 ensure_base_packages() {
   if [ "${SKIP_BASE_PACKAGES}" = "1" ]; then
-    log "skip base package install (SKIP_BASE_PACKAGES=1)"
-    return
+    local missing=()
+    local cmd
+    for cmd in curl jq git nginx; do
+      if ! command -v "${cmd}" >/dev/null 2>&1; then
+        missing+=("${cmd}")
+      fi
+    done
+    if [ "${#missing[@]}" -eq 0 ]; then
+      log "skip base package install (SKIP_BASE_PACKAGES=1)"
+      return
+    fi
+    log "SKIP_BASE_PACKAGES=1 but missing commands: ${missing[*]} -> fallback install"
   fi
   log "install base packages"
   export DEBIAN_FRONTEND=noninteractive

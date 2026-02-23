@@ -1,6 +1,7 @@
 import http from "node:http";
 import { randomBytes } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -15,6 +16,38 @@ const runPodBaseUrl = (process.env.RUNPOD_BASE_URL || "").trim().replace(/\/+$/,
 const runPodApiKey = (process.env.RUNPOD_API_KEY || "").trim();
 const defaultModel = (process.env.DEFAULT_MODEL || "gpt-oss-swallow-120b-iq4xs").trim();
 const maxHistoryPairs = Number.parseInt(process.env.MAX_HISTORY_PAIRS || "8", 10);
+const maxToolLogs = Number.parseInt(process.env.MAX_TOOL_LOGS || "10", 10);
+const toolContextEntries = Number.parseInt(process.env.TOOL_CONTEXT_ENTRIES || "6", 10);
+const maxToolOutputChars = Number.parseInt(process.env.MAX_TOOL_OUTPUT_CHARS || "12000", 10);
+const maxReadBytes = Number.parseInt(process.env.MAX_READ_BYTES || "262144", 10);
+const localShellTimeoutMs = Number.parseInt(process.env.LOCAL_SHELL_TIMEOUT_MS || "20000", 10);
+const workspaceRoot = path.resolve((process.env.WORKSPACE_ROOT || process.cwd()).trim() || process.cwd());
+const configuredAllowPrefixes = (process.env.LOCAL_SHELL_ALLOWLIST || "")
+  .split(",")
+  .map((item) => item.trim().toLowerCase())
+  .filter(Boolean);
+const shellAllowlist = configuredAllowPrefixes.length > 0
+  ? configuredAllowPrefixes
+  : [
+      "git status",
+      "git diff",
+      "git log",
+      "git show",
+      "git branch",
+      "git rev-parse",
+      "rg",
+      "pwd",
+      "ls",
+      "dir",
+      "get-childitem",
+      "type",
+      "cat",
+    ];
+const codingModeSystemPrompt = [
+  "You are a practical coding assistant working on a local repository.",
+  "Prefer concrete edits, executable commands, and risk notes.",
+  "If local tool context is provided, treat it as source of truth.",
+].join(" ");
 
 if (!runPodBaseUrl) {
   console.error("[node-htmx] RUNPOD_BASE_URL is not set.");
@@ -26,6 +59,33 @@ if (!runPodApiKey) {
 }
 
 const sessions = new Map();
+
+function normalizeForCompare(value) {
+  return process.platform === "win32" ? value.toLowerCase() : value;
+}
+
+function isInsideWorkspace(absPath) {
+  const normalizedPath = normalizeForCompare(path.resolve(absPath));
+  const normalizedRoot = normalizeForCompare(workspaceRoot);
+  return normalizedPath === normalizedRoot || normalizedPath.startsWith(`${normalizedRoot}${path.sep}`);
+}
+
+function resolveWorkspacePath(rawPath) {
+  const input = String(rawPath || "").trim();
+  if (!input) {
+    throw new Error("Path is empty.");
+  }
+  const resolved = path.resolve(workspaceRoot, input);
+  if (!isInsideWorkspace(resolved)) {
+    throw new Error("Path is outside workspace root.");
+  }
+  return resolved;
+}
+
+function toWorkspaceRelative(absPath) {
+  const rel = path.relative(workspaceRoot, absPath);
+  return rel || ".";
+}
 
 function escapeHtml(value = "") {
   return String(value)
@@ -54,13 +114,20 @@ function getOrCreateSession(req, res) {
   let sid = cookies.sid;
   if (!sid || !sessions.has(sid)) {
     sid = randomBytes(16).toString("hex");
-    sessions.set(sid, { messages: [] });
+    sessions.set(sid, { messages: [], toolLogs: [] });
     res.setHeader("Set-Cookie", `sid=${encodeURIComponent(sid)}; HttpOnly; SameSite=Lax; Path=/`);
   }
   if (!sessions.has(sid)) {
-    sessions.set(sid, { messages: [] });
+    sessions.set(sid, { messages: [], toolLogs: [] });
   }
-  return sessions.get(sid);
+  const session = sessions.get(sid);
+  if (!Array.isArray(session.messages)) {
+    session.messages = [];
+  }
+  if (!Array.isArray(session.toolLogs)) {
+    session.toolLogs = [];
+  }
+  return session;
 }
 
 function send(res, statusCode, body, contentType = "text/plain; charset=utf-8") {
@@ -86,6 +153,12 @@ async function readBody(req) {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+function truncateText(value, maxChars = maxToolOutputChars) {
+  const text = String(value || "");
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars)}\n...(truncated ${text.length - maxChars} chars)`;
+}
+
 function extractAssistantText(payload) {
   const choice = payload?.choices?.[0];
   const content = choice?.message?.content;
@@ -103,6 +176,219 @@ function extractAssistantText(payload) {
       .trim();
   }
   return "";
+}
+
+function appendToolLog(session, entry) {
+  const safeEntry = {
+    title: String(entry?.title || "tool"),
+    summary: String(entry?.summary || ""),
+    detail: truncateText(entry?.detail || "", maxToolOutputChars),
+    createdAt: new Date().toISOString(),
+  };
+  session.toolLogs.push(safeEntry);
+  if (session.toolLogs.length > Math.max(1, maxToolLogs)) {
+    session.toolLogs = session.toolLogs.slice(session.toolLogs.length - Math.max(1, maxToolLogs));
+  }
+}
+
+function buildToolContext(session) {
+  if (!Array.isArray(session.toolLogs) || session.toolLogs.length === 0) {
+    return "";
+  }
+  const rows = session.toolLogs
+    .slice(-Math.max(1, toolContextEntries))
+    .map((item, index) => {
+      const num = index + 1;
+      return [
+        `[tool ${num}] ${item.title}`,
+        item.summary ? `summary: ${item.summary}` : "",
+        item.detail ? `detail:\n${item.detail}` : "",
+      ].filter(Boolean).join("\n");
+    });
+  return rows.join("\n\n");
+}
+
+function renderToolResult({ title, meta = "", body = "", isError = false }) {
+  const cls = isError ? "turn turn-error" : "turn turn-tool";
+  const lines = [
+    `<article class="${cls}">`,
+    `<header class="turn-header">${escapeHtml(title)}</header>`,
+  ];
+  if (meta) {
+    lines.push(`<div class="turn-meta">${escapeHtml(meta)}</div>`);
+  }
+  lines.push(`<pre class="turn-body">${escapeHtml(body)}</pre>`);
+  lines.push("</article>");
+  return lines.join("");
+}
+
+function hasUnsafeShellChars(command) {
+  // Keep command execution intentionally narrow to avoid accidental chaining.
+  return /[;&|><`\r\n]/.test(command);
+}
+
+function isAllowedShellCommand(command) {
+  const normalized = String(command || "").trim().toLowerCase();
+  if (!normalized) return false;
+  if (hasUnsafeShellChars(normalized)) return false;
+  return shellAllowlist.some((prefix) => normalized === prefix || normalized.startsWith(`${prefix} `));
+}
+
+function runShellCommand(command, cwd) {
+  return new Promise((resolve) => {
+    const started = Date.now();
+    const args = process.platform === "win32"
+      ? ["-NoProfile", "-Command", command]
+      : ["-lc", command];
+    const shellExec = process.platform === "win32" ? "powershell.exe" : "bash";
+
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+    let exitCode = 0;
+    let spawnError = "";
+    let settled = false;
+
+    const child = spawn(shellExec, args, {
+      cwd,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      resolve({
+        stdout: truncateText(stdout, maxToolOutputChars),
+        stderr: truncateText(stderr, maxToolOutputChars),
+        exitCode,
+        timedOut,
+        spawnError,
+        elapsedMs: Date.now() - started,
+      });
+    };
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      try {
+        child.kill("SIGTERM");
+      } catch {
+        // ignore
+      }
+      setTimeout(() => {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          // ignore
+        }
+      }, 500);
+    }, Math.max(1000, localShellTimeoutMs));
+
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString("utf8");
+      if (stdout.length > maxToolOutputChars * 2) {
+        stdout = stdout.slice(-maxToolOutputChars * 2);
+      }
+    });
+
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString("utf8");
+      if (stderr.length > maxToolOutputChars * 2) {
+        stderr = stderr.slice(-maxToolOutputChars * 2);
+      }
+    });
+
+    child.on("error", (err) => {
+      spawnError = err?.message || String(err);
+    });
+
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      exitCode = Number.isInteger(code) ? code : 1;
+      finish();
+    });
+  });
+}
+
+async function runSearch(pattern, glob) {
+  return new Promise((resolve, reject) => {
+    const args = ["--line-number", "--no-heading", "--color", "never", "--max-count", "200", "--hidden"];
+    if (glob) {
+      args.push("--glob", glob);
+    }
+    args.push("--glob", "!.git/**");
+    args.push(pattern, workspaceRoot);
+
+    let stdout = "";
+    let stderr = "";
+    let spawnError = "";
+    let closed = false;
+
+    const child = spawn("rg", args, {
+      cwd: workspaceRoot,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    const done = (payload, isErr = false) => {
+      if (closed) return;
+      closed = true;
+      if (isErr) {
+        reject(payload);
+      } else {
+        resolve(payload);
+      }
+    };
+
+    const timer = setTimeout(() => {
+      try {
+        child.kill("SIGTERM");
+      } catch {
+        // ignore
+      }
+      done(new Error("Search timed out."), true);
+    }, Math.max(3000, localShellTimeoutMs));
+
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString("utf8");
+      if (stdout.length > maxToolOutputChars * 2) {
+        stdout = stdout.slice(-maxToolOutputChars * 2);
+      }
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString("utf8");
+      if (stderr.length > maxToolOutputChars * 2) {
+        stderr = stderr.slice(-maxToolOutputChars * 2);
+      }
+    });
+
+    child.on("error", (err) => {
+      spawnError = err?.message || String(err);
+    });
+
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (spawnError) {
+        done(new Error(spawnError), true);
+        return;
+      }
+      if (code === 0) {
+        done({
+          status: "match",
+          output: truncateText(stdout, maxToolOutputChars),
+          error: truncateText(stderr, maxToolOutputChars),
+        });
+        return;
+      }
+      if (code === 1) {
+        done({
+          status: "no-match",
+          output: "",
+          error: truncateText(stderr, maxToolOutputChars),
+        });
+        return;
+      }
+      done(new Error(`rg exited with code ${code}. ${stderr}`), true);
+    });
+  });
 }
 
 async function callRunPodJson(endpointPath, body) {
@@ -241,6 +527,15 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && pathname === "/api/workspace/info") {
+    const text = [
+      `root: ${workspaceRoot}`,
+      `shell allowlist: ${shellAllowlist.join(", ")}`,
+    ].join("\n");
+    send(res, 200, `<pre class="workspace-box">${escapeHtml(text)}</pre>`, "text/html; charset=utf-8");
+    return;
+  }
+
   if (req.method === "GET" && pathname === "/api/models/options") {
     try {
       const models = await callRunPodModels();
@@ -268,7 +563,205 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && pathname === "/api/session/reset") {
     const session = getOrCreateSession(req, res);
     session.messages = [];
+    session.toolLogs = [];
     send(res, 200, "", "text/html; charset=utf-8");
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/tools/reset") {
+    const session = getOrCreateSession(req, res);
+    session.toolLogs = [];
+    send(res, 200, "", "text/html; charset=utf-8");
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/tools/read") {
+    const session = getOrCreateSession(req, res);
+    try {
+      const bodyText = await readBody(req);
+      const data = new URLSearchParams(bodyText);
+      const rawPath = (data.get("path") || "").trim();
+      const resolvedPath = resolveWorkspacePath(rawPath);
+      const info = await stat(resolvedPath);
+      if (!info.isFile()) {
+        send(res, 200, renderToolResult({
+          title: "Tool read error",
+          body: `Not a file: ${rawPath}`,
+          isError: true,
+        }), "text/html; charset=utf-8");
+        return;
+      }
+      if (info.size > Math.max(1024, maxReadBytes)) {
+        send(res, 200, renderToolResult({
+          title: "Tool read error",
+          body: `File too large (${info.size} bytes). MAX_READ_BYTES=${maxReadBytes}.`,
+          isError: true,
+        }), "text/html; charset=utf-8");
+        return;
+      }
+      const content = await readFile(resolvedPath, "utf8");
+      const relPath = toWorkspaceRelative(resolvedPath);
+      const shown = truncateText(content, maxToolOutputChars);
+      appendToolLog(session, {
+        title: `read ${relPath}`,
+        summary: `bytes=${info.size}`,
+        detail: shown,
+      });
+      send(res, 200, renderToolResult({
+        title: `Tool read: ${relPath}`,
+        meta: `bytes=${info.size}`,
+        body: shown || "(empty file)",
+      }), "text/html; charset=utf-8");
+    } catch (err) {
+      send(res, 200, renderToolResult({
+        title: "Tool read error",
+        body: err?.message || String(err),
+        isError: true,
+      }), "text/html; charset=utf-8");
+    }
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/tools/search") {
+    const session = getOrCreateSession(req, res);
+    try {
+      const bodyText = await readBody(req);
+      const data = new URLSearchParams(bodyText);
+      const pattern = (data.get("pattern") || "").trim();
+      const glob = (data.get("glob") || "").trim();
+      if (!pattern) {
+        send(res, 200, renderToolResult({
+          title: "Tool search error",
+          body: "Pattern is empty.",
+          isError: true,
+        }), "text/html; charset=utf-8");
+        return;
+      }
+      const result = await runSearch(pattern, glob);
+      const body = result.status === "no-match"
+        ? "No matches."
+        : (result.output || "(no output)");
+      appendToolLog(session, {
+        title: `search pattern=${pattern}`,
+        summary: glob ? `glob=${glob}` : "",
+        detail: body,
+      });
+      send(res, 200, renderToolResult({
+        title: "Tool search",
+        meta: glob ? `pattern=${pattern} glob=${glob}` : `pattern=${pattern}`,
+        body,
+        isError: result.status !== "match" && result.status !== "no-match",
+      }), "text/html; charset=utf-8");
+    } catch (err) {
+      send(res, 200, renderToolResult({
+        title: "Tool search error",
+        body: err?.message || String(err),
+        isError: true,
+      }), "text/html; charset=utf-8");
+    }
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/tools/shell") {
+    const session = getOrCreateSession(req, res);
+    try {
+      const bodyText = await readBody(req);
+      const data = new URLSearchParams(bodyText);
+      const command = (data.get("command") || "").trim();
+      const approved = data.get("approved") === "on";
+      if (!approved) {
+        send(res, 200, renderToolResult({
+          title: "Tool shell blocked",
+          body: "Enable command approval checkbox before running shell command.",
+          isError: true,
+        }), "text/html; charset=utf-8");
+        return;
+      }
+      if (!command) {
+        send(res, 200, renderToolResult({
+          title: "Tool shell error",
+          body: "Command is empty.",
+          isError: true,
+        }), "text/html; charset=utf-8");
+        return;
+      }
+      if (!isAllowedShellCommand(command)) {
+        send(res, 200, renderToolResult({
+          title: "Tool shell blocked",
+          body: [
+            `Command is not allowed: ${command}`,
+            `Allowed prefixes: ${shellAllowlist.join(", ")}`,
+            "Forbidden chars: ; & | > < ` and newline",
+          ].join("\n"),
+          isError: true,
+        }), "text/html; charset=utf-8");
+        return;
+      }
+      const result = await runShellCommand(command, workspaceRoot);
+      const output = [
+        `$ ${command}`,
+        result.stdout ? `\n[stdout]\n${result.stdout}` : "",
+        result.stderr ? `\n[stderr]\n${result.stderr}` : "",
+      ].join("");
+      appendToolLog(session, {
+        title: `shell ${command}`,
+        summary: `exit=${result.exitCode} timeout=${result.timedOut ? "yes" : "no"} elapsed=${result.elapsedMs}ms`,
+        detail: output,
+      });
+      const statusText = `exit=${result.exitCode} timeout=${result.timedOut ? "yes" : "no"} elapsed=${result.elapsedMs}ms`;
+      send(res, 200, renderToolResult({
+        title: "Tool shell",
+        meta: statusText,
+        body: output || "(no output)",
+        isError: result.exitCode !== 0 || result.timedOut || Boolean(result.spawnError),
+      }), "text/html; charset=utf-8");
+    } catch (err) {
+      send(res, 200, renderToolResult({
+        title: "Tool shell error",
+        body: err?.message || String(err),
+        isError: true,
+      }), "text/html; charset=utf-8");
+    }
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/tools/write") {
+    const session = getOrCreateSession(req, res);
+    try {
+      const bodyText = await readBody(req);
+      const data = new URLSearchParams(bodyText);
+      const rawPath = (data.get("path") || "").trim();
+      const content = String(data.get("content") || "");
+      const confirmWrite = data.get("confirmWrite") === "on";
+      if (!confirmWrite) {
+        send(res, 200, renderToolResult({
+          title: "Tool write blocked",
+          body: "Enable write approval checkbox before writing file.",
+          isError: true,
+        }), "text/html; charset=utf-8");
+        return;
+      }
+      const resolvedPath = resolveWorkspacePath(rawPath);
+      await mkdir(path.dirname(resolvedPath), { recursive: true });
+      await writeFile(resolvedPath, content, "utf8");
+      const relPath = toWorkspaceRelative(resolvedPath);
+      appendToolLog(session, {
+        title: `write ${relPath}`,
+        summary: `bytes=${Buffer.byteLength(content, "utf8")}`,
+        detail: truncateText(content, maxToolOutputChars),
+      });
+      send(res, 200, renderToolResult({
+        title: `Tool write: ${relPath}`,
+        meta: `bytes=${Buffer.byteLength(content, "utf8")}`,
+        body: "File written.",
+      }), "text/html; charset=utf-8");
+    } catch (err) {
+      send(res, 200, renderToolResult({
+        title: "Tool write error",
+        body: err?.message || String(err),
+        isError: true,
+      }), "text/html; charset=utf-8");
+    }
     return;
   }
 
@@ -283,6 +776,8 @@ const server = http.createServer(async (req, res) => {
       const model = (data.get("model") || defaultModel).trim() || defaultModel;
       const temperatureRaw = (data.get("temperature") || "0.7").trim();
       const temperature = Number.parseFloat(temperatureRaw);
+      const includeToolContext = data.get("includeToolContext") === "on";
+      const codingMode = data.get("codingMode") === "on";
 
       if (!prompt) {
         send(res, 400, renderError("Prompt is empty."), "text/html; charset=utf-8");
@@ -292,6 +787,23 @@ const server = http.createServer(async (req, res) => {
       const messages = [];
       if (systemPrompt) {
         messages.push({ role: "system", content: systemPrompt });
+      }
+      if (codingMode) {
+        messages.push({ role: "system", content: codingModeSystemPrompt });
+      }
+      if (includeToolContext) {
+        const toolContext = buildToolContext(session);
+        if (toolContext) {
+          messages.push({
+            role: "system",
+            content: [
+              "Local tool logs from the user's workspace are included below.",
+              "Treat them as trusted local observations.",
+              "",
+              toolContext,
+            ].join("\n"),
+          });
+        }
       }
       for (const msg of session.messages) {
         messages.push(msg);
@@ -353,4 +865,5 @@ const server = http.createServer(async (req, res) => {
 server.listen(appPort, appBind, () => {
   console.log(`[node-htmx] listening on http://${appBind}:${appPort}/`);
   console.log(`[node-htmx] model default: ${defaultModel}`);
+  console.log(`[node-htmx] workspace root: ${workspaceRoot}`);
 });

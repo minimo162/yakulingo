@@ -240,6 +240,25 @@ if ([string]::IsNullOrWhiteSpace($appBind)) { $appBind = "127.0.0.1" }
 $timeoutMs = Get-EnvValue -Key "RUNPOD_REQUEST_TIMEOUT_MS" -FilePath $configEnvFile
 if ([string]::IsNullOrWhiteSpace($timeoutMs)) { $timeoutMs = "90000" }
 
+$workspaceRoot = Get-EnvValue -Key "WORKSPACE_ROOT" -FilePath $configEnvFile
+if ([string]::IsNullOrWhiteSpace($workspaceRoot)) {
+  $fallbackWorkspace = Join-Path $BaseDir "..\..\.."
+  if (Test-Path $fallbackWorkspace) {
+    $workspaceRoot = (Resolve-Path $fallbackWorkspace).Path
+  }
+  else {
+    $workspaceRoot = $BaseDir
+  }
+}
+elseif (!(Split-Path -Path $workspaceRoot -IsAbsolute)) {
+  $workspaceRoot = Join-Path $BaseDir $workspaceRoot
+}
+
+$localShellTimeout = Get-EnvValue -Key "LOCAL_SHELL_TIMEOUT_MS" -FilePath $configEnvFile
+if ([string]::IsNullOrWhiteSpace($localShellTimeout)) { $localShellTimeout = "20000" }
+
+$localShellAllowlist = Get-EnvValue -Key "LOCAL_SHELL_ALLOWLIST" -FilePath $configEnvFile
+
 $envVars = @{
   "RUNPOD_BASE_URL"         = $baseUrl
   "RUNPOD_API_KEY"          = $runPodApiKey
@@ -247,6 +266,9 @@ $envVars = @{
   "APP_PORT"                = $appPort
   "APP_BIND"                = $appBind
   "RUNPOD_REQUEST_TIMEOUT_MS" = $timeoutMs
+  "WORKSPACE_ROOT"          = $workspaceRoot
+  "LOCAL_SHELL_TIMEOUT_MS"  = $localShellTimeout
+  "LOCAL_SHELL_ALLOWLIST"   = $localShellAllowlist
 }
 
 $saved = @{}
@@ -304,6 +326,7 @@ Write-Host "PID: $($proc.Id)"
 Write-Host "Node: $nodeExe"
 Write-Host "Config file: $configEnvFile"
 Write-Host "Secure key store: $apiKeyStoreFile"
+Write-Host "Workspace root: $workspaceRoot"
 Write-Host "Endpoint: $(Mask-Url -Url $baseUrl)"
 Write-Host "URL: $url"
 Write-Host "Out log: $outLog"

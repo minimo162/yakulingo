@@ -35,6 +35,16 @@ body {
   margin-top: 6px;
 }
 
+h2 {
+  margin: 4px 0 10px;
+  font-size: 20px;
+}
+
+h3 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+
 .panel {
   border: 1px solid var(--border);
   background: rgba(17, 26, 43, 0.92);
@@ -45,6 +55,27 @@ body {
 
 .controls .row {
   margin-bottom: 10px;
+}
+
+.check-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.checkbox-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.checkbox-inline input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
 }
 
 label {
@@ -104,6 +135,40 @@ button[type="submit"] {
   gap: 10px;
 }
 
+.tool-log {
+  min-height: 180px;
+  max-height: 40vh;
+}
+
+.tool-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.tool-form {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  background: #0e1726;
+}
+
+.workspace-info {
+  margin-bottom: 12px;
+}
+
+.workspace-box {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  color: var(--muted);
+  background: #0f182a;
+  font-size: 12px;
+}
+
 .turn {
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -123,7 +188,17 @@ button[type="submit"] {
   border-left: 4px solid var(--error);
 }
 
+.turn-tool {
+  border-left: 4px solid #f2c14e;
+}
+
 .turn-header {
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.turn-meta {
   color: var(--muted);
   font-size: 12px;
   margin-bottom: 6px;
@@ -146,6 +221,10 @@ button[type="submit"] {
 @media (max-width: 640px) {
   .hero h1 {
     font-size: 25px;
+  }
+
+  .tool-grid {
+    grid-template-columns: 1fr;
   }
 
   .actions {

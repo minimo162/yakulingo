@@ -33,6 +33,11 @@ Everything else is in `_internal`.
    - This generates `_internal/runpod_api_key.obf`
 4. Distribute this folder to members.
 
+Recommended additional settings for local coding mode:
+- `WORKSPACE_ROOT=.` (or your target repo path)
+- `LOCAL_SHELL_TIMEOUT_MS=20000`
+- `LOCAL_SHELL_ALLOWLIST=` (empty = built-in safe defaults)
+
 ## Per-User Behavior
 
 Each launch reads config from shared file:
@@ -86,6 +91,25 @@ Options:
 - `-OutputDir <path>`
 - `-BaseUrl <url>` (override env)
 - `-ApiKey <token>` (override secure store)
+
+## Local Coder Mode (Codex-like MVP)
+
+The UI now includes local workspace tools in addition to chat:
+- Read file (`/api/tools/read`)
+- Search text with ripgrep (`/api/tools/search`)
+- Run shell command with approval (`/api/tools/shell`)
+- Write file with approval (`/api/tools/write`)
+
+Tool results are stored in session and can be injected into chat context
+using "Include local tool context". This lets RunPod model answers reference
+actual local repository data.
+
+Safety guardrails:
+- All file operations are restricted to `WORKSPACE_ROOT`.
+- Shell commands require explicit checkbox approval in UI.
+- Shell commands are filtered by allowed prefixes (`LOCAL_SHELL_ALLOWLIST`).
+- Shell command chaining chars (`;`, `&`, `|`, `>`, `<`, backtick, newline)
+  are blocked.
 
 ## Notes
 

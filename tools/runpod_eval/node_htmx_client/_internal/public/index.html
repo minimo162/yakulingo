@@ -11,8 +11,8 @@
 <body>
   <main class="layout">
     <header class="hero">
-      <h1>RunPod Chat</h1>
-      <p class="muted">Node.js + htmx lightweight client</p>
+      <h1>RunPod Local Coder</h1>
+      <p class="muted">Node.js + htmx lightweight coding assistant</p>
     </header>
 
     <section class="panel controls">
@@ -45,6 +45,17 @@
           <textarea id="prompt" name="prompt" rows="4" placeholder="Type your message..." required></textarea>
         </div>
 
+        <div class="row check-row">
+          <label class="checkbox-inline">
+            <input type="checkbox" name="codingMode" checked>
+            Use coding-focused system hint
+          </label>
+          <label class="checkbox-inline">
+            <input type="checkbox" name="includeToolContext" checked>
+            Include local tool context
+          </label>
+        </div>
+
         <div class="actions">
           <button type="submit">Send</button>
           <button
@@ -53,12 +64,102 @@
             hx-target="#chat-log"
             hx-swap="innerHTML"
           >Clear Session</button>
+          <button
+            type="button"
+            hx-post="/api/tools/reset"
+            hx-target="#tool-log"
+            hx-swap="innerHTML"
+          >Clear Tools</button>
           <span id="req-indicator" class="indicator htmx-indicator">Sending...</span>
         </div>
       </form>
     </section>
 
     <section class="panel">
+      <h2>Local Tools</h2>
+      <div id="workspace-info" class="workspace-info" hx-get="/api/workspace/info" hx-trigger="load" hx-swap="innerHTML">Loading workspace...</div>
+
+      <div class="tool-grid">
+        <form
+          id="tool-read-form"
+          class="tool-form"
+          hx-post="/api/tools/read"
+          hx-target="#tool-log"
+          hx-swap="beforeend"
+          hx-indicator="#tool-indicator"
+        >
+          <h3>Read File</h3>
+          <label for="tool-read-path">Path (workspace relative)</label>
+          <input id="tool-read-path" name="path" type="text" placeholder="yakulingo/services/translation_service.py" required>
+          <button type="submit">Read</button>
+        </form>
+
+        <form
+          id="tool-search-form"
+          class="tool-form"
+          hx-post="/api/tools/search"
+          hx-target="#tool-log"
+          hx-swap="beforeend"
+          hx-indicator="#tool-indicator"
+        >
+          <h3>Search Text</h3>
+          <label for="tool-search-pattern">Pattern</label>
+          <input id="tool-search-pattern" name="pattern" type="text" placeholder="TODO|FIXME" required>
+          <label for="tool-search-glob">Glob (optional)</label>
+          <input id="tool-search-glob" name="glob" type="text" placeholder="**/*.py">
+          <button type="submit">Search</button>
+        </form>
+
+        <form
+          id="tool-shell-form"
+          class="tool-form"
+          hx-post="/api/tools/shell"
+          hx-target="#tool-log"
+          hx-swap="beforeend"
+          hx-indicator="#tool-indicator"
+        >
+          <h3>Run Shell (safe list only)</h3>
+          <label for="tool-shell-command">Command</label>
+          <input id="tool-shell-command" name="command" type="text" placeholder="git status" required>
+          <label class="checkbox-inline">
+            <input id="tool-shell-approved" name="approved" type="checkbox">
+            I approve this command
+          </label>
+          <button type="submit">Run</button>
+        </form>
+
+        <form
+          id="tool-write-form"
+          class="tool-form"
+          hx-post="/api/tools/write"
+          hx-target="#tool-log"
+          hx-swap="beforeend"
+          hx-indicator="#tool-indicator"
+        >
+          <h3>Write File</h3>
+          <label for="tool-write-path">Path (workspace relative)</label>
+          <input id="tool-write-path" name="path" type="text" placeholder="notes/plan.md" required>
+          <label for="tool-write-content">Content</label>
+          <textarea id="tool-write-content" name="content" rows="5" placeholder="Write content here..."></textarea>
+          <label class="checkbox-inline">
+            <input id="tool-write-approved" name="confirmWrite" type="checkbox">
+            I approve writing this file
+          </label>
+          <button type="submit">Write</button>
+        </form>
+      </div>
+      <div class="actions">
+        <span id="tool-indicator" class="indicator htmx-indicator">Running tool...</span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Tool Log</h2>
+      <div id="tool-log" class="chat-log tool-log"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Chat</h2>
       <div id="chat-log" class="chat-log"></div>
     </section>
   </main>

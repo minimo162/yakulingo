@@ -128,6 +128,30 @@ function Resolve-NodeExe {
   return $null
 }
 
+function Resolve-BundledCodexExe {
+  param([Parameter(Mandatory = $true)][string]$BaseDir)
+  $runtimeRoot = Join-Path $BaseDir ".runtime"
+  $binHint = Join-Path $runtimeRoot "codex-bin.txt"
+  if (Test-Path $binHint) {
+    $hintPath = (Get-Content -Raw $binHint).Trim()
+    if (-not [string]::IsNullOrWhiteSpace($hintPath) -and (Test-Path $hintPath)) {
+      try { return (Resolve-Path $hintPath).Path } catch { return $hintPath }
+    }
+  }
+
+  $candidates = @(
+    (Join-Path $runtimeRoot "codex\node_modules\.bin\codex.cmd"),
+    (Join-Path $runtimeRoot "codex\node_modules\.bin\codex.ps1"),
+    (Join-Path $runtimeRoot "codex\node_modules\.bin\codex")
+  )
+  foreach ($candidate in $candidates) {
+    if (Test-Path $candidate) {
+      try { return (Resolve-Path $candidate).Path } catch { return $candidate }
+    }
+  }
+  return $null
+}
+
 function Resolve-UvExe {
   param([Parameter(Mandatory = $true)][string]$BaseDir)
   $runtimeUv = Join-Path $BaseDir ".runtime\uv\uv.exe"
@@ -211,18 +235,75 @@ function Test-IsLocaLingoServerProcessId {
   return Test-IsLocaLingoServerCommandLine -CommandLine $cmd -ServerScriptPath $ServerScriptPath
 }
 
+function Test-IsLocaLingoFastApiCommandLine {
+  param(
+    [string]$CommandLine,
+    [string]$Marker
+  )
+  if ([string]::IsNullOrWhiteSpace($CommandLine)) { return $false }
+  if ([string]::IsNullOrWhiteSpace($Marker)) { return $false }
+  $normalizedCmd = Normalize-PathForMatch -Value $CommandLine
+  $normalizedMarker = Normalize-PathForMatch -Value $Marker
+  return $normalizedCmd.Contains($normalizedMarker)
+}
+
+function Get-LocaLingoFastApiProcessIds {
+  param([string]$Marker)
+  $rows = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+    $_.Name -match "^python(\.exe)?$" -and (Test-IsLocaLingoFastApiCommandLine -CommandLine $_.CommandLine -Marker $Marker)
+  }
+  return @($rows | ForEach-Object { [int]$_.ProcessId } | Sort-Object -Unique)
+}
+
+function Test-IsLocaLingoFastApiProcessId {
+  param(
+    [int]$ProcessId,
+    [string]$Marker
+  )
+  if ($ProcessId -le 0) { return $false }
+  $rows = Get-CimInstance Win32_Process -Filter "ProcessId = $ProcessId" -ErrorAction SilentlyContinue
+  if (-not $rows) { return $false }
+  $cmd = $rows | Select-Object -ExpandProperty CommandLine -First 1
+  return Test-IsLocaLingoFastApiCommandLine -CommandLine $cmd -Marker $Marker
+}
+
 function Stop-ProcessByIdSafe {
   param([int]$ProcessId)
   if ($ProcessId -le 0) { return $false }
-  $proc = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
-  if (-not $proc) { return $false }
-  try {
-    Stop-Process -Id $ProcessId -Force -ErrorAction Stop
-    return $true
-  } catch {
-    Write-Warning "Failed to stop PID=$ProcessId : $($_.Exception.Message)"
+  if ($ProcessId -eq $PID) {
+    Write-Warning "Skip stopping current PowerShell process PID=$ProcessId"
     return $false
   }
+  $proc = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+  if (-not $proc) { return $false }
+
+  $stopSucceeded = $false
+  try {
+    # taskkill is generally more robust for hidden/child process trees on Windows.
+    & cmd /c "taskkill /PID $ProcessId /T /F" | Out-Null
+    $stopSucceeded = $true
+  } catch {
+    try {
+      Stop-Process -Id $ProcessId -Force -ErrorAction Stop
+      $stopSucceeded = $true
+    } catch {
+      Write-Warning "Failed to stop PID=$ProcessId : $($_.Exception.Message)"
+      $stopSucceeded = $false
+    }
+  }
+
+  for ($i = 0; $i -lt 15; $i++) {
+    if (-not (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue)) {
+      return $stopSucceeded
+    }
+    Start-Sleep -Milliseconds 200
+  }
+
+  if (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue) {
+    Write-Warning "PID=$ProcessId is still alive after forced stop attempts."
+    return $false
+  }
+  return $stopSucceeded
 }
 
 $userSlug = Get-UserSlug
@@ -321,20 +402,32 @@ if (-not $SkipConnectionTest) {
   & (Join-Path $PSScriptRoot "test-runpod-connection.ps1") @connectionArgs
 }
 
+$codexBundledPackage = Get-ConfigValue -Key "CODEX_BUNDLED_PACKAGE" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexBundledPackage)) { $codexBundledPackage = "@openai/codex@latest" }
+
+$codexRequireBundled = Get-ConfigValue -Key "CODEX_REQUIRE_BUNDLED" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexRequireBundled)) { $codexRequireBundled = "1" }
+
 $nodeExe = Resolve-NodeExe -BaseDir $BaseDir
-if ([string]::IsNullOrWhiteSpace($nodeExe)) {
+$bundledCodexExe = Resolve-BundledCodexExe -BaseDir $BaseDir
+if ([string]::IsNullOrWhiteSpace($nodeExe) -or [string]::IsNullOrWhiteSpace($bundledCodexExe)) {
   $prepareScript = Join-Path $PSScriptRoot "prepare-node-runtime.ps1"
   if (!(Test-Path $prepareScript)) {
-    Write-Host "Bundled Node.js runtime is missing and prepare script is not found:"
+    Write-Host "Bundled runtime (Node/Codex) is missing and prepare script is not found:"
     Write-Host "  $prepareScript"
     exit 1
   }
 
-  Write-Host "Bundled Node.js runtime not found. Preparing now..."
-  & $prepareScript
-  $nodeExe = Resolve-NodeExe -BaseDir $BaseDir
   if ([string]::IsNullOrWhiteSpace($nodeExe)) {
-    Write-Host "Failed to prepare bundled Node.js runtime."
+    Write-Host "Bundled Node.js runtime not found. Preparing now..."
+  } else {
+    Write-Host "Bundled Codex CLI not found. Preparing now..."
+  }
+  & $prepareScript -CodexPackage $codexBundledPackage
+  $nodeExe = Resolve-NodeExe -BaseDir $BaseDir
+  $bundledCodexExe = Resolve-BundledCodexExe -BaseDir $BaseDir
+  if ([string]::IsNullOrWhiteSpace($nodeExe) -or [string]::IsNullOrWhiteSpace($bundledCodexExe)) {
+    Write-Host "Failed to prepare bundled Node.js/Codex runtime."
     exit 1
   }
 }
@@ -344,6 +437,12 @@ if (!(Test-Path $serverScript)) {
   Write-Host "Server script not found: $serverScript"
   exit 1
 }
+$fastApiAppDir = Join-Path $PSScriptRoot "fastapi_app"
+if (!(Test-Path $fastApiAppDir)) {
+  Write-Host "FastAPI app directory not found: $fastApiAppDir"
+  exit 1
+}
+$fastApiAppMarker = "fastapi_app.main:app"
 
 if (Test-Path $pidFile) {
   $existingPidRaw = (Get-Content -Raw $pidFile).Trim()
@@ -390,16 +489,23 @@ if (Test-Path $pidFile) {
   $existingPidRaw = (Get-Content -Raw $pidFile).Trim()
   [int]$pidFromFile = 0
   [void][int]::TryParse($existingPidRaw, [ref]$pidFromFile)
-  if ($pidFromFile -gt 0 -and (Test-IsLocaLingoServerProcessId -ProcessId $pidFromFile -ServerScriptPath $serverScript)) {
+  if (
+    $pidFromFile -gt 0 -and (
+      (Test-IsLocaLingoServerProcessId -ProcessId $pidFromFile -ServerScriptPath $serverScript) -or
+      (Test-IsLocaLingoFastApiProcessId -ProcessId $pidFromFile -Marker $fastApiAppMarker)
+    )
+  ) {
     $restartTargets += $pidFromFile
   }
 }
 $restartTargets += Get-LocaLingoServerProcessIds -ServerScriptPath $serverScript
-$restartTargets = @($restartTargets | Where-Object { $_ -gt 0 } | Sort-Object -Unique)
+$restartTargets += Get-LocaLingoFastApiProcessIds -Marker $fastApiAppMarker
+$restartTargets = @($restartTargets | Where-Object { $_ -gt 0 -and $_ -ne $PID } | Sort-Object -Unique)
 
 if ($restartTargets.Count -gt 0) {
   Write-Host "Restarting LocaLingo. Stopping previous process(es): $($restartTargets -join ', ')"
   foreach ($procId in $restartTargets) {
+    Write-Host "Stopping PID=$procId ..."
     [void](Stop-ProcessByIdSafe -ProcessId $procId)
   }
   for ($i = 0; $i -lt 20; $i++) {
@@ -425,21 +531,47 @@ if ($parsedAppPort -le 0) { $appPort = "3030" }
 
 $appBind = Get-ConfigValue -Key "APP_BIND" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($appBind)) { $appBind = "127.0.0.1" }
+$engineBind = Get-ConfigValue -Key "ENGINE_BIND" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($engineBind)) { $engineBind = "127.0.0.1" }
+$enginePort = Get-ConfigValue -Key "ENGINE_PORT" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($enginePort)) { $enginePort = "3031" }
+[int]$parsedEnginePort = 0
+[void][int]::TryParse($enginePort, [ref]$parsedEnginePort)
+if ($parsedEnginePort -le 0) { $enginePort = "3031" }
+if ($enginePort -eq $appPort) {
+  try {
+    $enginePort = ([int]$appPort + 1).ToString()
+  } catch {
+    $enginePort = "3031"
+  }
+}
 
 $appTimeZone = Get-ConfigValue -Key "APP_TIME_ZONE" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($appTimeZone)) { $appTimeZone = "Asia/Tokyo" }
 
 $timeoutMs = Get-ConfigValue -Key "RUNPOD_REQUEST_TIMEOUT_MS" -FilePaths $configFiles
-if ([string]::IsNullOrWhiteSpace($timeoutMs)) { $timeoutMs = "90000" }
+if ([string]::IsNullOrWhiteSpace($timeoutMs)) { $timeoutMs = "120000" }
 
 $runPodRetryMaxAttempts = Get-ConfigValue -Key "RUNPOD_HTTP_RETRY_MAX_ATTEMPTS" -FilePaths $configFiles
-if ([string]::IsNullOrWhiteSpace($runPodRetryMaxAttempts)) { $runPodRetryMaxAttempts = "4" }
+if ([string]::IsNullOrWhiteSpace($runPodRetryMaxAttempts)) { $runPodRetryMaxAttempts = "5" }
 
 $runPodRetryDelayMs = Get-ConfigValue -Key "RUNPOD_HTTP_RETRY_DELAY_MS" -FilePaths $configFiles
-if ([string]::IsNullOrWhiteSpace($runPodRetryDelayMs)) { $runPodRetryDelayMs = "1500" }
+if ([string]::IsNullOrWhiteSpace($runPodRetryDelayMs)) { $runPodRetryDelayMs = "1200" }
 
 $runPodRetryMaxDelayMs = Get-ConfigValue -Key "RUNPOD_HTTP_RETRY_MAX_DELAY_MS" -FilePaths $configFiles
-if ([string]::IsNullOrWhiteSpace($runPodRetryMaxDelayMs)) { $runPodRetryMaxDelayMs = "6000" }
+if ([string]::IsNullOrWhiteSpace($runPodRetryMaxDelayMs)) { $runPodRetryMaxDelayMs = "10000" }
+
+$runPodModelsTimeoutMs = Get-ConfigValue -Key "RUNPOD_MODELS_TIMEOUT_MS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($runPodModelsTimeoutMs)) { $runPodModelsTimeoutMs = "30000" }
+
+$runPodChatTimeoutMs = Get-ConfigValue -Key "RUNPOD_CHAT_TIMEOUT_MS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($runPodChatTimeoutMs)) { $runPodChatTimeoutMs = "120000" }
+
+$runPodHealthcheckOnChat = Get-ConfigValue -Key "RUNPOD_HEALTHCHECK_ON_CHAT" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($runPodHealthcheckOnChat)) { $runPodHealthcheckOnChat = "1" }
+
+$runPodHealthcheckTtlMs = Get-ConfigValue -Key "RUNPOD_HEALTHCHECK_TTL_MS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($runPodHealthcheckTtlMs)) { $runPodHealthcheckTtlMs = "20000" }
 
 $workspaceRoot = Join-Path $BaseDir "workspace"
 if (!(Test-Path $workspaceRoot)) {
@@ -504,6 +636,15 @@ if ([string]::IsNullOrWhiteSpace($clientAutostopRequestGraceMs)) { $clientAutost
 $streamKeepaliveIntervalMs = Get-ConfigValue -Key "STREAM_KEEPALIVE_INTERVAL_MS" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($streamKeepaliveIntervalMs)) { $streamKeepaliveIntervalMs = "10000" }
 
+$assistantStreamEnabled = Get-ConfigValue -Key "ASSISTANT_STREAM_ENABLED" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($assistantStreamEnabled)) { $assistantStreamEnabled = "1" }
+
+$assistantStreamChunkChars = Get-ConfigValue -Key "ASSISTANT_STREAM_CHUNK_CHARS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($assistantStreamChunkChars)) { $assistantStreamChunkChars = "48" }
+
+$assistantStreamChunkDelayMs = Get-ConfigValue -Key "ASSISTANT_STREAM_CHUNK_DELAY_MS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($assistantStreamChunkDelayMs)) { $assistantStreamChunkDelayMs = "12" }
+
 $generationTemperature = Get-ConfigValue -Key "GENERATION_TEMPERATURE" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($generationTemperature)) { $generationTemperature = "0.6" }
 
@@ -525,8 +666,151 @@ if ([string]::IsNullOrWhiteSpace($generationContextReserveTokens)) { $generation
 $autoToolTemperature = Get-ConfigValue -Key "AUTO_TOOL_TEMPERATURE" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($autoToolTemperature)) { $autoToolTemperature = $generationTemperature }
 
+$agentBackend = Get-ConfigValue -Key "AGENT_BACKEND" -FilePaths $configFiles
+$agentBackendNormalized = "codex_cli"
+if (-not [string]::IsNullOrWhiteSpace($agentBackend)) {
+  $requestedBackend = $agentBackend.Trim().ToLowerInvariant()
+  if ($requestedBackend -ne "codex_cli") {
+    Write-Host "AGENT_BACKEND=$requestedBackend is ignored. Forcing codex_cli."
+  }
+}
+
+$configuredCodexBin = Get-ConfigValue -Key "CODEX_BIN" -FilePaths $configFiles
+$codexBin = $bundledCodexExe
+if (-not [string]::IsNullOrWhiteSpace($configuredCodexBin)) {
+  $normalizedConfigured = (Normalize-PathForMatch -Value $configuredCodexBin)
+  $normalizedBundled = (Normalize-PathForMatch -Value $bundledCodexExe)
+  if ($normalizedConfigured -ne $normalizedBundled) {
+    Write-Host "CODEX_BIN in env is ignored. Using bundled codex:"
+    Write-Host "  $bundledCodexExe"
+  }
+}
+$codexHome = Get-ConfigValue -Key "CODEX_HOME" -FilePaths $configFiles
+$codexExecTimeoutSec = Get-ConfigValue -Key "CODEX_EXEC_TIMEOUT_SEC" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexExecTimeoutSec)) { $codexExecTimeoutSec = "900" }
+
+$codexNativeMode = Get-ConfigValue -Key "CODEX_NATIVE_MODE" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexNativeMode)) { $codexNativeMode = "1" }
+
+$codexFullAuto = Get-ConfigValue -Key "CODEX_FULL_AUTO" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexFullAuto)) { $codexFullAuto = "1" }
+
+$codexSkipGitRepoCheck = Get-ConfigValue -Key "CODEX_SKIP_GIT_REPO_CHECK" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexSkipGitRepoCheck)) { $codexSkipGitRepoCheck = "1" }
+
+$codexDangerousBypass = Get-ConfigValue -Key "CODEX_DANGEROUS_BYPASS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexDangerousBypass)) { $codexDangerousBypass = "0" }
+
+$codexExtraArgs = Get-ConfigValue -Key "CODEX_EXTRA_ARGS" -FilePaths $configFiles
+
+$codexProviderRequestMaxRetries = Get-ConfigValue -Key "CODEX_PROVIDER_REQUEST_MAX_RETRIES" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexProviderRequestMaxRetries)) { $codexProviderRequestMaxRetries = "1" }
+
+$codexProviderStreamMaxRetries = Get-ConfigValue -Key "CODEX_PROVIDER_STREAM_MAX_RETRIES" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexProviderStreamMaxRetries)) { $codexProviderStreamMaxRetries = "1" }
+
+$codexProviderStreamIdleTimeoutMs = Get-ConfigValue -Key "CODEX_PROVIDER_STREAM_IDLE_TIMEOUT_MS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexProviderStreamIdleTimeoutMs)) { $codexProviderStreamIdleTimeoutMs = "45000" }
+
+$codexModelContextWindow = Get-ConfigValue -Key "CODEX_MODEL_CONTEXT_WINDOW" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexModelContextWindow)) { $codexModelContextWindow = "32768" }
+
+$codexMinimalModelInstructions = Get-ConfigValue -Key "CODEX_MINIMAL_MODEL_INSTRUCTIONS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexMinimalModelInstructions)) { $codexMinimalModelInstructions = "0" }
+
+$codexMinimalModelInstructionsFile = Get-ConfigValue -Key "CODEX_MINIMAL_MODEL_INSTRUCTIONS_FILE" -FilePaths $configFiles
+
+$codexModelReasoningEffort = Get-ConfigValue -Key "CODEX_MODEL_REASONING_EFFORT" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexModelReasoningEffort)) { $codexModelReasoningEffort = "minimal" }
+
+$codexModelReasoningSummary = Get-ConfigValue -Key "CODEX_MODEL_REASONING_SUMMARY" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexModelReasoningSummary)) { $codexModelReasoningSummary = "auto" }
+
+$codexModelVerbosity = Get-ConfigValue -Key "CODEX_MODEL_VERBOSITY" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexModelVerbosity)) { $codexModelVerbosity = "low" }
+
+$codexExecModel = Get-ConfigValue -Key "CODEX_EXEC_MODEL" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexExecModel)) { $codexExecModel = $defaultModel }
+
+$codexLmstudioProviderId = Get-ConfigValue -Key "CODEX_LMSTUDIO_PROVIDER_ID" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexLmstudioProviderId)) { $codexLmstudioProviderId = "lmstudio-runpod" }
+
+$codexProjectDocMaxBytes = Get-ConfigValue -Key "CODEX_PROJECT_DOC_MAX_BYTES" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexProjectDocMaxBytes)) { $codexProjectDocMaxBytes = "0" }
+
+$codexPromptMaxChars = Get-ConfigValue -Key "CODEX_PROMPT_MAX_CHARS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexPromptMaxChars)) { $codexPromptMaxChars = "12000" }
+
+$codexPromptCompressionEnabled = Get-ConfigValue -Key "CODEX_PROMPT_COMPRESSION_ENABLED" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexPromptCompressionEnabled)) { $codexPromptCompressionEnabled = "1" }
+
+$codexPromptCompressionTriggerChars = Get-ConfigValue -Key "CODEX_PROMPT_COMPRESSION_TRIGGER_CHARS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexPromptCompressionTriggerChars)) { $codexPromptCompressionTriggerChars = "9000" }
+
+$codexPromptCompressionTargetChars = Get-ConfigValue -Key "CODEX_PROMPT_COMPRESSION_TARGET_CHARS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexPromptCompressionTargetChars)) { $codexPromptCompressionTargetChars = "7600" }
+
+$codexPromptKeepHeadChars = Get-ConfigValue -Key "CODEX_PROMPT_KEEP_HEAD_CHARS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexPromptKeepHeadChars)) { $codexPromptKeepHeadChars = "2400" }
+
+$codexPromptKeepTailChars = Get-ConfigValue -Key "CODEX_PROMPT_KEEP_TAIL_CHARS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexPromptKeepTailChars)) { $codexPromptKeepTailChars = "3200" }
+
+$codexPromptKeyLinesLimit = Get-ConfigValue -Key "CODEX_PROMPT_KEY_LINES_LIMIT" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexPromptKeyLinesLimit)) { $codexPromptKeyLinesLimit = "40" }
+
+$codexExecProgressPingIntervalMs = Get-ConfigValue -Key "CODEX_EXEC_PROGRESS_PING_INTERVAL_MS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexExecProgressPingIntervalMs)) { $codexExecProgressPingIntervalMs = "8000" }
+
+$codexExecRetryMaxAttempts = Get-ConfigValue -Key "CODEX_EXEC_RETRY_MAX_ATTEMPTS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexExecRetryMaxAttempts)) { $codexExecRetryMaxAttempts = "3" }
+
+$codexExecRetryBaseDelayMs = Get-ConfigValue -Key "CODEX_EXEC_RETRY_BASE_DELAY_MS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexExecRetryBaseDelayMs)) { $codexExecRetryBaseDelayMs = "800" }
+
+$codexExecRetryMaxDelayMs = Get-ConfigValue -Key "CODEX_EXEC_RETRY_MAX_DELAY_MS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexExecRetryMaxDelayMs)) { $codexExecRetryMaxDelayMs = "4000" }
+
+$codexStreamRecoveryFallbackEnabled = Get-ConfigValue -Key "CODEX_STREAM_RECOVERY_FALLBACK_ENABLED" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexStreamRecoveryFallbackEnabled)) { $codexStreamRecoveryFallbackEnabled = "1" }
+
+$codexStreamRecoveryTimeoutMs = Get-ConfigValue -Key "CODEX_STREAM_RECOVERY_TIMEOUT_MS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexStreamRecoveryTimeoutMs)) { $codexStreamRecoveryTimeoutMs = "90000" }
+
+$codexWebSearchMode = Get-ConfigValue -Key "CODEX_WEB_SEARCH_MODE" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexWebSearchMode)) { $codexWebSearchMode = "live" }
+
+$codexToolFallbackToEngine = Get-ConfigValue -Key "CODEX_TOOL_FALLBACK_TO_ENGINE" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexToolFallbackToEngine)) { $codexToolFallbackToEngine = "0" }
+
+$codexToolFallbackForceForLiveWeb = Get-ConfigValue -Key "CODEX_TOOL_FALLBACK_FORCE_FOR_LIVE_WEB" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexToolFallbackForceForLiveWeb)) { $codexToolFallbackForceForLiveWeb = "0" }
+
+$runPodBaseUrlCandidates = Get-ConfigValue -Key "RUNPOD_BASE_URL_CANDIDATES" -FilePaths $configFiles
+$runPodRouteProbeEnabled = Get-ConfigValue -Key "RUNPOD_ROUTE_PROBE_ENABLED" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($runPodRouteProbeEnabled)) { $runPodRouteProbeEnabled = "1" }
+
+$runPodRouteProbeTimeoutMs = Get-ConfigValue -Key "RUNPOD_ROUTE_PROBE_TIMEOUT_MS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($runPodRouteProbeTimeoutMs)) { $runPodRouteProbeTimeoutMs = "6000" }
+
+$runPodRouteCooldownSec = Get-ConfigValue -Key "RUNPOD_ROUTE_COOLDOWN_SEC" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($runPodRouteCooldownSec)) { $runPodRouteCooldownSec = "90" }
+
+$runPodResponsesBackgroundEnabled = Get-ConfigValue -Key "RUNPOD_RESPONSES_BACKGROUND_ENABLED" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($runPodResponsesBackgroundEnabled)) { $runPodResponsesBackgroundEnabled = "1" }
+
+$runPodResponsesPollIntervalMs = Get-ConfigValue -Key "RUNPOD_RESPONSES_POLL_INTERVAL_MS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($runPodResponsesPollIntervalMs)) { $runPodResponsesPollIntervalMs = "1500" }
+
+$runPodResponsesPollTimeoutMs = Get-ConfigValue -Key "RUNPOD_RESPONSES_POLL_TIMEOUT_MS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($runPodResponsesPollTimeoutMs)) { $runPodResponsesPollTimeoutMs = "90000" }
+
 $envVars = @{
   "RUNPOD_BASE_URL"         = $baseUrl
+  "RUNPOD_BASE_URL_CANDIDATES" = $runPodBaseUrlCandidates
+  "RUNPOD_ROUTE_PROBE_ENABLED" = $runPodRouteProbeEnabled
+  "RUNPOD_ROUTE_PROBE_TIMEOUT_MS" = $runPodRouteProbeTimeoutMs
+  "RUNPOD_ROUTE_COOLDOWN_SEC" = $runPodRouteCooldownSec
   "RUNPOD_API_KEY"          = $runPodApiKey
   "DEFAULT_MODEL"           = $defaultModel
   "UV_BIN"                  = $uvExe
@@ -538,6 +822,10 @@ $envVars = @{
   "RUNPOD_HTTP_RETRY_MAX_ATTEMPTS" = $runPodRetryMaxAttempts
   "RUNPOD_HTTP_RETRY_DELAY_MS" = $runPodRetryDelayMs
   "RUNPOD_HTTP_RETRY_MAX_DELAY_MS" = $runPodRetryMaxDelayMs
+  "RUNPOD_MODELS_TIMEOUT_MS" = $runPodModelsTimeoutMs
+  "RUNPOD_CHAT_TIMEOUT_MS" = $runPodChatTimeoutMs
+  "RUNPOD_HEALTHCHECK_ON_CHAT" = $runPodHealthcheckOnChat
+  "RUNPOD_HEALTHCHECK_TTL_MS" = $runPodHealthcheckTtlMs
   "WORKSPACE_ROOT"          = $workspaceRoot
   "WORKSPACE_STATE_FILE"    = $workspaceStateFile
   "LOCAL_SHELL_TIMEOUT_MS"  = $localShellTimeout
@@ -559,6 +847,9 @@ $envVars = @{
   "CLIENT_HEARTBEAT_SWEEP_MS" = $clientHeartbeatSweepMs
   "CLIENT_AUTOSTOP_REQUEST_GRACE_MS" = $clientAutostopRequestGraceMs
   "STREAM_KEEPALIVE_INTERVAL_MS" = $streamKeepaliveIntervalMs
+  "ASSISTANT_STREAM_ENABLED" = $assistantStreamEnabled
+  "ASSISTANT_STREAM_CHUNK_CHARS" = $assistantStreamChunkChars
+  "ASSISTANT_STREAM_CHUNK_DELAY_MS" = $assistantStreamChunkDelayMs
   "GENERATION_TEMPERATURE" = $generationTemperature
   "GENERATION_TOP_P" = $generationTopP
   "GENERATION_TOP_K" = $generationTopK
@@ -566,6 +857,52 @@ $envVars = @{
   "GENERATION_MAX_CONTEXT_TOKENS" = $generationMaxContextTokens
   "GENERATION_CONTEXT_RESERVE_TOKENS" = $generationContextReserveTokens
   "AUTO_TOOL_TEMPERATURE" = $autoToolTemperature
+  "AGENT_BACKEND" = $agentBackendNormalized
+  "CODEX_BIN" = $codexBin
+  "BUNDLED_CODEX_BIN" = $bundledCodexExe
+  "CODEX_REQUIRE_BUNDLED" = $codexRequireBundled
+  "CODEX_BUNDLED_PACKAGE" = $codexBundledPackage
+  "CODEX_HOME" = $codexHome
+  "CODEX_EXEC_TIMEOUT_SEC" = $codexExecTimeoutSec
+  "CODEX_NATIVE_MODE" = $codexNativeMode
+  "CODEX_FULL_AUTO" = $codexFullAuto
+  "CODEX_SKIP_GIT_REPO_CHECK" = $codexSkipGitRepoCheck
+  "CODEX_DANGEROUS_BYPASS" = $codexDangerousBypass
+  "CODEX_EXTRA_ARGS" = $codexExtraArgs
+  "CODEX_PROVIDER_REQUEST_MAX_RETRIES" = $codexProviderRequestMaxRetries
+  "CODEX_PROVIDER_STREAM_MAX_RETRIES" = $codexProviderStreamMaxRetries
+  "CODEX_PROVIDER_STREAM_IDLE_TIMEOUT_MS" = $codexProviderStreamIdleTimeoutMs
+  "CODEX_MODEL_CONTEXT_WINDOW" = $codexModelContextWindow
+  "CODEX_MINIMAL_MODEL_INSTRUCTIONS" = $codexMinimalModelInstructions
+  "CODEX_MINIMAL_MODEL_INSTRUCTIONS_FILE" = $codexMinimalModelInstructionsFile
+  "CODEX_MODEL_REASONING_EFFORT" = $codexModelReasoningEffort
+  "CODEX_MODEL_REASONING_SUMMARY" = $codexModelReasoningSummary
+  "CODEX_MODEL_VERBOSITY" = $codexModelVerbosity
+  "CODEX_EXEC_MODEL" = $codexExecModel
+  "CODEX_LMSTUDIO_PROVIDER_ID" = $codexLmstudioProviderId
+  "CODEX_PROJECT_DOC_MAX_BYTES" = $codexProjectDocMaxBytes
+  "CODEX_PROMPT_MAX_CHARS" = $codexPromptMaxChars
+  "CODEX_PROMPT_COMPRESSION_ENABLED" = $codexPromptCompressionEnabled
+  "CODEX_PROMPT_COMPRESSION_TRIGGER_CHARS" = $codexPromptCompressionTriggerChars
+  "CODEX_PROMPT_COMPRESSION_TARGET_CHARS" = $codexPromptCompressionTargetChars
+  "CODEX_PROMPT_KEEP_HEAD_CHARS" = $codexPromptKeepHeadChars
+  "CODEX_PROMPT_KEEP_TAIL_CHARS" = $codexPromptKeepTailChars
+  "CODEX_PROMPT_KEY_LINES_LIMIT" = $codexPromptKeyLinesLimit
+  "CODEX_EXEC_PROGRESS_PING_INTERVAL_MS" = $codexExecProgressPingIntervalMs
+  "CODEX_EXEC_RETRY_MAX_ATTEMPTS" = $codexExecRetryMaxAttempts
+  "CODEX_EXEC_RETRY_BASE_DELAY_MS" = $codexExecRetryBaseDelayMs
+  "CODEX_EXEC_RETRY_MAX_DELAY_MS" = $codexExecRetryMaxDelayMs
+  "CODEX_STREAM_RECOVERY_FALLBACK_ENABLED" = $codexStreamRecoveryFallbackEnabled
+  "CODEX_STREAM_RECOVERY_TIMEOUT_MS" = $codexStreamRecoveryTimeoutMs
+  "CODEX_WEB_SEARCH_MODE" = $codexWebSearchMode
+  "CODEX_TOOL_FALLBACK_TO_ENGINE" = $codexToolFallbackToEngine
+  "CODEX_TOOL_FALLBACK_FORCE_FOR_LIVE_WEB" = $codexToolFallbackForceForLiveWeb
+  "RUNPOD_RESPONSES_BACKGROUND_ENABLED" = $runPodResponsesBackgroundEnabled
+  "RUNPOD_RESPONSES_POLL_INTERVAL_MS" = $runPodResponsesPollIntervalMs
+  "RUNPOD_RESPONSES_POLL_TIMEOUT_MS" = $runPodResponsesPollTimeoutMs
+  "NODE_BIN" = $nodeExe
+  "ENGINE_BIND" = $engineBind
+  "ENGINE_PORT" = $enginePort
 }
 
 $saved = @{}
@@ -575,11 +912,11 @@ foreach ($k in $envVars.Keys) {
 }
 
 try {
-  $proc = Start-Process -FilePath $nodeExe `
-    -ArgumentList @($serverScript) `
+  $proc = Start-Process -FilePath $pythonExe `
+    -ArgumentList @("-m", "uvicorn", "fastapi_app.main:app", "--host", $appBind, "--port", $appPort) `
     -PassThru `
     -WindowStyle Hidden `
-    -WorkingDirectory $BaseDir `
+    -WorkingDirectory $PSScriptRoot `
     -RedirectStandardOutput $outLog `
     -RedirectStandardError $errLog
 }
@@ -620,7 +957,9 @@ if (-not $NoOpenBrowser) {
 
 Write-Host "LocaLingo started."
 Write-Host "PID: $($proc.Id)"
-Write-Host "Node: $nodeExe"
+Write-Host "FastAPI: $pythonExe -m uvicorn fastapi_app.main:app"
+Write-Host "Node (engine): $nodeExe"
+Write-Host "Codex (bundled): $bundledCodexExe"
 Write-Host "UV: $uvExe"
 Write-Host "Python: $pythonExe"
 Write-Host "Config files:"
@@ -629,6 +968,7 @@ Write-Host "  shared: $configEnvFile"
 Write-Host "Secure key store: $apiKeyStoreFile"
 Write-Host "Workspace root: $workspaceRoot"
 Write-Host "Workspace state file: $workspaceStateFile"
+Write-Host "Agent backend: $agentBackendNormalized"
 Write-Host "Endpoint: $(Mask-Url -Url $baseUrl)"
 Write-Host "Connection test mode: $connectionTestModeNormalized"
 Write-Host "URL: $url"

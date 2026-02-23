@@ -142,9 +142,9 @@ $headers = @{
   "x-api-key"  = $token
 }
 
-$maxAttemptsConfigured = Convert-ToIntOrDefault -Value (Get-ConfigValue -Key "RUNPOD_CONNECTION_TEST_MAX_ATTEMPTS") -DefaultValue 2 -MinValue 1 -MaxValue 20
-$retryDelayConfigured = Convert-ToIntOrDefault -Value (Get-ConfigValue -Key "RUNPOD_CONNECTION_TEST_RETRY_DELAY_SEC") -DefaultValue 1 -MinValue 1 -MaxValue 60
-$timeoutConfigured = Convert-ToIntOrDefault -Value (Get-ConfigValue -Key "RUNPOD_CONNECTION_TEST_TIMEOUT_SEC") -DefaultValue 5 -MinValue 3 -MaxValue 120
+$maxAttemptsConfigured = Convert-ToIntOrDefault -Value (Get-ConfigValue -Key "RUNPOD_CONNECTION_TEST_MAX_ATTEMPTS") -DefaultValue 4 -MinValue 1 -MaxValue 20
+$retryDelayConfigured = Convert-ToIntOrDefault -Value (Get-ConfigValue -Key "RUNPOD_CONNECTION_TEST_RETRY_DELAY_SEC") -DefaultValue 2 -MinValue 1 -MaxValue 60
+$timeoutConfigured = Convert-ToIntOrDefault -Value (Get-ConfigValue -Key "RUNPOD_CONNECTION_TEST_TIMEOUT_SEC") -DefaultValue 8 -MinValue 3 -MaxValue 120
 
 if ($MaxAttempts -le 0) { $MaxAttempts = $maxAttemptsConfigured }
 if ($RetryDelaySec -le 0) { $RetryDelaySec = $retryDelayConfigured }
@@ -177,10 +177,18 @@ for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
       408, # request timeout
       425, # too early
       429, # rate limited
+      499, # client closed request / proxy edge case
       500, # internal server error
       502, # bad gateway (common during pod warmup)
       503, # service unavailable
-      504  # gateway timeout
+      504, # gateway timeout
+      520, # unknown error (cloudflare/proxy edge)
+      521, # web server down
+      522, # connection timed out
+      523, # origin unreachable
+      524, # timeout occurred
+      525, # SSL handshake failed
+      526  # invalid SSL certificate
     ) -contains $statusCode
 
     if ($isTransient -and $attempt -lt $MaxAttempts) {

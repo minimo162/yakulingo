@@ -18,6 +18,7 @@
   const chatFallbackTimeoutMs = 60000;
   let clientId = "";
   let clientHeartbeatTimer = null;
+  let activeAssistantStream = null;
 
   function generateClientId() {
     if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -119,6 +120,80 @@
       `<pre class="turn-body">${escapeHtml(String(message || "Request failed.").slice(0, 2000))}</pre>`,
     ].join("");
     chatLog.appendChild(article);
+    scrollBottom(chatLog);
+  }
+
+  function resetAssistantStreamState() {
+    activeAssistantStream = null;
+  }
+
+  function ensureAssistantStreamCard(modelName) {
+    if (!chatLog) return null;
+    if (activeAssistantStream && activeAssistantStream.article && activeAssistantStream.body) {
+      return activeAssistantStream;
+    }
+    const article = document.createElement("article");
+    article.className = "turn turn-assistant";
+
+    const header = document.createElement("header");
+    header.className = "turn-header";
+    header.textContent = `LocaLingo (${String(modelName || "").trim() || "model"})`;
+
+    const body = document.createElement("pre");
+    body.className = "turn-body";
+    body.textContent = "";
+
+    const footer = document.createElement("footer");
+    footer.className = "turn-footer";
+    footer.textContent = "streaming...";
+
+    article.appendChild(header);
+    article.appendChild(body);
+    article.appendChild(footer);
+    chatLog.appendChild(article);
+    scrollBottom(chatLog);
+
+    activeAssistantStream = {
+      article,
+      header,
+      body,
+      footer,
+      text: "",
+      hasContent: false,
+    };
+    return activeAssistantStream;
+  }
+
+  function appendAssistantStreamDelta(deltaText) {
+    const stream = ensureAssistantStreamCard("");
+    if (!stream) return;
+    const delta = String(deltaText || "");
+    if (!delta) return;
+    stream.text += delta;
+    stream.hasContent = true;
+    stream.body.textContent = stream.text;
+    scrollBottom(chatLog);
+  }
+
+  function finishAssistantStream(elapsedMs) {
+    if (!activeAssistantStream || !activeAssistantStream.footer) return;
+    const elapsed = Number.isFinite(elapsedMs) ? `${elapsedMs} ms` : "Done";
+    activeAssistantStream.footer.textContent = elapsed;
+  }
+
+  function replaceAssistantStreamText(finalText, modelName, elapsedMs) {
+    if (!activeAssistantStream) return;
+    const nextText = String(finalText || "");
+    if (!nextText) return;
+    if (activeAssistantStream.body) {
+      activeAssistantStream.body.textContent = nextText;
+    }
+    if (activeAssistantStream.header && modelName) {
+      activeAssistantStream.header.textContent = `LocaLingo (${String(modelName).trim() || "model"})`;
+    }
+    activeAssistantStream.text = nextText;
+    activeAssistantStream.hasContent = true;
+    finishAssistantStream(elapsedMs);
     scrollBottom(chatLog);
   }
 
@@ -289,7 +364,32 @@
 
   function handleStreamEvent(event) {
     if (!event || typeof event !== "object") return;
-    if (event.type === "user_turn" || event.type === "assistant_turn" || event.type === "tool_card") {
+    if (event.type === "assistant_stream_start") {
+      ensureAssistantStreamCard(event.model || "");
+      return;
+    }
+    if (event.type === "assistant_stream_delta") {
+      appendAssistantStreamDelta(event.delta || "");
+      return;
+    }
+    if (event.type === "assistant_stream_done") {
+      finishAssistantStream(event.elapsedMs);
+      return;
+    }
+    if (
+      event.type === "user_turn"
+      || event.type === "assistant_turn"
+      || event.type === "tool_card"
+      || event.type === "context_compacted"
+    ) {
+      if (event.type === "assistant_turn" && activeAssistantStream && activeAssistantStream.hasContent) {
+        if (event.text) {
+          replaceAssistantStreamText(event.text, event.model || "", event.elapsedMs);
+        } else {
+          finishAssistantStream(event.elapsedMs);
+        }
+        return;
+      }
       appendHtml(chatLog, event.html || "");
       return;
     }
@@ -367,6 +467,7 @@
     }
 
     setRunningState(true, "Connecting...");
+    resetAssistantStreamState();
     let gotDoneEvent = false;
     let gotAssistantTurn = false;
     try {
@@ -417,6 +518,12 @@
               if (eventPayload && typeof eventPayload === "object") {
                 if (eventPayload.type === "assistant_turn") {
                   gotAssistantTurn = true;
+                } else if (
+                  eventPayload.type === "assistant_stream_start"
+                  || eventPayload.type === "assistant_stream_delta"
+                  || eventPayload.type === "assistant_stream_done"
+                ) {
+                  gotAssistantTurn = true;
                 } else if (eventPayload.type === "done") {
                   gotDoneEvent = true;
                 }
@@ -441,6 +548,12 @@
           if (finalPayload && typeof finalPayload === "object") {
             if (finalPayload.type === "assistant_turn") {
               gotAssistantTurn = true;
+            } else if (
+              finalPayload.type === "assistant_stream_start"
+              || finalPayload.type === "assistant_stream_delta"
+              || finalPayload.type === "assistant_stream_done"
+            ) {
+              gotAssistantTurn = true;
             } else if (finalPayload.type === "done") {
               gotDoneEvent = true;
             }
@@ -463,6 +576,7 @@
           appendError([streamError, fallbackErr?.message || String(fallbackErr)].filter(Boolean).join("\n\n"));
         }
       } else if (!gotDoneEvent && gotAssistantTurn) {
+        finishAssistantStream(null);
         setRunningState(true, "Completed");
       } else {
         appendError(streamError);

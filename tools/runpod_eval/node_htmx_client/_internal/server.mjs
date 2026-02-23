@@ -36,15 +36,29 @@ const configuredPythonBin = (process.env.PYTHON_BIN || "").trim();
 
 const appPort = Number.parseInt(process.env.APP_PORT || "3030", 10);
 const appBind = process.env.APP_BIND || "127.0.0.1";
-const timeoutMs = Number.parseInt(process.env.RUNPOD_REQUEST_TIMEOUT_MS || "45000", 10);
+const timeoutMs = Number.parseInt(process.env.RUNPOD_REQUEST_TIMEOUT_MS || "120000", 10);
+const runPodModelsTimeoutMs = parseIntEnv(
+  process.env.RUNPOD_MODELS_TIMEOUT_MS,
+  Math.min(30000, Math.max(5000, timeoutMs)),
+  3000,
+  300000,
+);
+const runPodChatTimeoutMs = parseIntEnv(
+  process.env.RUNPOD_CHAT_TIMEOUT_MS,
+  Math.max(120000, timeoutMs),
+  10000,
+  900000,
+);
+const runPodHealthcheckOnChat = parseBooleanEnv(process.env.RUNPOD_HEALTHCHECK_ON_CHAT, true);
+const runPodHealthcheckTtlMs = parseIntEnv(process.env.RUNPOD_HEALTHCHECK_TTL_MS, 20000, 0, 600000);
 const appTimeZone = (process.env.APP_TIME_ZONE || "Asia/Tokyo").trim() || "Asia/Tokyo";
-const runPodHttpRetryMaxAttempts = parseIntEnv(process.env.RUNPOD_HTTP_RETRY_MAX_ATTEMPTS, 2, 1, 12);
-const runPodHttpRetryDelayMs = parseIntEnv(process.env.RUNPOD_HTTP_RETRY_DELAY_MS, 800, 0, 30000);
-const runPodHttpRetryMaxDelayMs = parseIntEnv(process.env.RUNPOD_HTTP_RETRY_MAX_DELAY_MS, 2000, 0, 120000);
+const runPodHttpRetryMaxAttempts = parseIntEnv(process.env.RUNPOD_HTTP_RETRY_MAX_ATTEMPTS, 5, 1, 12);
+const runPodHttpRetryDelayMs = parseIntEnv(process.env.RUNPOD_HTTP_RETRY_DELAY_MS, 1200, 0, 30000);
+const runPodHttpRetryMaxDelayMs = parseIntEnv(process.env.RUNPOD_HTTP_RETRY_MAX_DELAY_MS, 10000, 0, 120000);
 const runPodBaseUrl = (process.env.RUNPOD_BASE_URL || "").trim().replace(/\/+$/, "");
 const runPodApiKey = (process.env.RUNPOD_API_KEY || "").trim();
 const defaultModel = (process.env.DEFAULT_MODEL || "gpt-oss-swallow-120b-iq4xs").trim();
-const maxHistoryPairs = Number.parseInt(process.env.MAX_HISTORY_PAIRS || "8", 10);
+const maxHistoryPairs = parseIntEnv(process.env.MAX_HISTORY_PAIRS, 16, 4, 128);
 const historyCompactionKeepRecentPairs = parseIntEnv(
   process.env.HISTORY_COMPACTION_KEEP_RECENT_PAIRS,
   4,
@@ -56,6 +70,19 @@ const historyCompactionSummaryMaxChars = parseIntEnv(
   18000,
   2000,
   120000,
+);
+const sessionAutoCompactTokenLimit = parseIntEnv(
+  process.env.SESSION_AUTO_COMPACT_TOKEN_LIMIT,
+  22000,
+  1024,
+  262144,
+);
+const sessionCompactionTargetRatio = parseFloatEnv(process.env.SESSION_COMPACTION_TARGET_RATIO, 0.68, 0.4, 0.95);
+const sessionCompactionSystemPromptReserveTokens = parseIntEnv(
+  process.env.SESSION_COMPACTION_SYSTEM_PROMPT_RESERVE_TOKENS,
+  2400,
+  256,
+  65536,
 );
 const contextRetryKeepRecentMessages = parseIntEnv(
   process.env.CONTEXT_RETRY_KEEP_RECENT_MESSAGES,
@@ -86,6 +113,7 @@ const autoToolMaxTokens = Number.parseInt(process.env.AUTO_TOOL_MAX_TOKENS || "2
 const autoToolResultChars = Number.parseInt(process.env.AUTO_TOOL_RESULT_CHARS || "8000", 10);
 const autoToolJsonRepairRetries = Number.parseInt(process.env.AUTO_TOOL_JSON_REPAIR_RETRIES || "1", 10);
 const autoToolJsonRepairMaxChars = Number.parseInt(process.env.AUTO_TOOL_JSON_REPAIR_MAX_CHARS || "8000", 10);
+const showInternalRecoveryCards = parseBooleanEnv(process.env.SHOW_INTERNAL_RECOVERY_CARDS, false);
 const parsedAutoToolTemperature = Number.parseFloat(process.env.AUTO_TOOL_TEMPERATURE || String(generationTemperatureDefault));
 const autoToolTemperature = Number.isFinite(parsedAutoToolTemperature) ? parsedAutoToolTemperature : generationTemperatureDefault;
 const autonomousLoopMaxIters = Number.parseInt(process.env.AUTONOMOUS_LOOP_MAX_ITERS || "3", 10);
@@ -107,6 +135,9 @@ const clientAutostopIdleMs = Number.parseInt(process.env.CLIENT_AUTOSTOP_IDLE_MS
 const clientHeartbeatSweepMs = Number.parseInt(process.env.CLIENT_HEARTBEAT_SWEEP_MS || "5000", 10);
 const clientAutostopRequestGraceMs = Number.parseInt(process.env.CLIENT_AUTOSTOP_REQUEST_GRACE_MS || "30000", 10);
 const streamKeepaliveIntervalMs = Number.parseInt(process.env.STREAM_KEEPALIVE_INTERVAL_MS || "10000", 10);
+const assistantStreamEnabled = parseBooleanEnv(process.env.ASSISTANT_STREAM_ENABLED, true);
+const assistantStreamChunkChars = parseIntEnv(process.env.ASSISTANT_STREAM_CHUNK_CHARS, 48, 8, 512);
+const assistantStreamChunkDelayMs = parseIntEnv(process.env.ASSISTANT_STREAM_CHUNK_DELAY_MS, 12, 0, 250);
 const defaultWorkspaceRoot = path.join(__dirname, "..", "workspace");
 const configuredWorkspaceRoot = path.resolve((process.env.WORKSPACE_ROOT || defaultWorkspaceRoot).trim() || defaultWorkspaceRoot);
 const configuredWorkspaceStateFile = (process.env.WORKSPACE_STATE_FILE || "").trim();
@@ -160,6 +191,20 @@ const autoToolNames = [
   "update_plan",
   "web_search",
 ];
+
+function normalizeToolAlias(rawName) {
+  const name = String(rawName || "").trim().toLowerCase();
+  const aliasMap = {
+    shell_command: "shell",
+    exec_command: "shell",
+    applypatch: "apply_patch",
+    readfile: "read_file",
+    listdir: "list_dir",
+    websearch: "web_search",
+  };
+  return aliasMap[name] || name;
+}
+
 const autoToolDecisionSchemaDescription = {
   oneOf: [
     {
@@ -177,6 +222,8 @@ const autoToolDecisionSchemaDescription = {
   compatibility: [
     '{"type":"tool","tool":"...","args":{...}}',
     '{"type":"answer","message":"..."}',
+    '{"type":"function_call","call_id":"...","name":"...","arguments":"{\\"path\\":\\"...\\"}"}',
+    '{"type":"response.output_item.done","item":{"type":"function_call","call_id":"...","name":"...","arguments":"{\\"path\\":\\"...\\"}"}}',
   ],
 };
 const autoToolSpecs = [
@@ -331,6 +378,7 @@ const autoToolSystemPrompt = [
   "You are a practical coding agent for a local repository.",
   "Return ONLY one JSON object. Do not include markdown.",
   "Prefer codex-like format with call_id and explicit tool_name.",
+  "Codex compatibility: function_call with JSON-string arguments is accepted.",
   "Decision schema:",
   JSON.stringify(autoToolDecisionSchemaDescription),
   "Tool specs (JSON schema style):",
@@ -346,13 +394,18 @@ const autoToolSystemPrompt = [
   "If the user asks to create/update a file in workspace, you must call write or apply_patch before final.",
   "Do not finish with instructions-only text when a file write was explicitly requested.",
   "Use web_search for latest/current external information needs.",
+  "For latest news requests: do web_search, then open at least one result URL with read before final.",
+  "For latest news final answers: cite concrete source URLs from gathered evidence.",
   "Current date context will be provided as current_date_jst/current_utc_iso in system messages.",
   "Resolve relative dates (today/今日/tomorrow/明日/yesterday/昨日) strictly from the provided date context.",
   "For weather/news questions asking about today, do not invent arbitrary calendar dates.",
+  "For latest/current questions without explicit historical date in prompt, avoid old 'as of YYYY-MM' phrasing.",
   "Use one tool call at a time and wait for the tool result.",
   "Prefer list_dir/read_file/search before write/apply_patch. Use shell only when needed.",
   "Every tool_call should include a stable call_id. If omitted, runtime will assign one.",
   "When you call a tool, use arguments object (not args string).",
+  "If you output codex-style function_call, arguments may be JSON string but must be valid JSON object text.",
+  "Do not repeat the same tool call with identical arguments immediately after it just ran.",
   "Assume the runtime enforces tool_call/output pairing and may synthesize missing outputs.",
   "Read compacted session summary (if provided) and keep thread continuity.",
   "Keep the original user question in focus across all steps. Do not drift to a side detail.",
@@ -366,6 +419,7 @@ const autoToolJsonRepairSystemPrompt = [
   JSON.stringify(autoToolDecisionSchemaDescription),
   "Tool specs:",
   JSON.stringify(autoToolSpecs),
+  "Codex compatibility: function_call + arguments(JSON string) is acceptable if valid.",
   "Preserve original intent. If unclear, return type=final.",
 ].join("\n");
 const autoToolFinalRewriteSystemPrompt = [
@@ -374,6 +428,10 @@ const autoToolFinalRewriteSystemPrompt = [
   "Answer the latest user question directly and concisely.",
   "Preserve the requested scope; do not collapse broad questions into one narrow detail.",
   "If the user asked for latest news/summary/list, provide multiple concrete items when evidence exists.",
+  "For latest news answers, include source URLs from tool evidence.",
+  "For time-sensitive prompts (latest/current/today/tomorrow/yesterday), strictly align with provided current_date_jst/current_utc_iso.",
+  "If the prompt does not request a historical date explicitly, do not answer with an old 'as of YYYY-MM' anchor.",
+  "If exact publication dates are unclear from evidence, avoid inventing dates and state uncertainty plainly.",
   "Use tool evidence when available; ignore unrelated navigation, ads, and boilerplate links.",
   "If evidence is insufficient, say so plainly and avoid fabrication.",
   "Do not output JSON, markdown headings, or raw tool dumps.",
@@ -412,6 +470,12 @@ let noClientSinceMs = Date.now();
 let shutdownRequestedByClientIdle = false;
 let activeHttpRequestCount = 0;
 let lastHttpActivityMs = Date.now();
+const runPodHealthState = {
+  lastOkAtMs: 0,
+  lastCheckedAtMs: 0,
+  inFlightPromise: null,
+  lastError: "",
+};
 
 function normalizeClientId(rawValue) {
   const value = String(rawValue || "").trim();
@@ -775,6 +839,88 @@ function truncateText(value, maxChars = maxToolOutputChars) {
   return `${text.slice(0, maxChars)}\n...(truncated ${text.length - maxChars} chars)`;
 }
 
+function splitAssistantTextForStream(rawText, chunkChars = assistantStreamChunkChars) {
+  const text = String(rawText || "");
+  if (!text) return [];
+  const safeChunkChars = Math.max(8, Number.parseInt(String(chunkChars || 0), 10) || 48);
+  const chunks = [];
+  let cursor = 0;
+
+  while (cursor < text.length) {
+    let end = Math.min(text.length, cursor + safeChunkChars);
+    if (end < text.length) {
+      const searchStart = Math.max(cursor, end - Math.floor(safeChunkChars * 0.6));
+      const window = text.slice(searchStart, end + 1);
+      const relNewline = Math.max(window.lastIndexOf("\n"), window.lastIndexOf("\r"));
+      const relPunct = Math.max(
+        window.lastIndexOf("。"),
+        window.lastIndexOf("、"),
+        window.lastIndexOf("."),
+        window.lastIndexOf("!"),
+        window.lastIndexOf("?"),
+        window.lastIndexOf("！"),
+        window.lastIndexOf("？"),
+      );
+      const relBreak = Math.max(relNewline, relPunct);
+      if (relBreak >= 0) {
+        const candidate = searchStart + relBreak + 1;
+        if (candidate > cursor && candidate <= text.length) {
+          end = candidate;
+        }
+      }
+    }
+    if (end <= cursor) {
+      end = Math.min(text.length, cursor + safeChunkChars);
+    }
+    chunks.push(text.slice(cursor, end));
+    cursor = end;
+  }
+  return chunks;
+}
+
+async function emitAssistantStreamEvents({ res, assistantText, model, elapsedMs }) {
+  if (!assistantStreamEnabled) return false;
+  const text = String(assistantText || "");
+  const chunks = splitAssistantTextForStream(text, assistantStreamChunkChars);
+
+  writeNdjson(res, {
+    type: "assistant_stream_start",
+    model: String(model || defaultModel),
+    totalChars: text.length,
+  });
+
+  if (chunks.length === 0) {
+    writeNdjson(res, {
+      type: "assistant_stream_done",
+      elapsedMs,
+      totalChars: 0,
+    });
+    return true;
+  }
+
+  for (let index = 0; index < chunks.length; index += 1) {
+    if (res.writableEnded || res.destroyed) {
+      return true;
+    }
+    writeNdjson(res, {
+      type: "assistant_stream_delta",
+      index: index + 1,
+      totalChunks: chunks.length,
+      delta: chunks[index],
+    });
+    if (assistantStreamChunkDelayMs > 0 && index < chunks.length - 1) {
+      await sleepMs(assistantStreamChunkDelayMs);
+    }
+  }
+
+  writeNdjson(res, {
+    type: "assistant_stream_done",
+    elapsedMs,
+    totalChars: text.length,
+  });
+  return true;
+}
+
 function formatYmdInTimeZone(date, timeZone) {
   const formatter = new Intl.DateTimeFormat("en-CA", {
     timeZone,
@@ -818,6 +964,178 @@ function normalizeYmd(yearRaw, monthRaw, dayRaw) {
     return "";
   }
   return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function parseYmdToUtcMs(rawYmd) {
+  const text = String(rawYmd || "").trim();
+  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return Number.NaN;
+  const year = Number.parseInt(match[1], 10);
+  const month = Number.parseInt(match[2], 10);
+  const day = Number.parseInt(match[3], 10);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+    return Number.NaN;
+  }
+  return Date.UTC(year, month - 1, day, 0, 0, 0, 0);
+}
+
+function formatYmdAsJapanese(rawYmd) {
+  const text = String(rawYmd || "").trim();
+  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return text;
+  const month = Number.parseInt(match[2], 10);
+  const day = Number.parseInt(match[3], 10);
+  return `${match[1]}年${month}月${day}日`;
+}
+
+function hasExplicitCalendarDateInText(rawText) {
+  const text = String(rawText || "");
+  return /(20\d{2})\s*(?:[\/\-.]|\u5e74)\s*\d{1,2}/i.test(text);
+}
+
+function collectExplicitDateMentions(rawText) {
+  const text = String(rawText || "");
+  const ymdPattern = /(20\d{2})\s*(?:[\/\-.]|\u5e74)\s*(\d{1,2})\s*(?:[\/\-.]|\u6708)\s*(\d{1,2})\s*(?:\u65e5)?/g;
+  const ymPointPattern = /(20\d{2})\s*\u5e74\s*(\d{1,2})\s*\u6708(?:\s*(\d{1,2})\s*\u65e5)?\s*(?:\u6642\u70b9|\u73fe\u5728)/g;
+  const out = [];
+  const seen = new Set();
+
+  let match = null;
+  while ((match = ymdPattern.exec(text)) !== null) {
+    const ymd = normalizeYmd(match[1], match[2], match[3]);
+    if (!ymd || seen.has(ymd)) continue;
+    seen.add(ymd);
+    out.push({
+      ymd,
+      raw: String(match[0] || "").trim(),
+      kind: "ymd",
+    });
+  }
+
+  while ((match = ymPointPattern.exec(text)) !== null) {
+    const ymd = normalizeYmd(match[1], match[2], match[3] || 1);
+    if (!ymd || seen.has(ymd)) continue;
+    seen.add(ymd);
+    out.push({
+      ymd,
+      raw: String(match[0] || "").trim(),
+      kind: "as_of",
+    });
+  }
+
+  return out;
+}
+
+function isTemporalSensitivePrompt(rawPrompt) {
+  const prompt = String(rawPrompt || "");
+  if (!prompt.trim()) return false;
+  if (/(latest|recent|current|today|tomorrow|yesterday|as of|now)/i.test(prompt)) return true;
+  return /(?:\u6700\u65b0|\u76f4\u8fd1|\u73fe\u5728|\u4eca\u65e5|\u672c\u65e5|\u660e\u65e5|\u6628\u65e5|\u304d\u3087\u3046|\u3042\u3059|\u304d\u306e\u3046|\u3044\u307e|\u6642\u70b9)/.test(prompt);
+}
+
+function promptAsksToday(rawPrompt) {
+  const prompt = String(rawPrompt || "");
+  if (/\btoday\b/i.test(prompt)) return true;
+  return /(?:\u4eca\u65e5|\u672c\u65e5|\u304d\u3087\u3046)/.test(prompt);
+}
+
+function promptAsksLatestCurrent(rawPrompt) {
+  const prompt = String(rawPrompt || "");
+  if (/(latest|recent|current|now)/i.test(prompt)) return true;
+  return /(?:\u6700\u65b0|\u76f4\u8fd1|\u73fe\u5728|\u3044\u307e)/.test(prompt);
+}
+
+function evaluateTemporalAnswerIssues({ prompt, finalText, temporalContext }) {
+  const issues = [];
+  const promptText = String(prompt || "");
+  const answer = String(finalText || "");
+  const currentDateJst = String(temporalContext?.currentDateJst || "").trim();
+  if (!answer.trim() || !currentDateJst) return issues;
+  if (!isTemporalSensitivePrompt(promptText)) return issues;
+  if (hasExplicitCalendarDateInText(promptText)) return issues;
+
+  const currentMs = parseYmdToUtcMs(currentDateJst);
+  if (!Number.isFinite(currentMs)) return issues;
+
+  const dateMentions = collectExplicitDateMentions(answer);
+  if (promptAsksToday(promptText)) {
+    const mismatched = dateMentions.filter((item) => item.ymd !== currentDateJst);
+    if (mismatched.length > 0) {
+      issues.push("answer contains explicit date that does not match current_date_jst");
+    }
+  }
+
+  if (promptAsksLatestCurrent(promptText)) {
+    const staleThresholdDays = 31;
+    const staleAsOf = dateMentions.some((item) => {
+      if (item.kind !== "as_of") return false;
+      const itemMs = parseYmdToUtcMs(item.ymd);
+      if (!Number.isFinite(itemMs)) return false;
+      const ageDays = Math.floor((currentMs - itemMs) / 86400000);
+      return ageDays > staleThresholdDays;
+    });
+    if (staleAsOf) {
+      issues.push("answer uses stale 'as of' date for a latest/current request");
+    }
+  }
+
+  return issues;
+}
+
+function rewriteStaleAsOfDatesForLatestPrompt({ prompt, text, currentDateJst }) {
+  const source = String(text || "");
+  const promptText = String(prompt || "");
+  const currentYmd = String(currentDateJst || "").trim();
+  if (!source.trim() || !currentYmd) {
+    return { text: source, rewriteCount: 0 };
+  }
+  if (!promptAsksLatestCurrent(promptText)) {
+    return { text: source, rewriteCount: 0 };
+  }
+  if (hasExplicitCalendarDateInText(promptText)) {
+    return { text: source, rewriteCount: 0 };
+  }
+
+  const currentMs = parseYmdToUtcMs(currentYmd);
+  if (!Number.isFinite(currentMs)) {
+    return { text: source, rewriteCount: 0 };
+  }
+
+  let rewriteCount = 0;
+  const staleThresholdDays = 31;
+  const replacementJa = `${formatYmdAsJapanese(currentYmd)}時点`;
+  let rewritten = source.replace(
+    /(20\d{2})\s*年\s*(\d{1,2})\s*月(?:\s*(\d{1,2})\s*日)?\s*(?:時点|現在)/g,
+    (full, year, month, day) => {
+      const ymd = normalizeYmd(year, month, day || 1);
+      if (!ymd) return full;
+      const oldMs = parseYmdToUtcMs(ymd);
+      if (!Number.isFinite(oldMs)) return full;
+      const ageDays = Math.floor((currentMs - oldMs) / 86400000);
+      if (ageDays <= staleThresholdDays) return full;
+      rewriteCount += 1;
+      return replacementJa;
+    },
+  );
+
+  rewritten = rewritten.replace(
+    /as of\s*(20\d{2})[\/\-.](\d{1,2})(?:[\/\-.](\d{1,2}))?/gi,
+    (full, year, month, day) => {
+      const ymd = normalizeYmd(year, month, day || 1);
+      if (!ymd) return full;
+      const oldMs = parseYmdToUtcMs(ymd);
+      if (!Number.isFinite(oldMs)) return full;
+      const ageDays = Math.floor((currentMs - oldMs) / 86400000);
+      if (ageDays <= staleThresholdDays) return full;
+      rewriteCount += 1;
+      return `as of ${currentYmd}`;
+    },
+  );
+
+  return {
+    text: rewritten,
+    rewriteCount,
+  };
 }
 
 function rewriteMismatchedExplicitDatesAsToday(text, todayYmd) {
@@ -1027,6 +1345,7 @@ function looksLikeLinkDump(rawText) {
 
 function shouldRunFocusedFinalRewrite({ prompt, draftText, toolCallCount }) {
   if (!Number.isInteger(toolCallCount) || toolCallCount <= 0) return false;
+  if (isTemporalSensitivePrompt(prompt)) return true;
   const draft = String(draftText || "").trim();
   if (!draft) return true;
   if (looksLikeLinkDump(draft) && !/リンク|url|一覧|list/i.test(String(prompt || ""))) {
@@ -1107,8 +1426,83 @@ function createToolStats() {
     readUrlCount: 0,
     searchResultItems: 0,
     evidenceUrlSet: new Set(),
+    evidenceTextChunks: [],
     recentTools: [],
   };
+}
+
+function pushToolEvidenceText(toolStats, rawText, maxChars = 800) {
+  if (!toolStats || typeof toolStats !== "object") return;
+  if (!Array.isArray(toolStats.evidenceTextChunks)) {
+    toolStats.evidenceTextChunks = [];
+  }
+  const normalized = normalizeSnapshotLine(rawText);
+  if (!normalized || normalized.length < 4) return;
+  const chunk = normalized.slice(0, Math.max(80, maxChars));
+  if (toolStats.evidenceTextChunks.includes(chunk)) return;
+  toolStats.evidenceTextChunks.push(chunk);
+  if (toolStats.evidenceTextChunks.length > 48) {
+    toolStats.evidenceTextChunks = toolStats.evidenceTextChunks.slice(-48);
+  }
+}
+
+function buildToolEvidenceCorpus(toolStats) {
+  if (!toolStats || !Array.isArray(toolStats.evidenceTextChunks)) {
+    return "";
+  }
+  return toolStats.evidenceTextChunks.join("\n");
+}
+
+function extractUrlsFromText(rawText) {
+  const text = String(rawText || "");
+  const matches = text.match(/https?:\/\/[^\s)\]>"]+/gi) || [];
+  const unique = [];
+  const seen = new Set();
+  for (const item of matches) {
+    const value = String(item || "").trim();
+    if (!value) continue;
+    if (seen.has(value)) continue;
+    seen.add(value);
+    unique.push(value);
+  }
+  return unique;
+}
+
+function normalizeUrlForMatch(rawUrl) {
+  const text = String(rawUrl || "").trim();
+  if (!text) return "";
+  try {
+    const parsed = new URL(text);
+    const pathname = parsed.pathname.replace(/\/+$/, "");
+    return `${parsed.origin}${pathname}`.toLowerCase();
+  } catch {
+    return text.replace(/\/+$/, "").toLowerCase();
+  }
+}
+
+function countCitedEvidenceUrls(answerText, evidenceUrlSet) {
+  const evidenceRows = evidenceUrlSet instanceof Set ? [...evidenceUrlSet] : [];
+  if (evidenceRows.length === 0) return 0;
+  const normalizedEvidence = new Set(
+    evidenceRows
+      .map((item) => normalizeUrlForMatch(item))
+      .filter(Boolean),
+  );
+  if (normalizedEvidence.size === 0) return 0;
+
+  let count = 0;
+  const answerUrls = extractUrlsFromText(answerText)
+    .map((item) => normalizeUrlForMatch(item))
+    .filter(Boolean);
+  for (const answerUrl of answerUrls) {
+    for (const evidenceUrl of normalizedEvidence) {
+      if (answerUrl === evidenceUrl || answerUrl.startsWith(evidenceUrl) || evidenceUrl.startsWith(answerUrl)) {
+        count += 1;
+        break;
+      }
+    }
+  }
+  return count;
 }
 
 function summarizeToolStats(toolStats) {
@@ -1145,6 +1539,12 @@ function recordToolEvidence(toolStats, modelResult) {
 
   if (tool === "web_search") {
     toolStats.webSearchCalls += 1;
+    if (typeof result.query === "string" && result.query.trim()) {
+      pushToolEvidenceText(toolStats, `query=${result.query}`);
+    }
+    if (typeof result.currentDateJst === "string" && result.currentDateJst.trim()) {
+      pushToolEvidenceText(toolStats, `current_date_jst=${result.currentDateJst}`);
+    }
     if (Array.isArray(result.results)) {
       toolStats.searchResultItems += result.results.length;
       for (const item of result.results) {
@@ -1152,6 +1552,9 @@ function recordToolEvidence(toolStats, modelResult) {
         if (url) {
           toolStats.evidenceUrlSet.add(url);
         }
+        pushToolEvidenceText(toolStats, item?.title || "", 300);
+        pushToolEvidenceText(toolStats, item?.snippet || "", 500);
+        pushToolEvidenceText(toolStats, url, 400);
       }
     }
   }
@@ -1164,6 +1567,8 @@ function recordToolEvidence(toolStats, modelResult) {
       if (pathValue) {
         toolStats.evidenceUrlSet.add(pathValue);
       }
+      pushToolEvidenceText(toolStats, pathValue, 400);
+      pushToolEvidenceText(toolStats, result.content || result.output || "", 1200);
     }
   }
 
@@ -1181,6 +1586,9 @@ function buildTaskFocusSystemMessage({ prompt, promptIntent, toolStats, step }) 
     `tool_progress=${summarizeToolStats(toolStats)}`,
     "Never lose the original user question.",
     "When question asks latest/news/summary, avoid finishing with a single narrow detail.",
+    intent.asksNews && intent.asksLatest
+      ? "For latest news: run web_search + read(url), then include source URLs in final answer."
+      : "",
     "Before returning final, ensure the answer directly addresses the original question.",
   ];
   return rows.filter(Boolean).join("\n");
@@ -1191,6 +1599,7 @@ function evaluateFinalAnswerCoverage({
   finalText,
   promptIntent,
   toolStats,
+  temporalContext,
 }) {
   const reasons = [];
   const answer = String(finalText || "").trim();
@@ -1220,6 +1629,36 @@ function evaluateFinalAnswerCoverage({
     if ((stats.searchResultItems || 0) <= 0 && (stats.readUrlCount || 0) <= 0) {
       reasons.push("no search/read evidence captured");
     }
+  }
+
+  if (intent.asksNews && intent.asksLatest) {
+    if ((stats.webSearchCalls || 0) <= 0) {
+      reasons.push("latest news response requires web_search evidence");
+    }
+    if ((stats.readUrlCount || 0) <= 0) {
+      reasons.push("latest news response requires reading at least one result URL");
+    }
+
+    const evidenceCorpus = buildToolEvidenceCorpus(stats);
+    const answerKeywords = extractPromptKeywords(answer).slice(0, 40);
+    const evidenceOverlap = countKeywordOverlap(answerKeywords, evidenceCorpus);
+    if (answerKeywords.length >= 6 && evidenceOverlap < 2) {
+      reasons.push("answer has low overlap with collected web evidence");
+    }
+
+    const citedEvidenceUrls = countCitedEvidenceUrls(answer, stats.evidenceUrlSet);
+    if (citedEvidenceUrls <= 0) {
+      reasons.push("latest news response should cite at least one gathered source URL");
+    }
+  }
+
+  const temporalIssues = evaluateTemporalAnswerIssues({
+    prompt,
+    finalText: answer,
+    temporalContext,
+  });
+  if (temporalIssues.length > 0) {
+    reasons.push(...temporalIssues);
   }
 
   return {
@@ -1371,6 +1810,28 @@ function renderToolResult({ title, meta = "", body = "", isError = false }) {
   lines.push(`<pre class="turn-body">${escapeHtml(body)}</pre>`);
   lines.push("</article>");
   return lines.join("");
+}
+
+function renderContextCompactedCard(info) {
+  const compactVersion = Number.isInteger(info?.compactVersion) ? info.compactVersion : 0;
+  const droppedMessages = Number.isInteger(info?.droppedMessages) ? info.droppedMessages : 0;
+  const keptMessages = Number.isInteger(info?.keptMessages) ? info.keptMessages : 0;
+  const checkpointChars = Number.isInteger(info?.checkpointChars) ? info.checkpointChars : 0;
+  const tokenBudget = Number.isFinite(Number(info?.tokenBudget)) ? Number(info.tokenBudget) : 0;
+  const totalTokensBefore = Number.isFinite(Number(info?.totalTokensBefore)) ? Number(info.totalTokensBefore) : 0;
+  const totalTokensAfter = Number.isFinite(Number(info?.totalTokensAfter)) ? Number(info.totalTokensAfter) : 0;
+  const body = [
+    "Older conversation turns were summarized to keep context stable.",
+    `dropped_messages=${droppedMessages}`,
+    `kept_messages=${keptMessages}`,
+    tokenBudget > 0 ? `token_estimate=${totalTokensBefore} -> ${totalTokensAfter} / budget ${tokenBudget}` : "",
+    checkpointChars > 0 ? `checkpoint_chars=${checkpointChars}` : "",
+  ].filter(Boolean).join("\n");
+  return renderToolResult({
+    title: "Context compacted",
+    meta: `version=${compactVersion}`,
+    body,
+  });
 }
 
 function hasUnsafeShellChars(command) {
@@ -1626,6 +2087,8 @@ async function openNativeFolderPicker(initialPath = workspaceRoot) {
     "$ErrorActionPreference='Stop'",
     "Add-Type -AssemblyName System.Windows.Forms",
     "Add-Type -AssemblyName System.Drawing",
+    "$signature = 'using System; using System.Runtime.InteropServices; public static class Win32PickerHost { public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1); public const UInt32 SWP_NOSIZE = 0x0001; public const UInt32 SWP_NOMOVE = 0x0002; public const UInt32 SWP_SHOWWINDOW = 0x0040; [DllImport(\"user32.dll\")] public static extern bool SetForegroundWindow(IntPtr hWnd); [DllImport(\"user32.dll\")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, UInt32 uFlags); }'",
+    "Add-Type -TypeDefinition $signature",
     "$dialog = New-Object System.Windows.Forms.OpenFileDialog",
     "$dialog.Title = 'Select workspace folder'",
     "$dialog.Filter = 'Folders|*.none'",
@@ -1633,7 +2096,7 @@ async function openNativeFolderPicker(initialPath = workspaceRoot) {
     "$dialog.CheckPathExists = $true",
     "$dialog.ValidateNames = $false",
     "$dialog.RestoreDirectory = $true",
-    "$dialog.ShowHelp = $true",
+    "$dialog.ShowHelp = $false",
     "$dialog.FileName = 'Select this folder'",
     `$initial = '${normalizedInitial}'`,
     "if ($initial -and (Test-Path $initial)) {",
@@ -1644,29 +2107,38 @@ async function openNativeFolderPicker(initialPath = workspaceRoot) {
     "$owner.Text = 'LocaLingo Picker Host'",
     "$owner.TopMost = $true",
     "$owner.ShowInTaskbar = $false",
-    "$owner.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual",
-    "$owner.Location = New-Object System.Drawing.Point(-32000, -32000)",
-    "$owner.Size = New-Object System.Drawing.Size(1, 1)",
-    "$owner.Opacity = 0",
-    "$owner.Show()",
-    "$owner.Activate()",
-    "[System.Windows.Forms.Application]::DoEvents()",
-    "$result = $dialog.ShowDialog($owner)",
-    "$owner.Close()",
-    "$owner.Dispose()",
-    "if ($result -eq [System.Windows.Forms.DialogResult]::OK) {",
-    "  $candidate = [string]$dialog.FileName",
-    "  if (-not [string]::IsNullOrWhiteSpace($candidate)) {",
-    "    if (Test-Path $candidate) {",
-    "      $pick = Get-Item $candidate",
-    "      if ($pick.PSIsContainer) { [Console]::Out.Write($pick.FullName) }",
-    "      else { [Console]::Out.Write($pick.DirectoryName) }",
-    "    } else {",
-    "      $parent = Split-Path -Parent $candidate",
-    "      if ($parent -and (Test-Path $parent)) { [Console]::Out.Write((Resolve-Path $parent).Path) }",
+    "$owner.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedToolWindow",
+    "$owner.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen",
+    "$owner.Size = New-Object System.Drawing.Size(320, 120)",
+    "$owner.Opacity = 0.01",
+    "$selected = ''",
+    "try {",
+    "  $owner.Show()",
+    "  [void][Win32PickerHost]::SetWindowPos($owner.Handle, [Win32PickerHost]::HWND_TOPMOST, 0, 0, 0, 0, [Win32PickerHost]::SWP_NOMOVE -bor [Win32PickerHost]::SWP_NOSIZE -bor [Win32PickerHost]::SWP_SHOWWINDOW)",
+    "  [void][Win32PickerHost]::SetForegroundWindow($owner.Handle)",
+    "  $owner.Activate()",
+    "  [System.Windows.Forms.Application]::DoEvents()",
+    "  $result = $dialog.ShowDialog($owner)",
+    "  if ($result -eq [System.Windows.Forms.DialogResult]::OK) {",
+    "    $candidate = [string]$dialog.FileName",
+    "    if (-not [string]::IsNullOrWhiteSpace($candidate)) {",
+    "      if (Test-Path $candidate) {",
+    "        $pick = Get-Item $candidate",
+    "        if ($pick.PSIsContainer) { $selected = $pick.FullName }",
+    "        else { $selected = $pick.DirectoryName }",
+    "      } else {",
+    "        $parent = Split-Path -Parent $candidate",
+    "        if ($parent -and (Test-Path $parent)) { $selected = (Resolve-Path $parent).Path }",
+    "      }",
     "    }",
     "  }",
+    "} finally {",
+    "  if ($owner) {",
+    "    $owner.Close()",
+    "    $owner.Dispose()",
+    "  }",
     "}",
+    "if (-not [string]::IsNullOrWhiteSpace($selected)) { [Console]::Out.Write($selected) }",
   ].join("; ");
 
   const run = await runProcessCapture("powershell", [
@@ -3141,15 +3613,61 @@ function extractJsonObjectCandidates(rawText) {
     return "";
   };
 
+  const extractFirstBalancedArray = (source) => {
+    const s = String(source || "");
+    const start = s.indexOf("[");
+    if (start < 0) return "";
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let i = start; i < s.length; i += 1) {
+      const ch = s[i];
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (ch === "\\") {
+          escaped = true;
+        } else if (ch === "\"") {
+          inString = false;
+        }
+        continue;
+      }
+      if (ch === "\"") {
+        inString = true;
+        continue;
+      }
+      if (ch === "[") {
+        depth += 1;
+        continue;
+      }
+      if (ch === "]") {
+        depth -= 1;
+        if (depth === 0) {
+          return s.slice(start, i + 1).trim();
+        }
+      }
+    }
+    return "";
+  };
+
   const firstBalanced = extractFirstBalancedObject(text);
   if (firstBalanced) {
     candidates.push(firstBalanced);
+  }
+  const firstBalancedArray = extractFirstBalancedArray(text);
+  if (firstBalancedArray) {
+    candidates.push(firstBalancedArray);
   }
 
   const firstBrace = text.indexOf("{");
   const lastBrace = text.lastIndexOf("}");
   if (firstBrace >= 0 && lastBrace > firstBrace) {
     candidates.push(text.slice(firstBrace, lastBrace + 1).trim());
+  }
+  const firstBracket = text.indexOf("[");
+  const lastBracket = text.lastIndexOf("]");
+  if (firstBracket >= 0 && lastBracket > firstBracket) {
+    candidates.push(text.slice(firstBracket, lastBracket + 1).trim());
   }
 
   return [...new Set(candidates.map((item) => String(item || "").trim()).filter(Boolean))];
@@ -3165,6 +3683,30 @@ function tryParseJsonObjectCandidate(candidate) {
     }
   } catch {
     // ignore
+  }
+  return null;
+}
+
+function tryParseJsonAnyCandidate(candidate) {
+  const sample = String(candidate || "").trim();
+  if (!sample) return null;
+  try {
+    return JSON.parse(sample);
+  } catch {
+    return null;
+  }
+}
+
+function extractFirstObjectFromParsedJsonValue(value) {
+  if (!value) return null;
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const extracted = extractFirstObjectFromParsedJsonValue(item);
+      if (extracted) return extracted;
+    }
   }
   return null;
 }
@@ -3210,6 +3752,11 @@ function parseModelJsonObject(rawText) {
 
   const candidates = extractJsonObjectCandidates(text);
   for (const candidate of candidates) {
+    const parsedAny = tryParseJsonAnyCandidate(candidate);
+    const extracted = extractFirstObjectFromParsedJsonValue(parsedAny);
+    if (extracted) {
+      return extracted;
+    }
     const parsed = tryParseJsonObjectCandidate(candidate);
     if (parsed) {
       return parsed;
@@ -3220,6 +3767,11 @@ function parseModelJsonObject(rawText) {
     ...new Set(candidates.map((candidate) => normalizeJsonLikeObjectText(candidate)).filter(Boolean)),
   ];
   for (const candidate of repairedCandidates) {
+    const parsedAny = tryParseJsonAnyCandidate(candidate);
+    const extracted = extractFirstObjectFromParsedJsonValue(parsedAny);
+    if (extracted) {
+      return extracted;
+    }
     const parsed = tryParseJsonObjectCandidate(candidate);
     if (parsed) {
       return parsed;
@@ -3307,7 +3859,7 @@ function recoverAgentDecisionFromMalformedText(rawText) {
   if (!text) return null;
 
   const hasJsonShape = text.startsWith("{") || text.includes("\"type\"") || text.includes("'type'");
-  const hasToolHint = /["']tool["']\s*:|["']type["']\s*:\s*["']tool["']/i.test(text);
+  const hasToolHint = /["']tool["']\s*:|["']name["']\s*:|["']type["']\s*:\s*["'](?:tool|function_call)["']/i.test(text);
   const hasFinalHint = /["']type["']\s*:\s*["']final["']/i.test(text);
 
   if (hasFinalHint) {
@@ -3337,15 +3889,26 @@ function recoverAgentDecisionFromMalformedText(rawText) {
     }
   }
 
-  const toolMatch = text.match(/["'](?:tool_name|tool)["']\s*:\s*["']([a-zA-Z0-9_:-]+)["']/i);
-  const rawTool = String(toolMatch?.[1] || "").trim().toLowerCase();
+  const toolMatch = text.match(/["'](?:tool_name|tool|name)["']\s*:\s*["']([a-zA-Z0-9_:-]+)["']/i);
+  const rawTool = normalizeToolAlias(String(toolMatch?.[1] || "").trim().toLowerCase());
   if (autoToolNames.includes(rawTool)) {
     const callIdMatch = text.match(/["']call_id["']\s*:\s*["']([^"']+)["']/i);
     const callId = String(callIdMatch?.[1] || "").trim();
+    let args = {};
+    const argsMatch = text.match(/["']arguments["']\s*:\s*("(?:\\.|[^"])*"|\{[\s\S]*?\})/i);
+    if (argsMatch && argsMatch[1]) {
+      const argsTextRaw = String(argsMatch[1] || "").trim();
+      if (argsTextRaw.startsWith("\"")) {
+        const unquoted = decodeEscapedText(argsTextRaw.slice(1, -1));
+        args = parseArgumentsObjectMaybeString(unquoted);
+      } else {
+        args = parseArgumentsObjectMaybeString(argsTextRaw);
+      }
+    }
     return {
       type: "tool",
       tool: rawTool,
-      args: {},
+      args,
       reason: "recovered_from_malformed_json",
       callId,
     };
@@ -3444,43 +4007,283 @@ function normalizeProposalObject(rawObject) {
   };
 }
 
+function firstNonEmptyString(values) {
+  const rows = Array.isArray(values) ? values : [];
+  for (const row of rows) {
+    if (typeof row !== "string") continue;
+    const text = row.trim();
+    if (text) return text;
+  }
+  return "";
+}
+
+function extractTextFromContentBlocks(rawContent) {
+  if (typeof rawContent === "string") {
+    return rawContent.trim();
+  }
+  if (Array.isArray(rawContent)) {
+    const parts = [];
+    for (const item of rawContent) {
+      if (typeof item === "string") {
+        const text = item.trim();
+        if (text) parts.push(text);
+        continue;
+      }
+      if (!item || typeof item !== "object") continue;
+      const text = firstNonEmptyString([
+        typeof item.text === "string" ? item.text : "",
+        typeof item.output_text === "string" ? item.output_text : "",
+        typeof item.input_text === "string" ? item.input_text : "",
+        typeof item.content === "string" ? item.content : "",
+      ]);
+      if (text) parts.push(text);
+    }
+    return parts.join("").trim();
+  }
+  if (rawContent && typeof rawContent === "object") {
+    return firstNonEmptyString([
+      typeof rawContent.text === "string" ? rawContent.text : "",
+      typeof rawContent.output_text === "string" ? rawContent.output_text : "",
+      typeof rawContent.content === "string" ? rawContent.content : "",
+    ]);
+  }
+  return "";
+}
+
+function parseArgumentsObjectMaybeString(rawValue) {
+  if (rawValue && typeof rawValue === "object" && !Array.isArray(rawValue)) {
+    return { ...rawValue };
+  }
+  const text = String(rawValue || "").trim();
+  if (!text) return {};
+  const parsedDirect = tryParseJsonObjectCandidate(text);
+  if (parsedDirect) {
+    return parsedDirect;
+  }
+  const normalized = normalizeJsonLikeObjectText(text);
+  const parsedNormalized = tryParseJsonObjectCandidate(normalized);
+  if (parsedNormalized) {
+    return parsedNormalized;
+  }
+  return {};
+}
+
+function extractToolCallFromToolCallsArray(rawToolCalls) {
+  const toolCalls = Array.isArray(rawToolCalls) ? rawToolCalls : [];
+  for (const item of toolCalls) {
+    if (!item || typeof item !== "object") continue;
+    const functionObject = item.function && typeof item.function === "object" ? item.function : null;
+    const rawName = firstNonEmptyString([
+      typeof item.name === "string" ? item.name : "",
+      typeof item.tool_name === "string" ? item.tool_name : "",
+      functionObject && typeof functionObject.name === "string" ? functionObject.name : "",
+    ]);
+    if (!rawName) continue;
+    return {
+      type: "function_call",
+      call_id: firstNonEmptyString([
+        typeof item.call_id === "string" ? item.call_id : "",
+        typeof item.id === "string" ? item.id : "",
+      ]),
+      name: rawName,
+      arguments: functionObject
+        ? (functionObject.arguments !== undefined ? functionObject.arguments : functionObject.args)
+        : (item.arguments !== undefined ? item.arguments : item.args),
+    };
+  }
+  return null;
+}
+
+function extractFirstDecisionItemFromArray(rawItems) {
+  const items = Array.isArray(rawItems) ? rawItems : [];
+  let fallbackObject = null;
+  for (const item of items) {
+    if (!item || typeof item !== "object") continue;
+    if (!fallbackObject) fallbackObject = item;
+    if (Array.isArray(item.tool_calls)) return item;
+    if (item.item && typeof item.item === "object") {
+      const itemType = String(item.type || "").trim().toLowerCase();
+      if (itemType === "response.output_item.done" || itemType === "response.output_item.added") {
+        return item.item;
+      }
+    }
+    const itemType = String(item.type || "").trim().toLowerCase();
+    if ([
+      "function_call",
+      "tool_call",
+      "custom_tool_call",
+      "local_shell_call",
+      "message",
+      "final",
+      "answer",
+    ].includes(itemType)) {
+      return item;
+    }
+    if (typeof item.message === "string" || typeof item.answer === "string") {
+      return item;
+    }
+  }
+  return fallbackObject;
+}
+
+function extractDecisionSourceObject(rawObject) {
+  const obj = rawObject && typeof rawObject === "object" ? rawObject : {};
+
+  // OpenAI Chat Completions-like wrapper
+  const choices = Array.isArray(obj.choices) ? obj.choices : [];
+  if (choices.length > 0) {
+    const firstChoice = choices.find((item) => item && typeof item === "object") || null;
+    const message = firstChoice && firstChoice.message && typeof firstChoice.message === "object"
+      ? firstChoice.message
+      : null;
+    if (message) {
+      const toolCall = extractToolCallFromToolCallsArray(message.tool_calls);
+      if (toolCall) return toolCall;
+      if (message.function_call && typeof message.function_call === "object") {
+        return {
+          type: "function_call",
+          call_id: firstNonEmptyString([
+            typeof message.call_id === "string" ? message.call_id : "",
+            typeof message.id === "string" ? message.id : "",
+          ]),
+          name: firstNonEmptyString([
+            typeof message.function_call.name === "string" ? message.function_call.name : "",
+            typeof message.name === "string" ? message.name : "",
+          ]),
+          arguments: message.function_call.arguments,
+          reason: typeof message.reason === "string" ? message.reason : "",
+        };
+      }
+      const contentText = extractTextFromContentBlocks(message.content);
+      if (contentText) {
+        return {
+          type: "final",
+          message: contentText,
+        };
+      }
+    }
+  }
+
+  // Codex/OpenAI Responses SSE-like wrapper
+  const envelopeType = String(obj.type || "").trim().toLowerCase();
+  if ((envelopeType === "response.output_item.done" || envelopeType === "response.output_item.added")
+    && obj.item && typeof obj.item === "object") {
+    return obj.item;
+  }
+
+  if (obj.item && typeof obj.item === "object" && typeof obj.item.type === "string") {
+    return obj.item;
+  }
+
+  if (obj.response && typeof obj.response === "object") {
+    const responseObj = obj.response;
+    const responseOutput = extractFirstDecisionItemFromArray(responseObj.output);
+    if (responseOutput) return responseOutput;
+    const responseItems = extractFirstDecisionItemFromArray(responseObj.items);
+    if (responseItems) return responseItems;
+    if (responseObj.item && typeof responseObj.item === "object") {
+      return responseObj.item;
+    }
+    const toolCall = extractToolCallFromToolCallsArray(responseObj.tool_calls);
+    if (toolCall) return toolCall;
+  }
+
+  const outputItem = extractFirstDecisionItemFromArray(obj.output);
+  if (outputItem) return outputItem;
+  const itemsItem = extractFirstDecisionItemFromArray(obj.items);
+  if (itemsItem) return itemsItem;
+
+  const toolCall = extractToolCallFromToolCallsArray(obj.tool_calls);
+  if (toolCall) return toolCall;
+
+  return obj;
+}
+
 function normalizeAgentDecision(rawObject) {
   const obj = rawObject && typeof rawObject === "object" ? rawObject : {};
-  const rawType = String(obj.type || obj.kind || obj.mode || obj.action || "").trim().toLowerCase();
-  const directTool = autoToolNames.includes(rawType) ? rawType : "";
+  const source = extractDecisionSourceObject(obj);
+  const rawType = String(source.type || source.kind || source.mode || source.action || "").trim().toLowerCase();
+  const rawTypeAsTool = normalizeToolAlias(rawType);
+  const directTool = autoToolNames.includes(rawTypeAsTool) ? rawTypeAsTool : "";
 
-  const message = String(
-    obj.message || obj.final_message || obj.finalMessage || obj.answer || obj.response || "",
-  ).trim();
-  if (rawType === "final" || rawType === "answer" || rawType === "done" || rawType === "complete") {
+  const message = firstNonEmptyString([
+    typeof source.message === "string" ? source.message : "",
+    typeof source.final_message === "string" ? source.final_message : "",
+    typeof source.finalMessage === "string" ? source.finalMessage : "",
+    typeof source.answer === "string" ? source.answer : "",
+    typeof source.response === "string" ? source.response : "",
+    typeof source.text === "string" ? source.text : "",
+    extractTextFromContentBlocks(source.content),
+  ]);
+  const isFinalLikeType = [
+    "final",
+    "answer",
+    "done",
+    "complete",
+    "message",
+  ].includes(rawType);
+  if (isFinalLikeType && message) {
     return {
       type: "final",
       message,
     };
   }
 
-  const rawTool = String(
-    obj.tool_name || obj.tool || obj.toolName || obj.name || obj.function || directTool,
-  ).trim().toLowerCase();
+  const rawTool = normalizeToolAlias(String(
+    source.tool_name
+    || source.tool
+    || source.toolName
+    || source.name
+    || source.function
+    || (source.function_call && typeof source.function_call === "object" ? source.function_call.name : "")
+    || directTool,
+  ).trim().toLowerCase());
   const tool = autoToolNames.includes(rawTool) ? rawTool : "";
   const isToolLikeType = [
     "tool_call",
     "tool",
     "call",
     "function_call",
+    "custom_tool_call",
+    "local_shell_call",
   ].includes(rawType);
   if (isToolLikeType || directTool || tool) {
-    const callId = String(obj.call_id || obj.callId || obj.id || "")
+    const callId = String(source.call_id || source.callId || source.id || "")
       .trim()
       .replace(/[^A-Za-z0-9:_-]/g, "")
       .slice(0, 80);
-    const directArgs = obj.args || obj.arguments || obj.input || obj.params || null;
-    let args = {};
-    if (directArgs && typeof directArgs === "object" && !Array.isArray(directArgs)) {
-      args = { ...directArgs };
+
+    const directArgsRaw =
+      source.args
+      || source.arguments
+      || source.input
+      || source.params
+      || source.parameters
+      || (source.function_call && typeof source.function_call === "object"
+        ? source.function_call.arguments
+        : null);
+    let args = parseArgumentsObjectMaybeString(directArgsRaw);
+
+    if (Object.keys(args).length === 0 && rawType === "custom_tool_call") {
+      args = parseArgumentsObjectMaybeString(source.input);
     }
+    if (Object.keys(args).length === 0 && rawType === "local_shell_call") {
+      const action = source.action && typeof source.action === "object" ? source.action : null;
+      if (action) {
+        if (Array.isArray(action.command)) {
+          args = {
+            command: action.command.map((item) => String(item || "")).join(" ").trim(),
+          };
+        } else if (typeof action.command === "string" && action.command.trim()) {
+          args = {
+            command: action.command.trim(),
+          };
+        }
+      }
+    }
+
     if (Object.keys(args).length === 0) {
-      const passthrough = { ...obj };
+      const passthrough = { ...source };
       const reservedKeys = new Set([
         "type",
         "kind",
@@ -3490,6 +4293,8 @@ function normalizeAgentDecision(rawObject) {
         "tool_name",
         "toolName",
         "name",
+        "function",
+        "function_call",
         "message",
         "final_message",
         "finalMessage",
@@ -3503,6 +4308,8 @@ function normalizeAgentDecision(rawObject) {
         "args",
         "params",
         "input",
+        "content",
+        "status",
       ]);
       for (const key of Object.keys(passthrough)) {
         if (!reservedKeys.has(key)) {
@@ -3520,7 +4327,7 @@ function normalizeAgentDecision(rawObject) {
       type: "tool",
       tool,
       args,
-      reason: String(obj.reason || "").trim(),
+      reason: String(source.reason || "").trim(),
       callId,
     };
   }
@@ -3602,8 +4409,122 @@ function summarizeToolArgs(toolName, args) {
   return truncateText(JSON.stringify(payload), 300);
 }
 
+function renderListDirBody(listing) {
+  const safeListing = listing && typeof listing === "object" ? listing : {};
+  const entries = Array.isArray(safeListing.entries) ? safeListing.entries : [];
+  const lines = [
+    `root=${String(safeListing.root || ".")}`,
+    `entries=${entries.length}`,
+    `truncated=${safeListing.truncated ? "yes" : "no"}`,
+    "",
+  ];
+  if (entries.length === 0) {
+    lines.push("(no entries)");
+    lines.push("Workspace is empty. Set workspace folder or create files in workspace.");
+    return lines.join("\n");
+  }
+  for (const item of entries) {
+    if (item.type === "file") {
+      lines.push(`- [file] ${item.path} (${item.size} bytes)`);
+    } else if (item.type === "dir") {
+      lines.push(`- [dir] ${item.path}`);
+    } else {
+      lines.push(`- [other] ${item.path}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+function stableSerializeForToolSignature(value) {
+  if (value === null || value === undefined) return "null";
+  if (typeof value === "string") return JSON.stringify(value);
+  if (typeof value === "number" || typeof value === "boolean") return JSON.stringify(value);
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableSerializeForToolSignature(item)).join(",")}]`;
+  }
+  if (typeof value === "object") {
+    const keys = Object.keys(value).sort((a, b) => a.localeCompare(b, "en"));
+    return `{${keys.map((key) => `${JSON.stringify(key)}:${stableSerializeForToolSignature(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(String(value));
+}
+
+function normalizeToolArgsForSignature(toolName, args) {
+  const tool = String(toolName || "").trim().toLowerCase();
+  const payload = args && typeof args === "object" && !Array.isArray(args) ? args : {};
+  if (tool === "list_dir") {
+    return {
+      path: sanitizeModelPath(payload.path || payload.dir || payload.target || ".") || ".",
+      recursive: parseBooleanEnv(payload.recursive, false),
+      maxDepth: clampInteger(payload.max_depth || payload.maxDepth, 2, 0, 6),
+      limit: clampInteger(payload.limit || payload.max_entries || payload.maxEntries, 200, 1, 500),
+    };
+  }
+  if (tool === "read") {
+    return {
+      path: String(payload.path || payload.file || payload.target || "").trim(),
+    };
+  }
+  if (tool === "read_file") {
+    return {
+      path: String(payload.path || payload.file || payload.target || "").trim(),
+      offset: clampInteger(payload.offset || payload.line || payload.start_line, 1, 1, 1_000_000),
+      limit: clampInteger(payload.limit || payload.max_lines || payload.lines, 120, 1, 400),
+    };
+  }
+  if (tool === "search") {
+    return {
+      pattern: String(payload.pattern || payload.query || "").trim(),
+      glob: String(payload.glob || "").trim(),
+    };
+  }
+  if (tool === "web_search") {
+    return {
+      query: normalizeSearchQuery(payload.query || payload.q || payload.keyword || ""),
+      maxResults: clampInteger(payload.max_results || payload.maxResults || payload.limit, 5, 1, 10),
+    };
+  }
+  return payload;
+}
+
+function buildToolCallSignature(toolName, args) {
+  const tool = String(toolName || "").trim().toLowerCase();
+  if (!tool) return "";
+  const normalizedArgs = normalizeToolArgsForSignature(tool, args);
+  return `${tool}:${stableSerializeForToolSignature(normalizedArgs)}`;
+}
+
 function normalizeSearchQuery(rawValue) {
   return String(rawValue || "").replace(/\s+/g, " ").trim();
+}
+
+function normalizeLatestNewsSearchQuery(query, {
+  prompt = "",
+  promptIntent = null,
+} = {}) {
+  const rawQuery = normalizeSearchQuery(query);
+  if (!rawQuery) return "";
+  const intent = promptIntent && typeof promptIntent === "object"
+    ? promptIntent
+    : detectPromptIntent(prompt);
+  if (!(intent?.asksNews && intent?.asksLatest)) {
+    return rawQuery;
+  }
+  if (hasExplicitCalendarDateInText(prompt)) {
+    return rawQuery;
+  }
+
+  let next = rawQuery
+    .replace(/\b20\d{2}\s*(?:年|\/|-|\.|)?\s*(?:\d{1,2}\s*月)?\s*(?:末|初頭|年初|時点|頃|ごろ)?/g, " ")
+    .replace(/\b(?:as of|from|since)\s*20\d{2}(?:[\/\-.]\d{1,2})?/gi, " ");
+  next = normalizeSearchQuery(next);
+  if (!next) {
+    next = "最新 AI ニュース";
+  }
+  if (!/(最新|直近|today|current|latest|recent)/i.test(next)) {
+    next = normalizeSearchQuery(`${next} 最新`);
+  }
+  return next;
 }
 
 function extractLastWebSearchQuery(session) {
@@ -3628,7 +4549,14 @@ function extractLastWebSearchQuery(session) {
   return "";
 }
 
-async function executeAutoToolCall({ session, toolName, args, fallbackWebSearchQuery = "" }) {
+async function executeAutoToolCall({
+  session,
+  toolName,
+  args,
+  fallbackWebSearchQuery = "",
+  prompt = "",
+  promptIntent = null,
+}) {
   const tool = String(toolName || "").trim().toLowerCase();
   const payload = args && typeof args === "object" ? args : {};
 
@@ -3711,22 +4639,7 @@ async function executeAutoToolCall({ session, toolName, args, fallbackWebSearchQ
         maxDepth,
         limit,
       });
-      const lines = [
-        `root=${listing.root}`,
-        `entries=${listing.entries.length}`,
-        `truncated=${listing.truncated ? "yes" : "no"}`,
-        "",
-      ];
-      for (const item of listing.entries) {
-        if (item.type === "file") {
-          lines.push(`- [file] ${item.path} (${item.size} bytes)`);
-        } else if (item.type === "dir") {
-          lines.push(`- [dir] ${item.path}`);
-        } else {
-          lines.push(`- [other] ${item.path}`);
-        }
-      }
-      const body = lines.join("\n");
+      const body = renderListDirBody(listing);
       appendToolLog(session, {
         title: `list_dir ${listing.root}`,
         summary: `entries=${listing.entries.length} truncated=${listing.truncated ? "yes" : "no"}`,
@@ -3937,6 +4850,10 @@ async function executeAutoToolCall({ session, toolName, args, fallbackWebSearchQ
           querySource = "user_prompt";
         }
       }
+      query = normalizeLatestNewsSearchQuery(query, {
+        prompt,
+        promptIntent,
+      });
       const maxResults = Number.parseInt(String(payload.max_results || payload.maxResults || payload.limit || ""), 10);
       if (!query) {
         throw new Error("Query is empty.");
@@ -4166,6 +5083,22 @@ async function runAutoToolChat({ session, prompt, model, temperature, onEvent = 
         }
       }
     : null;
+  const preSamplingCompaction = compactSessionHistoryIfNeeded(safeSession, {
+    pendingMessages: [{ role: "user", content: String(prompt || "").trim() }],
+    maxOutputTokens: Math.max(256, autoToolMaxTokens),
+    reason: "pre_sampling",
+  });
+  if (preSamplingCompaction?.compacted) {
+    appendToolLog(safeSession, {
+      title: "session pre-sampling compacted",
+      summary: `version=${preSamplingCompaction.compactVersion}`,
+      detail: [
+        `prompt=${truncateText(prompt, 300)}`,
+        `tokens=${preSamplingCompaction.totalTokensBefore} -> ${preSamplingCompaction.totalTokensAfter}`,
+        `budget=${preSamplingCompaction.tokenBudget}`,
+      ].join("\n"),
+    });
+  }
   let chatMessages = [
     { role: "system", content: autoToolSystemPrompt },
     {
@@ -4232,6 +5165,7 @@ async function runAutoToolChat({ session, prompt, model, temperature, onEvent = 
   const htmlParts = [];
   let finalText = "";
   let executedToolCount = 0;
+  let lastExecutedToolSignature = "";
   const compactToolResults = [];
   const pushCard = (html) => {
     const card = String(html || "");
@@ -4244,6 +5178,9 @@ async function runAutoToolChat({ session, prompt, model, temperature, onEvent = 
       });
     }
   };
+  if (preSamplingCompaction?.compacted) {
+    pushCard(renderContextCompactedCard(preSamplingCompaction));
+  }
 
   for (let step = 1; step <= Math.max(1, autoToolMaxSteps); step += 1) {
     if (emit) {
@@ -4369,13 +5306,15 @@ async function runAutoToolChat({ session, prompt, model, temperature, onEvent = 
           ? "Recovered malformed response via local fallback parser."
           : "Recovered malformed JSON response via repair pass.",
       });
-      pushCard(renderToolResult({
-        title: "Auto tool JSON recovered",
-        meta: `step=${step}`,
-        body: parseRecoveredByFallback
-          ? "Recovered malformed response locally and continued."
-          : "Recovered malformed JSON response and continued.",
-      }));
+      if (showInternalRecoveryCards) {
+        pushCard(renderToolResult({
+          title: "Auto tool JSON recovered",
+          meta: `step=${step}`,
+          body: parseRecoveredByFallback
+            ? "Recovered malformed response locally and continued."
+            : "Recovered malformed JSON response and continued.",
+        }));
+      }
     }
 
     const decision = normalizeAgentDecision(decisionObject);
@@ -4386,6 +5325,7 @@ async function runAutoToolChat({ session, prompt, model, temperature, onEvent = 
         finalText: candidateFinalText,
         promptIntent,
         toolStats,
+        temporalContext,
       });
       if (!coverage.ok && step < Math.max(1, autoToolMaxSteps)) {
         const reasonText = coverage.reasons.join("; ");
@@ -4438,6 +5378,57 @@ async function runAutoToolChat({ session, prompt, model, temperature, onEvent = 
     }
 
     const toolCallId = decision.callId || nextSessionToolCallId(safeSession);
+    const toolCallSignature = buildToolCallSignature(decision.tool, decision.args);
+    if (toolCallSignature && toolCallSignature === lastExecutedToolSignature) {
+      const duplicateResult = {
+        ok: false,
+        tool: decision.tool,
+        skipped: true,
+        error: "duplicate_tool_call_suppressed",
+        detail: "Identical tool call with identical arguments was already executed in the previous step.",
+      };
+      appendToolLog(safeSession, {
+        title: "auto-tool duplicate suppressed",
+        summary: `step=${step} tool=${decision.tool}`,
+        detail: [
+          `call_id=${toolCallId}`,
+          `signature=${toolCallSignature}`,
+          `args=${truncateText(safeJsonStringify(decision.args || {}), 600)}`,
+        ].join("\n"),
+      });
+      pushCard(renderToolResult({
+        title: `Auto tool duplicate skipped: ${decision.tool}`,
+        meta: `step=${step} call_id=${toolCallId}`,
+        body: "Same tool call was just executed. Choose a different action or return final.",
+        isError: true,
+      }));
+      chatMessages.push({
+        role: "assistant",
+        content: JSON.stringify({
+          type: "tool_call",
+          call_id: toolCallId,
+          tool_name: decision.tool,
+          arguments: decision.args,
+          reason: decision.reason || "",
+        }),
+      });
+      const duplicateOutputPayload = normalizeToolOutputPayload({
+        type: "tool_output",
+        call_id: toolCallId,
+        tool_name: decision.tool,
+        ok: false,
+        result: duplicateResult,
+      }, {
+        callIdFallback: toolCallId,
+        toolNameFallback: decision.tool,
+      });
+      chatMessages.push({
+        role: "user",
+        content: safeJsonStringify(duplicateOutputPayload),
+      });
+      chatMessages = normalizeHarnessMessagesForPrompt(chatMessages);
+      continue;
+    }
     const callMeta = [
       `step=${step}`,
       `call_id=${toolCallId}`,
@@ -4454,6 +5445,8 @@ async function runAutoToolChat({ session, prompt, model, temperature, onEvent = 
       toolName: decision.tool,
       args: decision.args,
       fallbackWebSearchQuery: prompt,
+      prompt,
+      promptIntent,
     });
     pushCard(toolOutcome.html);
     recordToolEvidence(toolStats, toolOutcome.modelResult);
@@ -4473,17 +5466,22 @@ async function runAutoToolChat({ session, prompt, model, temperature, onEvent = 
         reason: decision.reason || "",
       }),
     });
+    const toolOutputPayload = normalizeToolOutputPayload({
+      type: "tool_output",
+      call_id: toolCallId,
+      tool_name: decision.tool,
+      ok: toolOutcome?.modelResult?.ok === true,
+      result: toolOutcome.modelResult,
+    }, {
+      callIdFallback: toolCallId,
+      toolNameFallback: decision.tool,
+    });
     chatMessages.push({
       role: "user",
-      content: JSON.stringify({
-        type: "tool_output",
-        call_id: toolCallId,
-        tool_name: decision.tool,
-        ok: toolOutcome?.modelResult?.ok === true,
-        result: toolOutcome.modelResult,
-      }),
+      content: safeJsonStringify(toolOutputPayload),
     });
     chatMessages = normalizeHarnessMessagesForPrompt(chatMessages);
+    lastExecutedToolSignature = toolCallSignature;
   }
 
   if (!finalText) {
@@ -4532,6 +5530,24 @@ async function runAutoToolChat({ session, prompt, model, temperature, onEvent = 
         detail: rewriteErr?.message || String(rewriteErr),
       });
     }
+  }
+
+  const staleAsOfRewrite = rewriteStaleAsOfDatesForLatestPrompt({
+    prompt,
+    text: finalText,
+    currentDateJst: temporalContext.currentDateJst,
+  });
+  if (staleAsOfRewrite.rewriteCount > 0) {
+    finalText = staleAsOfRewrite.text;
+    appendToolLog(safeSession, {
+      title: "auto-tool stale date normalized",
+      summary: `rewritten_dates=${staleAsOfRewrite.rewriteCount}`,
+      detail: [
+        `prompt=${truncateText(prompt, 400)}`,
+        `current_date_jst=${temporalContext.currentDateJst}`,
+        "Replaced stale 'as of' dates for a latest/current query.",
+      ].join("\n"),
+    });
   }
 
   // Guardrail for weather "today" prompts: avoid stale explicit calendar dates.
@@ -4604,6 +5620,31 @@ function estimateMessagesCharWeight(messages) {
     total += estimateMessageCharWeight(row);
   }
   return total;
+}
+
+function approxTokensFromCharWeight(charWeight) {
+  const safeChars = Math.max(0, Number.parseInt(String(charWeight || 0), 10) || 0);
+  return Math.max(0, Math.ceil(safeChars / 4));
+}
+
+function estimateMessagesTokenUsage(messages) {
+  return approxTokensFromCharWeight(estimateMessagesCharWeight(messages));
+}
+
+function estimateTextTokenUsage(text) {
+  return approxTokensFromCharWeight(String(text || "").length);
+}
+
+function computeSessionHistoryTokenBudget(maxOutputTokens = autoToolMaxTokens) {
+  const safeOutputTokens = Math.max(256, Number.parseInt(String(maxOutputTokens || 0), 10) || 0);
+  const byContextWindow = Math.max(
+    1024,
+    generationMaxContextTokens
+      - generationContextReserveTokens
+      - safeOutputTokens
+      - sessionCompactionSystemPromptReserveTokens,
+  );
+  return Math.max(1024, Math.min(sessionAutoCompactTokenLimit, byContextWindow));
 }
 
 function trimMessagesToApproxContextChars(messages, maxChars) {
@@ -4730,9 +5771,47 @@ async function callRunPodChatText({
     stream: false,
   });
 
+  const invokeChat = async (body, phaseLabel) => {
+    for (let pass = 1; pass <= 2; pass += 1) {
+      try {
+        if (runPodHealthcheckOnChat) {
+          await ensureRunPodHealthy({
+            force: pass > 1,
+            reason: `${phaseLabel}-pass${pass}`,
+          });
+        }
+      } catch (healthErr) {
+        // If health check itself is transient, still attempt chat call.
+        if (!isTransientRunPodError(healthErr)) {
+          throw healthErr;
+        }
+      }
+
+      try {
+        return await callRunPodJson("/chat/completions", body, {
+          timeoutMs: runPodChatTimeoutMs,
+          retryLabel: `POST /chat/completions (${phaseLabel} pass=${pass})`,
+        });
+      } catch (err) {
+        if (pass >= 2 || !isTransientRunPodError(err)) {
+          throw err;
+        }
+        const statusPart = Number.isInteger(err?.statusCode) ? `HTTP ${err.statusCode}` : (err?.name || "network");
+        console.warn(`[node-htmx] chat transient failure during ${phaseLabel} (${statusPart}); forcing health check and retry.`);
+        try {
+          await ensureRunPodHealthy({ force: true, reason: `${phaseLabel}-forced-retry` });
+        } catch {
+          // ignore and continue to second pass
+        }
+        await sleepMs(Math.max(250, Math.min(2500, runPodHttpRetryDelayMs)));
+      }
+    }
+    throw new Error("RunPod chat request failed after recovery attempts.");
+  };
+
   let response;
   try {
-    response = await callRunPodJson("/chat/completions", requestBody);
+    response = await invokeChat(requestBody, "primary");
   } catch (err) {
     if (!isLikelyUnsupportedGenerationParamError(err)) {
       throw err;
@@ -4740,7 +5819,7 @@ async function callRunPodChatText({
     const fallbackBody = { ...requestBody };
     delete fallbackBody.top_k;
     delete fallbackBody.min_p;
-    response = await callRunPodJson("/chat/completions", fallbackBody);
+    response = await invokeChat(fallbackBody, "fallback-no-topk-minp");
   }
   return extractAssistantText(response) || "";
 }
@@ -5092,7 +6171,26 @@ function sleepMs(ms) {
 }
 
 function isTransientRunPodStatus(statusCode) {
-  return [408, 425, 429, 500, 502, 503, 504].includes(Number.parseInt(statusCode, 10));
+  const code = Number.parseInt(statusCode, 10);
+  return [
+    0,
+    408,
+    409,
+    425,
+    429,
+    499,
+    500,
+    502,
+    503,
+    504,
+    520,
+    521,
+    522,
+    523,
+    524,
+    525,
+    526,
+  ].includes(code);
 }
 
 function isAbortError(err) {
@@ -5106,7 +6204,7 @@ function isTransientRunPodError(err) {
   if (isAbortError(err)) return true;
   if (isTransientRunPodStatus(err?.statusCode)) return true;
   const message = String(err?.message || "");
-  return /fetch failed|econnreset|econnrefused|etimedout|enotfound|eai_again|network/i.test(message);
+  return /fetch failed|econnreset|econnrefused|etimedout|enotfound|eai_again|network|socket hang up|premature close|terminated|ECONNRESET|UND_ERR|TLS|SSL|EOF/i.test(message);
 }
 
 async function callRunPodWithRetry(label, executor) {
@@ -5126,7 +6224,9 @@ async function callRunPodWithRetry(label, executor) {
       const baseDelay = Math.max(0, runPodHttpRetryDelayMs);
       const maxDelay = Math.max(0, runPodHttpRetryMaxDelayMs);
       const backoffDelay = baseDelay * Math.max(1, 2 ** (attempt - 1));
-      const waitMs = maxDelay > 0 ? Math.min(backoffDelay, maxDelay) : backoffDelay;
+      const cappedDelay = maxDelay > 0 ? Math.min(backoffDelay, maxDelay) : backoffDelay;
+      const jitter = Math.floor(cappedDelay * 0.2 * Math.random());
+      const waitMs = Math.max(0, cappedDelay + jitter);
       const statusPart = Number.isInteger(err?.statusCode) ? `HTTP ${err.statusCode}` : (err?.name || "network");
       console.warn(`[node-htmx] ${label} transient error (${statusPart}) attempt ${attempt}/${attempts}; retry in ${waitMs} ms.`);
       await sleepMs(waitMs);
@@ -5136,11 +6236,18 @@ async function callRunPodWithRetry(label, executor) {
   throw lastError || new Error(`RunPod request failed: ${label}`);
 }
 
-async function callRunPodJson(endpointPath, body) {
+async function callRunPodJson(endpointPath, body, options = {}) {
   const url = `${runPodBaseUrl}${endpointPath}`;
-  return callRunPodWithRetry(`POST ${endpointPath}`, async () => {
+  const effectiveTimeoutMs = parseIntEnv(
+    options?.timeoutMs,
+    timeoutMs,
+    1000,
+    900000,
+  );
+  const retryLabel = String(options?.retryLabel || `POST ${endpointPath}`).trim() || `POST ${endpointPath}`;
+  return callRunPodWithRetry(retryLabel, async () => {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const timeout = setTimeout(() => controller.abort(), effectiveTimeoutMs);
     try {
       const response = await fetch(url, {
         method: "POST",
@@ -5172,11 +6279,18 @@ async function callRunPodJson(endpointPath, body) {
   });
 }
 
-async function callRunPodModels() {
+async function callRunPodModels(options = {}) {
   const url = `${runPodBaseUrl}/models`;
-  return callRunPodWithRetry("GET /models", async () => {
+  const effectiveTimeoutMs = parseIntEnv(
+    options?.timeoutMs,
+    runPodModelsTimeoutMs,
+    1000,
+    900000,
+  );
+  const retryLabel = String(options?.retryLabel || "GET /models").trim() || "GET /models";
+  return callRunPodWithRetry(retryLabel, async () => {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const timeout = setTimeout(() => controller.abort(), effectiveTimeoutMs);
     try {
       const response = await fetch(url, {
         method: "GET",
@@ -5199,11 +6313,50 @@ async function callRunPodModels() {
         err.payload = parsed;
         throw err;
       }
+      runPodHealthState.lastOkAtMs = Date.now();
+      runPodHealthState.lastCheckedAtMs = runPodHealthState.lastOkAtMs;
+      runPodHealthState.lastError = "";
       return parsed;
     } finally {
       clearTimeout(timeout);
     }
   });
+}
+
+function isRunPodHealthFresh() {
+  if (runPodHealthcheckTtlMs <= 0) return false;
+  if (runPodHealthState.lastOkAtMs <= 0) return false;
+  return Date.now() - runPodHealthState.lastOkAtMs <= runPodHealthcheckTtlMs;
+}
+
+async function ensureRunPodHealthy({ force = false, reason = "chat" } = {}) {
+  if (!force && !runPodHealthcheckOnChat) {
+    return;
+  }
+  if (!force && isRunPodHealthFresh()) {
+    return;
+  }
+  if (runPodHealthState.inFlightPromise) {
+    return runPodHealthState.inFlightPromise;
+  }
+
+  const promise = (async () => {
+    try {
+      await callRunPodModels({
+        timeoutMs: runPodModelsTimeoutMs,
+        retryLabel: `GET /models (healthcheck:${reason})`,
+      });
+    } catch (err) {
+      runPodHealthState.lastCheckedAtMs = Date.now();
+      runPodHealthState.lastError = err?.message || String(err);
+      throw err;
+    } finally {
+      runPodHealthState.inFlightPromise = null;
+    }
+  })();
+
+  runPodHealthState.inFlightPromise = promise;
+  return promise;
 }
 
 async function serveStatic(req, res, pathname) {
@@ -5278,6 +6431,178 @@ function isToolOutputMessageRow(row) {
   return type === "tool_output" || type === "tool_result" || type === "tool_response";
 }
 
+function normalizeToolOutputResultObject(rawValue) {
+  if (rawValue && typeof rawValue === "object" && !Array.isArray(rawValue)) {
+    return rawValue;
+  }
+  if (Array.isArray(rawValue)) {
+    return { items_count: rawValue.length };
+  }
+  if (typeof rawValue === "string") {
+    const text = String(rawValue).trim();
+    return text ? { text: truncateText(text, 800) } : {};
+  }
+  if (typeof rawValue === "number" || typeof rawValue === "boolean") {
+    return { value: rawValue };
+  }
+  return {};
+}
+
+function buildToolOutputStructuredContent(result) {
+  const source = normalizeToolOutputResultObject(result);
+  const structured = {};
+  if (source.ok === true || source.ok === false) {
+    structured.ok = source.ok === true;
+  }
+  if (typeof source.tool === "string" && source.tool.trim()) {
+    structured.tool = source.tool.trim();
+  }
+  if (typeof source.path === "string" && source.path.trim()) {
+    structured.path = source.path.trim();
+  }
+  if (typeof source.query === "string" && source.query.trim()) {
+    structured.query = source.query.trim();
+  }
+  if (typeof source.source === "string" && source.source.trim()) {
+    structured.source = source.source.trim();
+  }
+  if (typeof source.error === "string" && source.error.trim()) {
+    structured.error = truncateText(source.error.trim(), 280);
+  }
+  if (Number.isFinite(Number(source.bytes))) {
+    structured.bytes = Number(source.bytes);
+  }
+  if (Number.isFinite(Number(source.elapsedMs))) {
+    structured.elapsedMs = Number(source.elapsedMs);
+  }
+  if (Number.isFinite(Number(source.exitCode))) {
+    structured.exitCode = Number(source.exitCode);
+  }
+  if (typeof source.changed === "boolean") {
+    structured.changed = source.changed;
+  }
+  if (Array.isArray(source.results)) {
+    structured.results_count = source.results.length;
+  }
+  if (Array.isArray(source.operations)) {
+    structured.operations_count = source.operations.length;
+  }
+  if (Object.keys(structured).length === 0) {
+    const preview = truncateText(safeJsonStringify(source), 280);
+    if (preview) {
+      structured.preview = preview;
+    }
+  }
+  return structured;
+}
+
+function buildToolOutputContentBlocks(rawContent, result) {
+  const blocks = [];
+  if (Array.isArray(rawContent)) {
+    for (const item of rawContent) {
+      if (typeof item === "string") {
+        const text = item.trim();
+        if (text) {
+          blocks.push({ type: "text", text: truncateText(text, 900) });
+        }
+        continue;
+      }
+      if (!item || typeof item !== "object") continue;
+      const text = typeof item.text === "string"
+        ? item.text.trim()
+        : (typeof item.content === "string" ? item.content.trim() : "");
+      if (!text) continue;
+      blocks.push({ type: "text", text: truncateText(text, 900) });
+    }
+  } else if (typeof rawContent === "string") {
+    const text = rawContent.trim();
+    if (text) {
+      blocks.push({ type: "text", text: truncateText(text, 900) });
+    }
+  }
+  if (blocks.length > 0) {
+    return blocks.slice(0, 4);
+  }
+
+  const structured = buildToolOutputStructuredContent(result);
+  const preview = truncateText(safeJsonStringify(structured), 900) || "(empty tool output)";
+  return [{ type: "text", text: preview }];
+}
+
+function normalizeToolOutputPayload(rawPayload, {
+  callIdFallback = "",
+  toolNameFallback = "",
+} = {}) {
+  // Codex-inspired shape: keep legacy fields while mirroring function_call_output metadata
+  // and MCP-style content/structuredContent for downstream robustness.
+  const parsed = rawPayload && typeof rawPayload === "object" ? rawPayload : {};
+  const callId = String(
+    parsed.call_id
+    || parsed.callId
+    || parsed.id
+    || parsed?.function_call_output?.call_id
+    || parsed?.response?.call_id
+    || callIdFallback,
+  ).trim();
+  const toolName = String(
+    parsed.tool_name
+    || parsed.tool
+    || parsed?.function_call_output?.name
+    || parsed?.response?.name
+    || toolNameFallback,
+  ).trim().toLowerCase();
+
+  const resultCandidate =
+    (parsed.result && typeof parsed.result === "object" ? parsed.result : null)
+    || (parsed.output && typeof parsed.output === "object" ? parsed.output : null)
+    || (parsed?.response?.structuredContent && typeof parsed.response.structuredContent === "object"
+      ? parsed.response.structuredContent
+      : null)
+    || {};
+  const result = normalizeToolOutputResultObject(resultCandidate);
+
+  const structuredCandidate =
+    (parsed.structuredContent && typeof parsed.structuredContent === "object" && !Array.isArray(parsed.structuredContent)
+      ? parsed.structuredContent
+      : null)
+    || (parsed.structured_content && typeof parsed.structured_content === "object" && !Array.isArray(parsed.structured_content)
+      ? parsed.structured_content
+      : null)
+    || (parsed?.response?.structuredContent
+      && typeof parsed.response.structuredContent === "object"
+      && !Array.isArray(parsed.response.structuredContent)
+      ? parsed.response.structuredContent
+      : null)
+    || buildToolOutputStructuredContent(result);
+
+  const success = parsed.success === true
+    || parsed.ok === true
+    || parsed?.function_call_output?.success === true
+    || parsed?.response?.success === true
+    || result.ok === true;
+  const content = buildToolOutputContentBlocks(
+    parsed.content !== undefined ? parsed.content : parsed?.response?.content,
+    result,
+  );
+
+  return {
+    type: "tool_output",
+    call_id: callId,
+    tool_name: toolName,
+    ok: success,
+    success,
+    result,
+    content,
+    structuredContent: structuredCandidate,
+    function_call_output: {
+      type: "function_call_output",
+      call_id: callId,
+      name: toolName,
+      success,
+    },
+  };
+}
+
 function normalizeHarnessMessagesForPrompt(messages) {
   const rows = normalizeChatMessages(messages);
   if (rows.length === 0) return rows;
@@ -5313,7 +6638,18 @@ function normalizeHarnessMessagesForPrompt(messages) {
 
     if (isToolOutputMessageRow(row)) {
       const parsed = tryParseJsonObjectText(row.content) || {};
-      const callId = String(parsed.call_id || parsed.callId || "").trim();
+      const fallbackCallId = String(
+        parsed.call_id
+        || parsed.callId
+        || parsed.id
+        || parsed?.function_call_output?.call_id
+        || "",
+      ).trim();
+      const normalizedPayload = normalizeToolOutputPayload(parsed, {
+        callIdFallback: fallbackCallId,
+        toolNameFallback: String(parsed.tool_name || parsed.tool || "").trim().toLowerCase(),
+      });
+      const callId = String(normalizedPayload.call_id || "").trim();
       if (!callId) {
         // Drop malformed outputs with no call_id.
         continue;
@@ -5322,13 +6658,6 @@ function normalizeHarnessMessagesForPrompt(messages) {
         // Remove orphan tool outputs to keep call/output pairing invariant.
         continue;
       }
-      const normalizedPayload = {
-        type: "tool_output",
-        call_id: callId,
-        tool_name: String(parsed.tool_name || parsed.tool || "").trim().toLowerCase(),
-        ok: parsed.ok === true,
-        result: parsed.result && typeof parsed.result === "object" ? parsed.result : {},
-      };
       row.content = safeJsonStringify(normalizedPayload) || row.content;
       rewritten.push(row);
       toolOutputIds.add(callId);
@@ -5341,15 +6670,19 @@ function normalizeHarnessMessagesForPrompt(messages) {
   // Ensure every tool_call has a corresponding tool_output.
   for (const callId of toolCallIds) {
     if (toolOutputIds.has(callId)) continue;
+    const synthesized = normalizeToolOutputPayload({
+      type: "tool_output",
+      call_id: callId,
+      tool_name: "",
+      ok: false,
+      result: { error: "aborted" },
+    }, {
+      callIdFallback: callId,
+      toolNameFallback: "",
+    });
     rewritten.push({
       role: "user",
-      content: safeJsonStringify({
-        type: "tool_output",
-        call_id: callId,
-        tool_name: "",
-        ok: false,
-        result: { error: "aborted" },
-      }),
+      content: safeJsonStringify(synthesized),
     });
   }
 
@@ -5384,10 +6717,18 @@ function buildCompactionCheckpointFromMessages(messages, {
       continue;
     }
     if (parsed && String(parsed.type || "").trim().toLowerCase() === "tool_output") {
-      const callId = String(parsed.call_id || "").trim();
-      const ok = parsed.ok === true ? "ok" : "error";
-      const resultPreview = truncateText(safeJsonStringify(parsed.result || {}), 240);
-      parts.push(`[user/tool_output] call_id=${callId} ${ok} result=${resultPreview}`);
+      const normalized = normalizeToolOutputPayload(parsed);
+      const callId = String(normalized.call_id || "").trim();
+      const ok = normalized.success === true ? "ok" : "error";
+      const structuredPreview = truncateText(
+        safeJsonStringify(
+          normalized.structuredContent && typeof normalized.structuredContent === "object"
+            ? normalized.structuredContent
+            : normalized.result,
+        ),
+        240,
+      );
+      parts.push(`[user/tool_output] call_id=${callId} ${ok} structured=${structuredPreview}`);
       continue;
     }
     parts.push(`[${role}] ${truncateText(row.content, 320)}`);
@@ -5495,20 +6836,67 @@ function recordSessionTurnJournal(session, {
   }
 }
 
-function compactSessionHistoryIfNeeded(session) {
+function compactSessionHistoryIfNeeded(session, options = {}) {
   const safeSession = ensureSessionShape(session);
+  const pendingMessages = normalizeChatMessages(options?.pendingMessages || []);
+  const pendingTokens = estimateMessagesTokenUsage(pendingMessages);
+  const tokenBudget = computeSessionHistoryTokenBudget(options?.maxOutputTokens);
   const maxMessages = Math.max(1, maxHistoryPairs) * 2;
-  if (safeSession.messages.length <= maxMessages) {
-    return;
+  const normalizedHistory = normalizeChatMessages(safeSession.messages);
+  const historyTokensBefore = estimateMessagesTokenUsage(normalizedHistory);
+  const compactSummaryTokensBefore = estimateTextTokenUsage(safeSession.compactSummary);
+  const totalTokensBefore = historyTokensBefore + compactSummaryTokensBefore + pendingTokens;
+  const overMessageLimit = normalizedHistory.length > maxMessages;
+  const overTokenLimit = totalTokensBefore > tokenBudget;
+
+  if (!overMessageLimit && !overTokenLimit) {
+    return {
+      compacted: false,
+      droppedMessages: 0,
+      keptMessages: normalizedHistory.length,
+      compactVersion: safeSession.compactVersion,
+      checkpointChars: 0,
+      tokenBudget,
+      totalTokensBefore,
+      totalTokensAfter: totalTokensBefore,
+      historyTokensBefore,
+      historyTokensAfter: historyTokensBefore,
+      pendingTokens,
+    };
   }
+
+  let kept = normalizedHistory.slice();
+  const dropped = [];
+
   const keepRecentMessages = Math.max(2, historyCompactionKeepRecentPairs) * 2;
-  const keepStart = Math.max(0, safeSession.messages.length - keepRecentMessages);
-  const dropped = safeSession.messages.slice(0, keepStart);
-  const kept = safeSession.messages.slice(keepStart);
+  const keepStart = Math.max(0, kept.length - keepRecentMessages);
+  if (keepStart > 0) {
+    dropped.push(...kept.slice(0, keepStart));
+    kept = kept.slice(keepStart);
+  }
+
+  const targetTotalTokens = Math.max(1024, Math.floor(tokenBudget * sessionCompactionTargetRatio));
+  const minKeptMessages = 2;
+  while (kept.length > minKeptMessages) {
+    const currentTotalTokens =
+      estimateMessagesTokenUsage(kept)
+      + estimateTextTokenUsage(safeSession.compactSummary)
+      + pendingTokens;
+    if (currentTotalTokens <= targetTotalTokens && kept.length <= maxMessages) {
+      break;
+    }
+    dropped.push(kept.shift());
+  }
+
+  while (kept.length > minKeptMessages && kept[0]?.role === "assistant") {
+    dropped.push(kept.shift());
+  }
+
   const checkpoint = buildCompactionCheckpointFromMessages(dropped, {
     maxChars: 4200,
     includeHeader: false,
   });
+  const checkpointChars = checkpoint.length;
   if (checkpoint) {
     const block = [
       `# compact checkpoint v${safeSession.compactVersion + 1}`,
@@ -5525,7 +6913,32 @@ function compactSessionHistoryIfNeeded(session) {
       );
     }
   }
-  safeSession.messages = trimHistory(kept);
+
+  const compacted = dropped.length > 0;
+  if (compacted) {
+    safeSession.messages = trimHistory(kept);
+  }
+
+  const historyTokensAfter = estimateMessagesTokenUsage(safeSession.messages);
+  const compactSummaryTokensAfter = estimateTextTokenUsage(safeSession.compactSummary);
+  const totalTokensAfter = historyTokensAfter + compactSummaryTokensAfter + pendingTokens;
+
+  if (!compacted) {
+    safeSession.messages = trimHistory(normalizedHistory);
+  }
+  return {
+    compacted,
+    droppedMessages: dropped.length,
+    keptMessages: safeSession.messages.length,
+    compactVersion: safeSession.compactVersion,
+    checkpointChars,
+    tokenBudget,
+    totalTokensBefore,
+    totalTokensAfter,
+    historyTokensBefore,
+    historyTokensAfter,
+    pendingTokens,
+  };
 }
 
 function recordSessionConversationTurn(session, {
@@ -5543,33 +6956,37 @@ function recordSessionConversationTurn(session, {
     toolCallCount,
     toolStats,
   });
-  compactSessionHistoryIfNeeded(safeSession);
+  const compactionInfo = compactSessionHistoryIfNeeded(safeSession, { reason: "post_turn" });
   safeSession.messages = trimHistory(safeSession.messages);
+  return {
+    ...(compactionInfo && typeof compactionInfo === "object" ? compactionInfo : {}),
+    keptMessages: safeSession.messages.length,
+  };
 }
 
 function buildSessionCompactedContextMessage(session) {
   const safeSession = ensureSessionShape(session);
   const blocks = [];
   if (safeSession.compactSummary) {
-    blocks.push("Compacted prior context:");
-    blocks.push(safeSession.compactSummary);
+    blocks.push("Compacted prior context summary:");
+    blocks.push(truncateText(safeSession.compactSummary, 4600));
   }
   if (safeSession.turnJournal.length > 0) {
-    const recentTurns = safeSession.turnJournal.slice(-6);
+    const recentTurns = safeSession.turnJournal.slice(-4);
     blocks.push("Recent turn journal:");
     for (let i = 0; i < recentTurns.length; i += 1) {
       const item = recentTurns[i];
       blocks.push([
         `- turn ${i + 1}:`,
-        `question=${item.prompt}`,
-        `answer=${truncateText(item.assistant, 600)}`,
+        `question=${truncateText(item.prompt, 360)}`,
+        `answer=${truncateText(item.assistant, 420)}`,
         `tool_calls=${item.toolCallCount}`,
         item.stats ? `stats=${item.stats}` : "",
       ].filter(Boolean).join("\n  "));
     }
   }
   const text = blocks.join("\n");
-  return truncateText(text, 7000);
+  return truncateText(text, 5600);
 }
 
 function isContextExceededError(err) {
@@ -5936,22 +7353,7 @@ const server = http.createServer(async (req, res) => {
         maxDepth,
         limit,
       });
-      const lines = [
-        `root=${listing.root}`,
-        `entries=${listing.entries.length}`,
-        `truncated=${listing.truncated ? "yes" : "no"}`,
-        "",
-      ];
-      for (const item of listing.entries) {
-        if (item.type === "file") {
-          lines.push(`- [file] ${item.path} (${item.size} bytes)`);
-        } else if (item.type === "dir") {
-          lines.push(`- [dir] ${item.path}`);
-        } else {
-          lines.push(`- [other] ${item.path}`);
-        }
-      }
-      const body = lines.join("\n");
+      const body = renderListDirBody(listing);
       appendToolLog(session, {
         title: `list_dir ${listing.root}`,
         summary: `entries=${listing.entries.length} truncated=${listing.truncated ? "yes" : "no"}`,
@@ -6365,12 +7767,14 @@ const server = http.createServer(async (req, res) => {
       const assistantText = autoResult.assistantText || "(empty response)";
       const elapsedMs = Date.now() - started;
 
-      recordSessionConversationTurn(session, {
+      const compactionInfo = recordSessionConversationTurn(session, {
         prompt,
         assistantText,
         toolCallCount: Number(autoResult.executedToolCount || 0),
         toolStats: autoResult.toolStats || null,
       });
+      const compactionHtml = compactionInfo?.compacted ? renderContextCompactedCard(compactionInfo) : "";
+      const middleHtml = `${autoResult.html || ""}${compactionHtml}`;
 
       send(
         res,
@@ -6380,7 +7784,7 @@ const server = http.createServer(async (req, res) => {
           assistantText,
           model,
           elapsedMs,
-          middleHtml: autoResult.html,
+          middleHtml,
           includeUserTurn: !omitUserTurn,
           includeMiddleHtml: !omitMiddleHtml,
         }),
@@ -6492,16 +7896,32 @@ const server = http.createServer(async (req, res) => {
       const assistantText = autoResult.assistantText || "(empty response)";
       const elapsedMs = Date.now() - started;
 
-      recordSessionConversationTurn(session, {
+      const compactionInfo = recordSessionConversationTurn(session, {
         prompt,
         assistantText,
         toolCallCount: Number(autoResult.executedToolCount || 0),
         toolStats: autoResult.toolStats || null,
       });
+      if (compactionInfo?.compacted) {
+        writeNdjson(res, {
+          type: "context_compacted",
+          html: renderContextCompactedCard(compactionInfo),
+          compactVersion: Number(compactionInfo.compactVersion || 0),
+          droppedMessages: Number(compactionInfo.droppedMessages || 0),
+          keptMessages: Number(compactionInfo.keptMessages || 0),
+        });
+      }
 
+      const streamedAssistant = await emitAssistantStreamEvents({
+        res,
+        assistantText,
+        model,
+        elapsedMs,
+      });
       writeNdjson(res, {
         type: "assistant_turn",
         html: renderAssistantTurn({ assistantText, model, elapsedMs }),
+        streamed: streamedAssistant ? true : false,
       });
       writeNdjson(res, {
         type: "done",
@@ -6564,6 +7984,9 @@ server.listen(appPort, appBind, () => {
   console.log(
     `[node-htmx] generation context: max_context_tokens=${generationMaxContextTokens} reserve_tokens=${generationContextReserveTokens}`,
   );
+  console.log(
+    `[node-htmx] session compaction: auto_limit_tokens=${sessionAutoCompactTokenLimit} target_ratio=${sessionCompactionTargetRatio} system_prompt_reserve_tokens=${sessionCompactionSystemPromptReserveTokens} max_history_pairs=${maxHistoryPairs}`,
+  );
   console.log(`[node-htmx] playwright mcp: ${playwrightMcpEnabled ? "enabled" : "disabled"} (${playwrightMcpBrowser})`);
   console.log(
     `[node-htmx] client autostop: ${clientAutostopEnabled ? "enabled" : "disabled"} `
@@ -6571,5 +7994,9 @@ server.listen(appPort, appBind, () => {
   );
   console.log(
     `[node-htmx] stream keepalive: every ${Math.max(2000, streamKeepaliveIntervalMs)}ms, autostop_grace=${Math.max(1000, clientAutostopRequestGraceMs)}ms`,
+  );
+  console.log(
+    `[node-htmx] assistant stream: ${assistantStreamEnabled ? "enabled" : "disabled"} `
+    + `(chunk_chars=${assistantStreamChunkChars} delay_ms=${assistantStreamChunkDelayMs})`,
   );
 });

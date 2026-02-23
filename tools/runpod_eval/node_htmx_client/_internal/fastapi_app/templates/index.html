@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ app_name }}</title>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js" defer></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 text-slate-900 min-h-screen">
+  <main
+    class="max-w-5xl mx-auto px-4 py-6"
+    x-data="appState()"
+    x-init="init()"
+  >
+    <header class="mb-5">
+      <h1 class="text-2xl font-bold tracking-tight">{{ app_name }}</h1>
+      <p class="text-sm text-slate-600 mt-1">FastAPI + HTMX + Alpine.js + Tailwind</p>
+    </header>
+
+    <section class="bg-white rounded-xl border border-slate-200 p-4 mb-4">
+      <div class="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          class="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-sm hover:bg-slate-800"
+          @click="selectWorkspace()"
+          :disabled="workspaceBusy"
+        >
+          Select Workspace
+        </button>
+        <button
+          type="button"
+          class="px-3 py-1.5 rounded-lg bg-slate-700 text-white text-sm hover:bg-slate-600"
+          @click="refreshWorkspace()"
+          :disabled="workspaceBusy"
+        >
+          Refresh
+        </button>
+        <span class="text-xs text-slate-500" x-text="workspaceBusy ? 'workspace: updating...' : 'workspace: ready'"></span>
+      </div>
+      <div class="mt-3 text-sm">
+        <div class="text-slate-500">Workspace Root</div>
+        <div class="font-mono text-xs break-all bg-slate-50 border border-slate-200 rounded p-2 mt-1" x-text="workspaceRoot || '(unknown)'"></div>
+      </div>
+    </section>
+
+    <section class="bg-white rounded-xl border border-slate-200 p-4 mb-4">
+      <form
+        id="chat-form"
+        @submit.prevent="submitChat()"
+        class="space-y-3"
+      >
+        <label for="prompt" class="block text-sm font-medium">Describe the task you want to run</label>
+        <textarea
+          id="prompt"
+          name="prompt"
+          class="w-full min-h-[120px] rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+          placeholder="例: 今日の広島の天気を調べて"
+          :disabled="running"
+          required
+        ></textarea>
+        <input type="hidden" name="temperature" value="0.6" />
+        <div class="flex items-center gap-2">
+          <button
+            id="run-btn"
+            type="submit"
+            class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-500"
+            :disabled="running"
+          >Run</button>
+          <button
+            type="button"
+            class="px-4 py-2 rounded-lg bg-slate-200 text-slate-900 text-sm hover:bg-slate-300"
+            @click="clearChat()"
+          >Clear</button>
+          <span id="run-indicator" class="htmx-indicator text-xs text-slate-500">Running...</span>
+          <span class="text-xs text-slate-500" x-text="statusText"></span>
+        </div>
+      </form>
+    </section>
+
+    <section class="bg-white rounded-xl border border-slate-200 p-4">
+      <div class="text-sm font-medium mb-2">Result</div>
+      <div id="chat-log" class="space-y-3 text-sm"></div>
+    </section>
+  </main>
+
+  <script>
+    function appState() {
+      return {
+        workspaceRoot: "",
+        workspaceBusy: false,
+        running: false,
+        statusText: "Idle",
+        activeAssistantStream: null,
+        streamConnectTimeoutMs: 20000,
+        fallbackTimeoutMs: 60000,
+        async init() {
+          await this.refreshWorkspace();
+        },
+        chatLogEl() {
+          return document.getElementById("chat-log");
+        },
+        promptEl() {
+          return document.getElementById("prompt");
+        },
+        scrollBottom() {
+          const log = this.chatLogEl();
+          if (!log) return;
+          log.scrollTop = log.scrollHeight;
+        },
+        appendHtml(html) {
+          const log = this.chatLogEl();
+          if (!log || !html) return;
+          log.insertAdjacentHTML("beforeend", String(html));
+          this.scrollBottom();
+        },
+        escapeHtml(value) {
+          return String(value || "")
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#39;");
+        },
+        appendError(message) {
+          const html = [
+            '<article class="turn turn-error border border-rose-200 rounded-lg p-3 bg-rose-50">',
+            '<header class="turn-header font-semibold text-rose-700 mb-1">Error</header>',
+            `<pre class="turn-body text-xs whitespace-pre-wrap break-words">${this.escapeHtml(String(message || "Request failed.").slice(0, 2400))}</pre>`,
+            '</article>',
+          ].join("");
+          this.appendHtml(html);
+        },
+        resetAssistantStreamState() {
+          this.activeAssistantStream = null;
+        },
+        ensureAssistantStreamCard(modelName) {
+          if (this.activeAssistantStream && this.activeAssistantStream.body) {
+            return this.activeAssistantStream;
+          }
+          const log = this.chatLogEl();
+          if (!log) return null;
+
+          const article = document.createElement("article");
+          article.className = "turn turn-assistant border border-slate-200 rounded-lg p-3 bg-slate-50";
+
+          const header = document.createElement("header");
+          header.className = "turn-header font-semibold text-slate-700 mb-1";
+          header.textContent = `LocaLingo (${String(modelName || "").trim() || "model"})`;
+
+          const body = document.createElement("pre");
+          body.className = "turn-body text-xs whitespace-pre-wrap break-words";
+          body.textContent = "";
+
+          const footer = document.createElement("footer");
+          footer.className = "turn-footer text-[11px] text-slate-500 mt-2";
+          footer.textContent = "streaming...";
+
+          article.appendChild(header);
+          article.appendChild(body);
+          article.appendChild(footer);
+          log.appendChild(article);
+          this.scrollBottom();
+
+          this.activeAssistantStream = {
+            article,
+            header,
+            body,
+            footer,
+            text: "",
+            hasContent: false,
+          };
+          return this.activeAssistantStream;
+        },
+        appendAssistantDelta(deltaText) {
+          const stream = this.ensureAssistantStreamCard("");
+          if (!stream) return;
+          const delta = String(deltaText || "");
+          if (!delta) return;
+          stream.text += delta;
+          stream.hasContent = true;
+          stream.body.textContent = stream.text;
+          this.scrollBottom();
+        },
+        finishAssistantStream(elapsedMs) {
+          const stream = this.activeAssistantStream;
+          if (!stream || !stream.footer) return;
+          const elapsed = Number.isFinite(elapsedMs) ? `${elapsedMs} ms` : "Done";
+          stream.footer.textContent = elapsed;
+        },
+        replaceAssistantStreamText(finalText, modelName, elapsedMs) {
+          const stream = this.activeAssistantStream;
+          if (!stream) return;
+          const nextText = String(finalText || "");
+          if (!nextText) return;
+          if (stream.body) {
+            stream.body.textContent = nextText;
+          }
+          if (stream.header && modelName) {
+            stream.header.textContent = `LocaLingo (${String(modelName).trim() || "model"})`;
+          }
+          stream.text = nextText;
+          stream.hasContent = true;
+          this.finishAssistantStream(elapsedMs);
+          this.scrollBottom();
+        },
+        handleStreamEvent(eventPayload) {
+          if (!eventPayload || typeof eventPayload !== "object") return;
+          const type = String(eventPayload.type || "").trim().toLowerCase();
+          if (type === "assistant_stream_start") {
+            this.ensureAssistantStreamCard(eventPayload.model || "");
+            return;
+          }
+          if (type === "assistant_stream_delta") {
+            this.appendAssistantDelta(eventPayload.delta || "");
+            return;
+          }
+          if (type === "assistant_stream_done") {
+            this.finishAssistantStream(eventPayload.elapsedMs);
+            return;
+          }
+          if (type === "user_turn" || type === "tool_card" || type === "context_compacted") {
+            this.appendHtml(eventPayload.html || "");
+            return;
+          }
+          if (type === "assistant_turn") {
+            if (this.activeAssistantStream && this.activeAssistantStream.hasContent) {
+              const finalText = String(eventPayload.text || "");
+              if (finalText) {
+                this.replaceAssistantStreamText(finalText, eventPayload.model || "", eventPayload.elapsedMs);
+              } else {
+                this.finishAssistantStream(eventPayload.elapsedMs);
+              }
+              return;
+            }
+            this.appendHtml(eventPayload.html || "");
+            return;
+          }
+          if (type === "status") {
+            this.statusText = String(eventPayload.message || "Running...");
+            return;
+          }
+          if (type === "error") {
+            this.appendError(eventPayload.message || "Stream request failed.");
+            return;
+          }
+          if (type === "done") {
+            const elapsed = Number.isFinite(eventPayload.elapsedMs) ? `${eventPayload.elapsedMs} ms` : "Done";
+            this.statusText = `Done (${elapsed})`;
+          }
+        },
+        async submitChatFallback(bodyParams) {
+          const fallbackBody = new URLSearchParams(bodyParams.toString());
+          fallbackBody.set("omit_user_turn", "1");
+          fallbackBody.set("omit_middle_html", "1");
+          const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+          let timer = null;
+          if (controller) {
+            timer = setTimeout(() => {
+              try {
+                controller.abort();
+              } catch {
+                // ignore
+              }
+            }, this.fallbackTimeoutMs);
+          }
+          try {
+            const res = await fetch("/api/chat/form", {
+              method: "POST",
+              headers: {
+                "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+              },
+              body: fallbackBody.toString(),
+              signal: controller ? controller.signal : undefined,
+            });
+            const html = await res.text();
+            if (!res.ok) {
+              throw new Error(`fallback HTTP ${res.status}\n${String(html).slice(0, 1200)}`);
+            }
+            this.appendHtml(html);
+          } finally {
+            if (timer) clearTimeout(timer);
+          }
+        },
+        async submitChat() {
+          if (this.running) return;
+          const promptEl = this.promptEl();
+          const prompt = String(promptEl?.value || "").trim();
+          if (!prompt) {
+            promptEl?.focus();
+            return;
+          }
+
+          const body = new URLSearchParams();
+          body.set("prompt", prompt);
+          body.set("temperature", "0.6");
+
+          this.running = true;
+          this.statusText = "Connecting...";
+          this.resetAssistantStreamState();
+          let gotDoneEvent = false;
+          let gotAssistantEvent = false;
+
+          try {
+            const streamController = typeof AbortController !== "undefined" ? new AbortController() : null;
+            let streamTimer = null;
+            if (streamController) {
+              streamTimer = setTimeout(() => {
+                try {
+                  streamController.abort();
+                } catch {
+                  // ignore
+                }
+              }, this.streamConnectTimeoutMs);
+            }
+
+            const res = await fetch("/api/chat/stream", {
+              method: "POST",
+              headers: {
+                "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+              },
+              body: body.toString(),
+              signal: streamController ? streamController.signal : undefined,
+            });
+            if (streamTimer) clearTimeout(streamTimer);
+
+            if (!res.ok || !res.body) {
+              const text = await res.text();
+              throw new Error(`HTTP ${res.status}\n${String(text).slice(0, 1200)}`);
+            }
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = "";
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              buffer += decoder.decode(value, { stream: true });
+              let splitIndex = buffer.indexOf("\n");
+              while (splitIndex >= 0) {
+                const line = buffer.slice(0, splitIndex).trim();
+                buffer = buffer.slice(splitIndex + 1);
+                if (line) {
+                  try {
+                    const payload = JSON.parse(line);
+                    const type = String(payload?.type || "").trim().toLowerCase();
+                    if (type === "assistant_turn" || type === "assistant_stream_start" || type === "assistant_stream_delta" || type === "assistant_stream_done") {
+                      gotAssistantEvent = true;
+                    } else if (type === "done") {
+                      gotDoneEvent = true;
+                    }
+                    this.handleStreamEvent(payload);
+                  } catch {
+                    // ignore malformed lines
+                  }
+                }
+                splitIndex = buffer.indexOf("\n");
+              }
+            }
+
+            const tail = decoder.decode();
+            if (tail) buffer += tail;
+            const lastLine = buffer.trim();
+            if (lastLine) {
+              try {
+                const payload = JSON.parse(lastLine);
+                const type = String(payload?.type || "").trim().toLowerCase();
+                if (type === "assistant_turn" || type === "assistant_stream_start" || type === "assistant_stream_delta" || type === "assistant_stream_done") {
+                  gotAssistantEvent = true;
+                } else if (type === "done") {
+                  gotDoneEvent = true;
+                }
+                this.handleStreamEvent(payload);
+              } catch {
+                // ignore malformed final line
+              }
+            }
+          } catch (err) {
+            const normalizedErr = err?.name === "AbortError"
+              ? new Error(`Stream connection timed out (${this.streamConnectTimeoutMs} ms).`)
+              : err;
+            const streamError = normalizedErr?.message || String(normalizedErr);
+            if (!gotDoneEvent && !gotAssistantEvent) {
+              try {
+                this.statusText = "Reconnecting...";
+                await this.submitChatFallback(body);
+              } catch (fallbackErr) {
+                this.appendError([streamError, fallbackErr?.message || String(fallbackErr)].filter(Boolean).join("\n\n"));
+              }
+            } else if (!gotDoneEvent && gotAssistantEvent) {
+              this.finishAssistantStream(null);
+              this.statusText = "Completed";
+            } else {
+              this.appendError(streamError);
+            }
+          } finally {
+            this.running = false;
+            this.statusText = "Idle";
+            if (promptEl) {
+              promptEl.value = "";
+              promptEl.focus();
+            }
+          }
+        },
+        async refreshWorkspace() {
+          this.workspaceBusy = true;
+          try {
+            const res = await fetch("/api/workspace/state", { method: "GET" });
+            if (!res.ok) throw new Error("workspace state fetch failed");
+            const data = await res.json();
+            this.workspaceRoot = data?.workspaceRoot || "";
+          } catch (err) {
+            this.statusText = "Workspace error";
+          } finally {
+            this.workspaceBusy = false;
+          }
+        },
+        async selectWorkspace() {
+          this.workspaceBusy = true;
+          try {
+            const res = await fetch("/api/workspace/select", { method: "POST" });
+            if (!res.ok) throw new Error("workspace select failed");
+            await this.refreshWorkspace();
+          } catch (err) {
+            this.statusText = "Workspace select failed";
+          } finally {
+            this.workspaceBusy = false;
+          }
+        },
+        async clearChat() {
+          const log = document.getElementById("chat-log");
+          if (log) log.innerHTML = "";
+          this.resetAssistantStreamState();
+          try {
+            await fetch("/api/session/reset", { method: "POST" });
+          } catch {
+            // ignore
+          }
+          this.statusText = "Cleared";
+        }
+      };
+    }
+  </script>
+</body>
+</html>

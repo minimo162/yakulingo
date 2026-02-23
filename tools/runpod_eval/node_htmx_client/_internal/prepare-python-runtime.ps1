@@ -54,6 +54,11 @@ $pythonBinFile = Join-Path $runtimeRoot "python-bin.txt"
 $stampFile = Join-Path $runtimeRoot "python-runtime.stamp"
 
 $requirements = @(
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.30.0",
+  "httpx>=0.27.0",
+  "jinja2>=3.1.0",
+  "python-multipart>=0.0.9",
   "pymupdf>=1.24.0",
   "openpyxl>=3.1.0",
   "python-docx>=1.1.0",

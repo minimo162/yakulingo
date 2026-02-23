@@ -1,4 +1,4 @@
-# LocaLingo (RunPod Node + htmx Client)
+# LocaLingo (RunPod FastAPI + HTMX Client)
 
 This is a lightweight local client app for RunPod LM Studio.
 
@@ -6,7 +6,17 @@ Goal:
 - Keep VSCode + Codex on OpenAI.
 - Use a separate local app for RunPod chat.
 - Avoid heavy Open WebUI runtime size.
-- Always use bundled Node.js runtime (`.runtime/node/node.exe`).
+- Use bundled Python runtime + bundled Node runtime.
+- FastAPI serves UI/API gateway; Node engine (`server.mjs`) runs internally.
+
+UI/Server stack:
+- FastAPI
+- HTMX
+- Alpine.js
+- Tailwind CSS
+
+Inference backend:
+- fixed to `codex_cli` (`codex exec --json` via FastAPI bridge)
 
 ## Team Member Usage
 
@@ -17,10 +27,11 @@ Run only these files in this folder:
 Everything else is in `_internal`.
 
 `start.bat` behavior:
-- Uses bundled Node runtime only.
-- If runtime is missing, auto-runs `_internal/prepare-node-runtime.ps1` once.
+- Starts FastAPI frontend (`uvicorn`) on `APP_PORT`.
+- FastAPI auto-starts internal Node engine on `ENGINE_PORT`.
+- If bundled Node/Codex runtime is missing, auto-runs `_internal/prepare-node-runtime.ps1` once.
 - If bundled Python runtime is missing, auto-runs `_internal/prepare-python-runtime.ps1` once.
-- If a previous LocaLingo server process exists, it is stopped and restarted automatically.
+- If a previous LocaLingo process exists, it is stopped and restarted automatically.
 
 `stop.bat` behavior:
 - Deprecated (no-op message only).
@@ -36,10 +47,18 @@ Everything else is in `_internal`.
 3. Set in `.env.local`:
    - `RUNPOD_BASE_URL=https://<pod-id>-11434.proxy.runpod.net/v1`
    - Keep `RUNPOD_API_KEY=__USE_DPAPI__`
-4. Optional shared obfuscated key file (recommended for team):
+4. Codex CLI backend is always enabled:
+   - Bundled codex is auto-installed under `.runtime/codex` and always used.
+   - Default policy: `CODEX_REQUIRE_BUNDLED=1`
+   - Package can be pinned with `CODEX_BUNDLED_PACKAGE=@openai/codex@<version>`
+   - Keep `DEFAULT_MODEL` as your RunPod model ID
+   - Keep `CODEX_EXEC_MODEL` aligned with your LM Studio model id (usually same as `DEFAULT_MODEL`)
+   - Optional provider id override: `CODEX_LMSTUDIO_PROVIDER_ID=lmstudio-runpod`
+   - RunPod endpoint must support `Responses API` (`/v1/responses`)
+5. Optional shared obfuscated key file (recommended for team):
    - Run `tools/runpod_eval/node_htmx_client/_internal/set-runpod-api-key-shared.bat`
    - This generates `_internal/runpod_api_key.obf`
-5. Distribute this folder to members.
+6. Distribute this folder to members.
 
 Recommended additional settings for local coding mode:
 - `LOCAL_SHELL_TIMEOUT_MS=20000`
@@ -58,15 +77,16 @@ Each launch reads config in this order:
 
 Per-user local files are:
 - `%LOCALAPPDATA%\YakuLingoRunpodHtmx\runpod_api_key.dpapi`
-- `%LOCALAPPDATA%\YakuLingoRunpodHtmx\runpod-htmx-<username>.pid`
+- `%LOCALAPPDATA%\YakuLingoRunpodHtmx\runpod-htmx-<username>.pid` (FastAPI process id)
 - `%LOCALAPPDATA%\YakuLingoRunpodHtmx\logs\...`
 - `%LOCALAPPDATA%\YakuLingoRunpodHtmx\workspace-state.json`
+- `%LOCALAPPDATA%\YakuLingoRunpodHtmx\codex-home\...`
 
 `start.bat` behavior:
 - Uses `_internal/.env.local` first, then `_internal/.env.example`.
 - Uses local DPAPI key if available.
 - If no local key, imports shared obfuscated key from `_internal/runpod_api_key.obf`.
-- Starts local Node server and opens browser.
+- Starts local FastAPI server and opens browser.
 
 ## Optional: Prepare Portable Runtime
 
@@ -173,18 +193,66 @@ Long-running stream stability:
 - `STREAM_KEEPALIVE_INTERVAL_MS=10000`
 - During active HTTP/stream requests, auto-stop is paused.
 
+Codex exec send-condition knobs:
+- `CODEX_REQUIRE_BUNDLED=1`
+- `CODEX_BUNDLED_PACKAGE=@openai/codex@latest`
+- `CODEX_PROVIDER_REQUEST_MAX_RETRIES=1`
+- `CODEX_PROVIDER_STREAM_MAX_RETRIES=1`
+- `CODEX_PROVIDER_STREAM_IDLE_TIMEOUT_MS=45000`
+- `CODEX_MODEL_CONTEXT_WINDOW=32768`
+- `CODEX_NATIVE_MODE=1`
+- `CODEX_MINIMAL_MODEL_INSTRUCTIONS=0`
+- `CODEX_MINIMAL_MODEL_INSTRUCTIONS_FILE=` (optional)
+- `CODEX_MODEL_REASONING_EFFORT=minimal`
+- `CODEX_MODEL_REASONING_SUMMARY=auto`
+- `CODEX_MODEL_VERBOSITY=low`
+- `CODEX_EXEC_MODEL=<your-lmstudio-model-id>`
+- `CODEX_LMSTUDIO_PROVIDER_ID=lmstudio-runpod`
+- `CODEX_PROJECT_DOC_MAX_BYTES=0`
+- `CODEX_PROMPT_MAX_CHARS=12000`
+- `CODEX_PROMPT_COMPRESSION_ENABLED=0`
+- `CODEX_PROMPT_COMPRESSION_TRIGGER_CHARS=9000`
+- `CODEX_PROMPT_COMPRESSION_TARGET_CHARS=7600`
+- `CODEX_PROMPT_KEEP_HEAD_CHARS=2400`
+- `CODEX_PROMPT_KEEP_TAIL_CHARS=3200`
+- `CODEX_PROMPT_KEY_LINES_LIMIT=40`
+- `CODEX_EXEC_PROGRESS_PING_INTERVAL_MS=8000`
+- `CODEX_EXEC_RETRY_MAX_ATTEMPTS=1`
+- `CODEX_EXEC_RETRY_BASE_DELAY_MS=800`
+- `CODEX_EXEC_RETRY_MAX_DELAY_MS=4000`
+- `CODEX_STREAM_RECOVERY_FALLBACK_ENABLED=0`
+- `CODEX_STREAM_RECOVERY_TIMEOUT_MS=90000`
+- `CODEX_WEB_SEARCH_MODE=live`
+- `CODEX_TOOL_FALLBACK_TO_ENGINE=0`
+- `CODEX_TOOL_FALLBACK_FORCE_FOR_LIVE_WEB=0`
+- `RUNPOD_BASE_URL_CANDIDATES=` (comma separated)
+- `RUNPOD_ROUTE_PROBE_ENABLED=1`
+- `RUNPOD_ROUTE_PROBE_TIMEOUT_MS=6000`
+- `RUNPOD_ROUTE_COOLDOWN_SEC=90`
+- `RUNPOD_RESPONSES_BACKGROUND_ENABLED=1`
+- `RUNPOD_RESPONSES_POLL_INTERVAL_MS=1500`
+- `RUNPOD_RESPONSES_POLL_TIMEOUT_MS=90000`
+- Prompt text larger than `CODEX_PROMPT_MAX_CHARS` is truncated before `codex exec --json` send.
+- Route failover rotates `RUNPOD_BASE_URL`/`RUNPOD_BASE_URL_CANDIDATES` when transport errors happen.
+- In native mode, Codex CLI request flow is kept as close as possible to upstream behavior (RunPod connection and UI wrapper only).
+
 RunPod upstream transient retry:
-- `RUNPOD_HTTP_RETRY_MAX_ATTEMPTS=4`
-- `RUNPOD_HTTP_RETRY_DELAY_MS=1500`
-- `RUNPOD_HTTP_RETRY_MAX_DELAY_MS=6000`
+- `RUNPOD_REQUEST_TIMEOUT_MS=120000`
+- `RUNPOD_MODELS_TIMEOUT_MS=30000`
+- `RUNPOD_CHAT_TIMEOUT_MS=120000`
+- `RUNPOD_HTTP_RETRY_MAX_ATTEMPTS=5`
+- `RUNPOD_HTTP_RETRY_DELAY_MS=1200`
+- `RUNPOD_HTTP_RETRY_MAX_DELAY_MS=10000`
+- `RUNPOD_HEALTHCHECK_ON_CHAT=1`
+- `RUNPOD_HEALTHCHECK_TTL_MS=20000`
 - Applies to `/v1/models` and `/v1/chat/completions` calls.
 
 RunPod startup connection test retry:
-- `RUNPOD_CONNECTION_TEST_MODE=soft|strict` (`soft` default)
+- `RUNPOD_CONNECTION_TEST_MODE=soft|strict` (`strict` default)
 - `RUNPOD_CONNECTION_TEST_MAX_ATTEMPTS=4`
 - `RUNPOD_CONNECTION_TEST_RETRY_DELAY_SEC=2`
 - `RUNPOD_CONNECTION_TEST_TIMEOUT_SEC=8`
-- Transient HTTP `502/503/504/429` and timeout-type errors are retried automatically.
+- Transient HTTP `499/502/503/504/520-526/429` and timeout-type errors are retried automatically.
 - In `soft` mode, startup continues with warning even if retries are exhausted.
 
 Relative date handling (today/tomorrow):

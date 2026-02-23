@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>RunPod Chat (Node + htmx)</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/vendor/htmx.min.js"></script>
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main class="layout">
+    <header class="hero">
+      <h1>RunPod Chat</h1>
+      <p class="muted">Node.js + htmx lightweight client</p>
+    </header>
+
+    <section class="panel controls">
+      <form
+        id="chat-form"
+        hx-post="/api/chat/form"
+        hx-target="#chat-log"
+        hx-swap="beforeend"
+        hx-indicator="#req-indicator"
+      >
+        <div class="row">
+          <label for="model">Model</label>
+          <select id="model" name="model" hx-get="/api/models/options" hx-trigger="load" hx-target="#model" hx-swap="innerHTML">
+            <option>Loading...</option>
+          </select>
+        </div>
+
+        <div class="row">
+          <label for="temperature">Temperature</label>
+          <input id="temperature" name="temperature" type="number" min="0" max="2" step="0.1" value="0.7">
+        </div>
+
+        <div class="row">
+          <label for="systemPrompt">System Prompt (optional)</label>
+          <textarea id="systemPrompt" name="systemPrompt" rows="2" placeholder="You are a helpful assistant."></textarea>
+        </div>
+
+        <div class="row">
+          <label for="prompt">Prompt</label>
+          <textarea id="prompt" name="prompt" rows="4" placeholder="Type your message..." required></textarea>
+        </div>
+
+        <div class="actions">
+          <button type="submit">Send</button>
+          <button
+            type="button"
+            hx-post="/api/session/reset"
+            hx-target="#chat-log"
+            hx-swap="innerHTML"
+          >Clear Session</button>
+          <span id="req-indicator" class="indicator htmx-indicator">Sending...</span>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel">
+      <div id="chat-log" class="chat-log"></div>
+    </section>
+  </main>
+</body>
+</html>

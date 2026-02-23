@@ -57,7 +57,7 @@ jobs:
             mkdir -p "${LOG_DIR}" /workspace/scripts
             echo "[auto-bootstrap] start $(date -Is)" >> "${LOG_FILE}"
 
-            if [ ! -x /workspace/scripts/runpod_nv_bootstrap.sh ] || [ ! -x /workspace/scripts/runpod_lobehub_bootstrap.sh ]; then
+            if [ ! -x /workspace/scripts/runpod_nv_bootstrap.sh ]; then
               if ! command -v git >/dev/null 2>&1; then
                 export DEBIAN_FRONTEND=noninteractive
                 apt-get update >> "${LOG_FILE}" 2>&1
@@ -76,12 +76,20 @@ jobs:
               fi
 
               cp "${REPO_DIR}/tools/runpod_eval/runpod_nv_bootstrap.sh" /workspace/scripts/runpod_nv_bootstrap.sh
-              cp "${REPO_DIR}/tools/runpod_eval/runpod_lobehub_bootstrap.sh" /workspace/scripts/runpod_lobehub_bootstrap.sh
-              chmod +x /workspace/scripts/runpod_nv_bootstrap.sh /workspace/scripts/runpod_lobehub_bootstrap.sh
+              if [ -f "${REPO_DIR}/tools/runpod_eval/runpod_lobehub_bootstrap.sh" ]; then
+                cp "${REPO_DIR}/tools/runpod_eval/runpod_lobehub_bootstrap.sh" /workspace/scripts/runpod_lobehub_bootstrap.sh
+                chmod +x /workspace/scripts/runpod_lobehub_bootstrap.sh
+              fi
+              chmod +x /workspace/scripts/runpod_nv_bootstrap.sh
             fi
 
             FAST_START=1 bash /workspace/scripts/runpod_nv_bootstrap.sh >> "${LOG_FILE}" 2>&1
-            FAST_START=1 bash /workspace/scripts/runpod_lobehub_bootstrap.sh >> "${LOG_FILE}" 2>&1
+            if [ -f /workspace/.enable_lobehub_bootstrap ] && [ -x /workspace/scripts/runpod_lobehub_bootstrap.sh ]; then
+              echo "[auto-bootstrap] run lobehub bootstrap (enabled by /workspace/.enable_lobehub_bootstrap)" >> "${LOG_FILE}"
+              FAST_START=1 bash /workspace/scripts/runpod_lobehub_bootstrap.sh >> "${LOG_FILE}" 2>&1
+            else
+              echo "[auto-bootstrap] skip lobehub bootstrap (default)" >> "${LOG_FILE}"
+            fi
 
             echo "[auto-bootstrap] done $(date -Is)" >> "${LOG_FILE}"
             exec tail -f /dev/null
@@ -218,13 +226,8 @@ jobs:
           fi
 
           if [ -n "$TARGET_POD_ID" ] && [ -n "${RUNPOD_NETWORK_VOLUME_ID:-}" ] && [ "${TARGET_NETWORK_VOLUME_ID:-}" != "${RUNPOD_NETWORK_VOLUME_ID}" ]; then
-            echo "[WARN] existing pod networkVolumeId mismatch: expected=${RUNPOD_NETWORK_VOLUME_ID} actual=${TARGET_NETWORK_VOLUME_ID:-<none>}. terminate and recreate."
-            if ! terminate_pod "$TARGET_POD_ID"; then
-              exit 1
-            fi
-            TARGET_POD_ID=""
-            TARGET_STATUS=""
-            TARGET_NETWORK_VOLUME_ID=""
+            echo "[ERROR] existing pod networkVolumeId mismatch: expected=${RUNPOD_NETWORK_VOLUME_ID} actual=${TARGET_NETWORK_VOLUME_ID:-<none>}. abort to keep stable pod-id policy."
+            exit 1
           fi
 
           ACTION_SUMMARY=""
@@ -248,14 +251,8 @@ jobs:
             if [ "$RESUME_ERR" = "0" ] && [ -n "$RESUME_ID" ]; then
               ACTION_SUMMARY="podResume succeeded: id=${RESUME_ID} status=${RESUME_STATUS}"
               ACTIVE_POD_ID="$RESUME_ID"
-            elif [ -n "$TARGET_NETWORK_VOLUME_ID" ]; then
-              echo "[WARN] podResume failed on network-volume pod. fallback to terminate + redeploy."
-              if ! terminate_pod "$TARGET_POD_ID"; then
-                exit 1
-              fi
-              TARGET_POD_ID=""
             else
-              echo "[ERROR] podResume failed: $(echo "$RESUME_RESP" | jq -c '.')"
+              echo "[ERROR] podResume failed. abort to keep stable pod-id policy: $(echo "$RESUME_RESP" | jq -c '.')"
               exit 1
             fi
           fi

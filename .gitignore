@@ -220,6 +220,16 @@ __marimo__/
 uv.exe
 uvx.exe
 
+# Open WebUI standalone runtime (local/generated)
+tools/runpod_eval/openwebui_client/.standalone/
+
+# Open WebUI shared obfuscated key file (generated)
+tools/runpod_eval/openwebui_client/runpod_api_key.obf
+
+# Node + htmx lightweight client runtime (local/generated)
+tools/runpod_eval/node_htmx_client/.runtime/
+tools/runpod_eval/node_htmx_client/_internal/runpod_api_key.obf
+
 # Splash screen signal file
 .splash_close
 

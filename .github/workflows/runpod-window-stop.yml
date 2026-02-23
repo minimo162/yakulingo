@@ -12,13 +12,11 @@ jobs:
   stop-pod:
     runs-on: ubuntu-latest
     steps:
-      - name: Stop or Terminate RunPod Pod
+      - name: Stop RunPod Pod
         env:
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
           RUNPOD_POD_ID: ${{ secrets.RUNPOD_POD_ID }}
           RUNPOD_POD_NAME: ${{ secrets.RUNPOD_POD_NAME }}
-          RUNPOD_NETWORK_VOLUME_ID: ${{ secrets.RUNPOD_NETWORK_VOLUME_ID }}
-          RUNPOD_FORCE_STOP: ${{ secrets.RUNPOD_FORCE_STOP }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
           set -euo pipefail
@@ -91,28 +89,11 @@ jobs:
 
           TARGET_STATUS=$(echo "$POD_QUERY_RESP" | jq -r '.data.pod.desiredStatus // empty')
           TARGET_NETWORK_VOLUME_ID=$(echo "$POD_QUERY_RESP" | jq -r '.data.pod.networkVolumeId // .data.pod.networkVolume.id // empty')
-          echo "target_pod_id=${TARGET_POD_ID} desiredStatus=${TARGET_STATUS} networkVolumeId=${TARGET_NETWORK_VOLUME_ID:-<none>} expectedNetworkVolumeId=${RUNPOD_NETWORK_VOLUME_ID:-<none>}"
+          echo "target_pod_id=${TARGET_POD_ID} desiredStatus=${TARGET_STATUS} networkVolumeId=${TARGET_NETWORK_VOLUME_ID:-<none>}"
+          echo "[INFO] select action=stop (fixed policy for stable pod-id)"
 
-          RUNPOD_FORCE_STOP=${RUNPOD_FORCE_STOP:-0}
-          ACTION="stop"
-          if [ "${RUNPOD_FORCE_STOP}" = "1" ]; then
-            ACTION="stop"
-            echo "[INFO] select action=stop (RUNPOD_FORCE_STOP=1)"
-          elif [ -n "$TARGET_NETWORK_VOLUME_ID" ]; then
-            ACTION="terminate"
-            echo "[INFO] select action=terminate (pod has networkVolumeId)"
-          elif [ -n "${RUNPOD_NETWORK_VOLUME_ID:-}" ]; then
-            ACTION="terminate"
-            echo "[INFO] select action=terminate (RUNPOD_NETWORK_VOLUME_ID is configured)"
-          fi
-
-          if [ "$ACTION" = "terminate" ]; then
-            PAYLOAD=$(jq -cn --arg id "$TARGET_POD_ID" \
-              '{"query":"mutation($input: PodTerminateInput!){ podTerminate(input:$input) }","variables":{"input":{"podId":$id}}}')
-          else
-            PAYLOAD=$(jq -cn --arg id "$TARGET_POD_ID" \
-              '{"query":"mutation($input: PodStopInput!){ podStop(input:$input){ id desiredStatus } }","variables":{"input":{"podId":$id}}}')
-          fi
+          PAYLOAD=$(jq -cn --arg id "$TARGET_POD_ID" \
+            '{"query":"mutation($input: PodStopInput!){ podStop(input:$input){ id desiredStatus } }","variables":{"input":{"podId":$id}}}')
 
           RESP=$(curl -sS https://api.runpod.io/graphql \
             -H "Content-Type: application/json" \
@@ -123,30 +104,26 @@ jobs:
           ERR_COUNT=$(echo "$RESP" | jq -r '.errors | length // 0')
 
           if [ "$ERR_COUNT" != "0" ]; then
-            echo "[ERROR] pod${ACTION^} failed: $(echo "$RESP" | jq -c '.')"
+            echo "[ERROR] podStop failed: $(echo "$RESP" | jq -c '.')"
             exit 1
           fi
 
-          if [ "$ACTION" = "stop" ]; then
-            STOP_ID=$(echo "$RESP" | jq -r '.data.podStop.id // empty')
-            STOP_STATUS=$(echo "$RESP" | jq -r '.data.podStop.desiredStatus // empty')
-            if [ -z "$STOP_ID" ]; then
-              echo "[ERROR] podStop returned empty id: $(echo "$RESP" | jq -c '.')"
-              exit 1
-            fi
-            RESULT_SUMMARY="podStop succeeded: id=${STOP_ID} status=${STOP_STATUS}"
-          else
-            RESULT_SUMMARY="podTerminate succeeded: id=${TARGET_POD_ID}"
+          STOP_ID=$(echo "$RESP" | jq -r '.data.podStop.id // empty')
+          STOP_STATUS=$(echo "$RESP" | jq -r '.data.podStop.desiredStatus // empty')
+          if [ -z "$STOP_ID" ]; then
+            echo "[ERROR] podStop returned empty id: $(echo "$RESP" | jq -c '.')"
+            exit 1
           fi
+          RESULT_SUMMARY="podStop succeeded: id=${STOP_ID} status=${STOP_STATUS}"
 
           echo "$RESULT_SUMMARY"
 
           if [ -n "${SLACK_WEBHOOK_URL:-}" ]; then
             MSG=$(echo "$RESP" | jq -c '.')
-            PAYLOAD_JSON=$(jq -Rn --arg text "Window ${ACTION} executed: ${MSG}" '{text:$text}')
+            PAYLOAD_JSON=$(jq -Rn --arg text "Window stop executed: ${MSG}" '{text:$text}')
             curl -sS -X POST "$SLACK_WEBHOOK_URL" \
               -H "Content-Type: application/json" \
               -d "$PAYLOAD_JSON" >/dev/null || true
           fi
 
-          echo "window-${ACTION} workflow completed"
+          echo "window-stop workflow completed"

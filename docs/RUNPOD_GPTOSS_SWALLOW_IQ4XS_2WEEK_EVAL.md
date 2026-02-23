@@ -84,6 +84,7 @@ Go/No-Go（初日）:
 - `tools/runpod_eval/conversation_continuity_check.py`
 - `tools/runpod_eval/fetch_workflow_runs.py`（GitHub Actions 実行履歴の取得補助）
 - `tools/runpod_eval/runpod_nv_bootstrap.sh`（Network Volume運用の再作成復旧を自動化）
+- `tools/runpod_eval/runpod_lobehub_bootstrap.sh`（LobeHub同居PoCの再作成復旧を自動化）
 
 更新時の運用ルール:
 - スクリプト本体（`tools/runpod_eval/`）を先に更新する
@@ -611,6 +612,22 @@ curl -sS -o /dev/null -w "auth=%{http_code}\n" \
 
 - `noauth=401`
 - `auth=200`
+
+### 7-0A: LobeHub同居PoCの復旧自動化（任意）
+
+`runpod_nv_bootstrap.sh` 実行後、LobeHub（`3210`）と Basic認証プロキシ（`3211`）まで復旧する。
+
+```bash
+bash /workspace/scripts/runpod_lobehub_bootstrap.sh
+```
+
+期待値:
+- `http://127.0.0.1:3210/` 最終 `200`
+- `http://127.0.0.1:3211/` は未認証 `401`、認証付き `200`
+
+補足:
+- 初回のみ `pnpm install` が長時間かかる。
+- 認証ユーザーは既定で6人作成され、`/workspace/lobehub_basic_auth_users.txt` に保存される。
 
 ```bash
 cat > /workspace/start.sh << 'SCRIPT_EOF'
@@ -2998,6 +3015,24 @@ fi
 2. GitHub Secrets に `RUNPOD_FORCE_STOP=1` を設定する。
 3. Pod自体が `networkVolumeId` なしで作成されていることを確認する。
 4. ワークフローログで `select action=stop (RUNPOD_FORCE_STOP=1)` が出ることを確認する。
+
+### 貼り付け実行で `syntax error near unexpected token 'then'` が出る
+
+症状:
+- `if ... then` を含むブロック貼り付け時に構文エラーが出る。
+- プロンプト文字（`root@...#` や `>`）まで実行される。
+
+対処:
+1. プロンプト文字を含めず、コマンド本体のみ貼り付ける。
+2. 不安定な場合は、先にファイル化してから実行する。
+```bash
+cat >/tmp/run.sh <<'EOF'
+set -euo pipefail
+# commands...
+EOF
+bash -n /tmp/run.sh
+bash /tmp/run.sh
+```
 
 ### Pod再作成後に `lms: command not found` になる
 

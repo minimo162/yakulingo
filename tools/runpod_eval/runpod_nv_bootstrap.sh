@@ -73,6 +73,14 @@ sync_bootstrap_script_copy() {
     chmod +x "${dst}"
     log "synced bootstrap script -> ${dst}"
   fi
+
+  local lobe_src="${YAKULINGO_DIR}/tools/runpod_eval/runpod_lobehub_bootstrap.sh"
+  local lobe_dst="${WORKSPACE_DIR}/scripts/runpod_lobehub_bootstrap.sh"
+  if [ -f "${lobe_src}" ]; then
+    cp "${lobe_src}" "${lobe_dst}"
+    chmod +x "${lobe_dst}"
+    log "synced lobehub bootstrap script -> ${lobe_dst}"
+  fi
 }
 
 ensure_node_toolchain() {

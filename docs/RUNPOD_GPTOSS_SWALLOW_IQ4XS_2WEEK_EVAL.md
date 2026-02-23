@@ -3030,6 +3030,21 @@ curl -sS -o /dev/null -w "noauth=%{http_code}\n" http://127.0.0.1:11434/v1/model
 curl -sS -o /dev/null -w "auth=%{http_code}\n" -H "x-api-key: $(tr -d '\n' < /workspace/.auth_token)" http://127.0.0.1:11434/v1/models
 ```
 
+### `lms import` で `Target file already exists` が出る
+
+症状:
+- `runpod_nv_bootstrap.sh` 実行中に `lms import ...` が `Target file already exists` で失敗する。
+
+対処:
+1. 最新の `tools/runpod_eval/runpod_nv_bootstrap.sh` へ更新する（このケースを自動吸収済み）。
+2. 暫定回避（即時）:
+```bash
+FIRST_GGUF="$(ls /workspace/models/swallow-120b/IQ4_XS/*.gguf | sort | head -1)"
+TARGET_LINK="/root/.lmstudio/models/mmnga-o/GPT-OSS-Swallow-120B-RL-v0.1-gguf/$(basename "$FIRST_GGUF")"
+rm -f "$TARGET_LINK"
+lms import "$FIRST_GGUF" --user-repo mmnga-o/GPT-OSS-Swallow-120B-RL-v0.1-gguf --symbolic-link -y
+```
+
 ### `huggingface-cli: command not found` になる
 
 症状:

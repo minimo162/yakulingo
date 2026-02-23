@@ -94,6 +94,8 @@ ensure_node_toolchain() {
 }
 
 ensure_lms() {
+  export PATH="$HOME/.lmstudio/bin:$PATH"
+  hash -r
   if command -v lms >/dev/null 2>&1; then
     log "lms already installed"
   else
@@ -101,8 +103,6 @@ ensure_lms() {
     curl -fsSL https://lmstudio.ai/install.sh -o /tmp/lmstudio-install.sh
     bash /tmp/lmstudio-install.sh --no-modify-path
   fi
-  export PATH="$HOME/.lmstudio/bin:$PATH"
-  hash -r
   if ! command -v lms >/dev/null 2>&1; then
     log "ERROR: lms command is not available"
     exit 1
@@ -143,9 +143,27 @@ ensure_model_import() {
   fi
 
   local first_gguf
+  local dst_dir
+  local first_name
+  local first_link
   first_gguf="$(ls "${MODEL_SOURCE_DIR}"/*.gguf | sort | head -1)"
+  dst_dir="/root/.lmstudio/models/${MODEL_REPO}"
+  first_name="$(basename "${first_gguf}")"
+  first_link="${dst_dir}/${first_name}"
+
+  # 既存リンクがあると lms import --symbolic-link が失敗するため先に掃除する。
+  rm -f "${first_link}"
   log "import first shard into lms catalog"
-  lms import "${first_gguf}" --user-repo "${MODEL_REPO}" --symbolic-link -y
+  if ! lms import "${first_gguf}" --user-repo "${MODEL_REPO}" --symbolic-link -y; then
+    # 失敗時でもカタログ登録済みなら続行する。
+    lms ls --json > "${models_json}"
+    if jq -e --arg repo "${MODEL_REPO}" '.[] | select(.path | test($repo; "i"))' "${models_json}" >/dev/null 2>&1; then
+      log "import returned non-zero, but model exists in catalog. continue."
+    else
+      log "ERROR: lms import failed and model not found in catalog"
+      exit 1
+    fi
+  fi
 }
 
 ensure_runtime_env() {
@@ -282,8 +300,8 @@ main() {
   ensure_node_toolchain
   ensure_lms
   ensure_model_files
-  link_model_shards
   ensure_model_import
+  link_model_shards
   ensure_runtime_env
   ensure_auth_token
   write_nginx_conf

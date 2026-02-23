@@ -68,6 +68,25 @@ Run:
 Expected:
 - model IDs are displayed.
 
+## RunPod Eval Integration
+
+You can reuse this client's shared config + local DPAPI key to run the
+evaluation scripts in `tools/runpod_eval` without re-entering API key.
+
+Run:
+
+- `powershell -NoProfile -ExecutionPolicy Bypass -File tools/runpod_eval/run_eval_with_node_htmx.ps1`
+
+Options:
+
+- `-SkipStep8`
+- `-SkipBenchmark`
+- `-SkipContinuity`
+- `-ContinuityApiMode chat|responses`
+- `-OutputDir <path>`
+- `-BaseUrl <url>` (override env)
+- `-ApiKey <token>` (override secure store)
+
 ## Notes
 
 - API key is never shown in UI.

@@ -3435,7 +3435,7 @@ df -h /workspace
 注記:
 - `tok/s` の合格ラインは初日のStep 9計測結果で再校正する（GPU世代・ドライバ・LM Studio版差分を吸収するため）。
 - `tok/s` は `completion_tokens/(total-ttfb)` の推定値。公開URL計測はRTT影響で低めに出るため、合格判定は `benchmark_step9_lms_local_summary.log` を正とする。
-- 再校正時は `docs/PHASE1_DAY1_WORKLOG_YYYY-MM-DD.md` に以下を必ず記録し、実行者1名 + 承認者1名で合意する。
+- 再校正時は `docs/runpod/PHASE1_DAY1_WORKLOG_YYYY-MM-DD.md` に以下を必ず記録し、実行者1名 + 承認者1名で合意する。
   - 使用GPU/ドライバ/LM Studio版
   - 参照した `benchmark_step9_*_summary.log`
   - 更新後のしきい値（A100/A40 x2）
@@ -3482,7 +3482,7 @@ df -h /workspace
 - `runpod-window-stop`: `networkVolumeId` があるPodは `terminate`、それ以外は `stop`
 
 ### 実行ログテンプレート（1日1回）
-以下を `docs/PHASE1_DAY1_WORKLOG_YYYY-MM-DD.md` または当日ワークログへ転記して運用する。
+以下を `docs/runpod/PHASE1_DAY1_WORKLOG_YYYY-MM-DD.md` または当日ワークログへ転記して運用する。
 
 ```md
 ## RunPod 自動化ログ（YYYY-MM-DD JST）
@@ -3559,4 +3559,4 @@ df -h /workspace
 5. 警告が再発する場合は、`RUNPOD_DATA_CENTER_ID` を `US-MO-1` または `EU-FR-1` へ切り替えて同手順を再試行する。
 
 #### 記録先
-- 実行結果は `docs/PHASE1_DAY1_WORKLOG_2026-02-23.md` に追記する。
+- 実行結果は `docs/runpod/PHASE1_DAY1_WORKLOG_2026-02-23.md` に追記する。

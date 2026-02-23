@@ -1,15 +1,76 @@
-# Phase 1 Day1 作業ログ
+# Phase 1 Day1 チェックリスト
 
-日付: 2026-02-21  
-対象: RunPod セットアップ（将来構想 To-Be 実行）
+用途: RunPodデモ開始日の実行手順（最短）
 
-## ログ
+## A. 準備
+
+- [x] RunPodアカウント作成
+- [x] Billingで `$25` チャージ
+- [x] 作業ログファイル作成（時刻と結果を残す）
+
+## B. Pod作成
+
+- [x] GPU: `A100 PCIe 80GB`
+- [x] Template: `RunPod PyTorch 2.8`
+- [x] SSH Terminal Access: `OFF`（暫定）
+- [x] Expose Ports: `11434,8080`
+- [x] Container Disk: `20GB`
+- [x] Volume Disk: `100GB`
+- [x] Env: `OLLAMA_HOST=0.0.0.0`
+- [x] Deploy実行
+
+## C. 初期セットアップ
+
+- [x] Web Terminal接続
+- [x] Ollamaインストール
+- [x] `ollama serve` 起動
+- [x] `curl http://localhost:11434` で応答確認
+
+## D. モデル準備（最低限）
+
+- [x] `gpt-oss:120b` pull（テンプレ抽出）
+- [x] Swallow GGUFダウンロード開始
+- [x] Modelfile作成
+- [x] `gpt-oss-swallow:120b` 作成
+- [ ] 日本語プロンプトで応答確認（Swallowは現在blocked）
+
+## D'. フォールバック実測（A100での事実）
+
+- [x] `gpt-oss:120b` API応答確認（`/api/generate`）
+- [x] 初回遅延の内訳確認（`load_duration` が支配的）
+- [x] ウォーム時の速度確認（`~0.7s` 台）
+- [x] 5秒要件は「ウォーム運用」なら満たせることを確認
+
+## E. 認証
+
+- [ ] `AUTH_TOKEN` 生成と保存（`/workspace/.auth_token`）
+- [ ] Basic認証作成（`/workspace/.htpasswd`）
+- [ ] Nginx設定配置（`/workspace/nginx-auth-proxy.conf`）
+- [ ] `11434` 認証付き疎通確認
+
+## F. Day1 完了条件
+
+- [ ] 公式モデルで応答成功（Swallow成功は必須条件から除外）
+- [ ] API認証成功（401/200の切り分け確認）
+- [ ] 明日の残タスクを3行で記録
+
+## G. 方針変更（2026-02-21）
+
+- [x] デモ基盤を `RTX 4090` 単一GPU前提に変更する意思決定
+- [x] 120B中心の説明を補助位置づけへ変更（参考デモ扱い）
+- [ ] 新Podを `RTX 4090 24GB` で再作成
+- [ ] モデル方針を `gpt-oss:20b` 主軸へ変更（Tool Use/コーディング）
+- [ ] 翻訳品質強化は `Swallow-20B` を比較導入（任意）
+- [ ] KPI再計測（品質8/10、5秒以内、5人100回）を4090構成で記録
+
+## 実行ログ（追記用）
 
 ```text
+YYYY-MM-DD HH:MM | step | result | note
 2026-02-21 --:-- | A-1 RunPodアカウント作成 | done | ユーザー実施
 2026-02-21 --:-- | A-2-Prep クレジットカード登録 | done | チャージ前の準備完了
 2026-02-21 --:-- | A-2 Billing $25チャージ | done | ユーザー実施
-2026-02-21 --:-- | A-3 作業ログファイル作成 | done | docs/PHASE1_DAY1_WORKLOG_2026-02-21.md を作成
+2026-02-21 --:-- | A-3 作業ログファイル作成 | done | docs/runpod/PHASE1_DAY1_WORKLOG_2026-02-21.md
 2026-02-21 --:-- | B-1 GPU選択 | done | A100 PCIe 80GB
 2026-02-21 --:-- | B-1b Template選択 | done | RunPod PyTorch 2.8
 2026-02-21 --:-- | B-1c SSH設定 | done | SSH Terminal Accessは暫定OFF
@@ -38,9 +99,5 @@
 2026-02-21 --:-- | D-6a フォールバックpull | done | `ollama pull gpt-oss:120b` success
 2026-02-21 --:-- | D-6b フォールバック実行テスト | done | `/api/generate` で応答確認（初回~3分、ウォーム~0.7秒）
 2026-02-21 --:-- | G-1 方針決定 | done | デモは RTX 4090 単一GPU 前提に変更
-2026-02-21 --:-- | G-2 モデル方針変更 | in_progress | 4090向けに `gpt-oss:20b` を主軸、Swallow-20Bは比較導入
+2026-02-21 --:-- | G-2 モデル方針 | in_progress | 4090向けに `gpt-oss:20b` 主軸へ再構成
 ```
-
-## メモ
-
-- 次の着手: `G-3 RTX 4090 Pod の再作成` と `gpt-oss:20b` ベースで再検証

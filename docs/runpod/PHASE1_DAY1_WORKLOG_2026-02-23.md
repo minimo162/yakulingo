@@ -5,7 +5,7 @@
 
 ## 事前確認
 
-- [x] `docs/RUNPOD_GPTOSS_SWALLOW_IQ4XS_2WEEK_EVAL.md` の引き継ぎメモ（2026-02-22, 2026-02-23）を確認
+- [x] `docs/runpod/RUNPOD_GPTOSS_SWALLOW_IQ4XS_2WEEK_EVAL.md` の引き継ぎメモ（2026-02-22, 2026-02-23）を確認
 - [x] `.github/workflows/runpod-morning-resume.yml` の実装確認（`REST /v1/pods` 作成・`networkVolumeId` ガード・警告検知）
 - [x] `.github/workflows/runpod-window-stop.yml` の実装確認（`terminate/stop` 分岐）
 - [x] GitHub公開APIで 2026-02-23 の Actions 実行履歴を取得（Run ID / SHA / 成否）

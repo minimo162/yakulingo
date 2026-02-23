@@ -402,5 +402,5 @@ GPT-OSSはシステムプロンプトで推論レベルを制御可能:
 -----
 
 *作成日: 2026-02-21*  
-*このドキュメントは `docs/RUNPOD_SETUP_GUIDE_SWALLOW_120B.md` と併せて使用してください*  
+*このドキュメントは `docs/runpod/RUNPOD_SETUP_GUIDE_SWALLOW_120B.md` と併せて使用してください*  
 *用途: 将来構想（To-Be）/ 実装計画*

@@ -28,6 +28,7 @@ jobs:
           RUNPOD_CLOUD_TYPE: ${{ secrets.RUNPOD_CLOUD_TYPE }}
           RUNPOD_DATA_CENTER_ID: ${{ secrets.RUNPOD_DATA_CENTER_ID }}
           RUNPOD_PROXY_CHECK_ENABLED: ${{ secrets.RUNPOD_PROXY_CHECK_ENABLED }}
+          RUNPOD_DOCKER_START_CMD_JSON: ${{ secrets.RUNPOD_DOCKER_START_CMD_JSON }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
           set -euo pipefail
@@ -45,6 +46,54 @@ jobs:
           RUNPOD_TEMPLATE_ID=${RUNPOD_TEMPLATE_ID:-}
           RUNPOD_IMAGE_NAME=${RUNPOD_IMAGE_NAME:-}
           RUNPOD_PROXY_CHECK_ENABLED=${RUNPOD_PROXY_CHECK_ENABLED:-1}
+          RUNPOD_DOCKER_START_CMD_JSON=${RUNPOD_DOCKER_START_CMD_JSON:-}
+
+          if [ -z "${RUNPOD_DOCKER_START_CMD_JSON}" ]; then
+            DEFAULT_BOOTSTRAP_CMD=$(cat <<'SCRIPT_EOF'
+set -euo pipefail
+LOG_DIR="/workspace/logs"
+LOG_FILE="${LOG_DIR}/auto-bootstrap.log"
+REPO_DIR="/workspace/_yakulingo_bootstrap"
+mkdir -p "${LOG_DIR}" /workspace/scripts
+echo "[auto-bootstrap] start $(date -Is)" >> "${LOG_FILE}"
+
+if [ ! -x /workspace/scripts/runpod_nv_bootstrap.sh ] || [ ! -x /workspace/scripts/runpod_lobehub_bootstrap.sh ]; then
+  if ! command -v git >/dev/null 2>&1; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update >> "${LOG_FILE}" 2>&1
+    apt-get install -y git >> "${LOG_FILE}" 2>&1
+  fi
+
+  if [ ! -d "${REPO_DIR}/.git" ]; then
+    rm -rf "${REPO_DIR}"
+    git clone --depth 1 --branch main https://github.com/minimo162/yakulingo.git "${REPO_DIR}" >> "${LOG_FILE}" 2>&1
+  else
+    git -C "${REPO_DIR}" fetch origin main --depth 1 >> "${LOG_FILE}" 2>&1 || true
+    if ! git -C "${REPO_DIR}" checkout main >> "${LOG_FILE}" 2>&1 || ! git -C "${REPO_DIR}" pull --ff-only origin main >> "${LOG_FILE}" 2>&1; then
+      rm -rf "${REPO_DIR}"
+      git clone --depth 1 --branch main https://github.com/minimo162/yakulingo.git "${REPO_DIR}" >> "${LOG_FILE}" 2>&1
+    fi
+  fi
+
+  cp "${REPO_DIR}/tools/runpod_eval/runpod_nv_bootstrap.sh" /workspace/scripts/runpod_nv_bootstrap.sh
+  cp "${REPO_DIR}/tools/runpod_eval/runpod_lobehub_bootstrap.sh" /workspace/scripts/runpod_lobehub_bootstrap.sh
+  chmod +x /workspace/scripts/runpod_nv_bootstrap.sh /workspace/scripts/runpod_lobehub_bootstrap.sh
+fi
+
+FAST_START=1 bash /workspace/scripts/runpod_nv_bootstrap.sh >> "${LOG_FILE}" 2>&1
+FAST_START=1 bash /workspace/scripts/runpod_lobehub_bootstrap.sh >> "${LOG_FILE}" 2>&1
+
+echo "[auto-bootstrap] done $(date -Is)" >> "${LOG_FILE}"
+exec tail -f /dev/null
+SCRIPT_EOF
+)
+            RUNPOD_DOCKER_START_CMD_JSON=$(jq -cn --arg cmd "$DEFAULT_BOOTSTRAP_CMD" '["bash","-lc",$cmd]')
+          fi
+
+          if ! echo "${RUNPOD_DOCKER_START_CMD_JSON}" | jq -e 'type == "array" and all(.[]; type == "string")' >/dev/null 2>&1; then
+            echo "[ERROR] RUNPOD_DOCKER_START_CMD_JSON must be a JSON string array"
+            exit 1
+          fi
 
           resolve_pod_by_name() {
             local pod_name="$1"
@@ -259,6 +308,7 @@ jobs:
                 --arg templateId "$template_id" \
                 --arg imageName "$image_name" \
                 --arg dataCenterId "$data_center_id" \
+                --argjson startCmd "$RUNPOD_DOCKER_START_CMD_JSON" \
                 --argjson ports "$PORTS_JSON" \
                 '(
                   {
@@ -273,6 +323,7 @@ jobs:
                   + (if $nv != "" then {networkVolumeId:$nv, volumeMountPath:$mount} else {} end)
                   + (if $templateId != "" then {templateId:$templateId} else {} end)
                   + (if $imageName != "" then {imageName:$imageName} else {} end)
+                  + (if ($startCmd|length) > 0 then {dockerStartCmd:$startCmd} else {} end)
                   + (if $dataCenterId != "" then {dataCenterIds:[$dataCenterId]} else {} end)
                 )'
             }

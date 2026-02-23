@@ -26,12 +26,26 @@ SWALLOW_PROXY_PORT="${SWALLOW_PROXY_PORT:-11434}"
 AUTO_START="${AUTO_START:-1}"
 INSTALL_NODE_TOOLCHAIN="${INSTALL_NODE_TOOLCHAIN:-0}"
 SYNC_YAKULINGO="${SYNC_YAKULINGO:-1}"
+SKIP_BASE_PACKAGES="${SKIP_BASE_PACKAGES:-0}"
+FAST_START="${FAST_START:-0}"
 
 log() {
   printf '[bootstrap] %s\n' "$*"
 }
 
+apply_fast_start_defaults() {
+  if [ "${FAST_START}" = "1" ]; then
+    SKIP_BASE_PACKAGES=1
+    SYNC_YAKULINGO=0
+    log "FAST_START=1 -> SKIP_BASE_PACKAGES=1 SYNC_YAKULINGO=0"
+  fi
+}
+
 ensure_base_packages() {
+  if [ "${SKIP_BASE_PACKAGES}" = "1" ]; then
+    log "skip base package install (SKIP_BASE_PACKAGES=1)"
+    return
+  fi
   log "install base packages"
   export DEBIAN_FRONTEND=noninteractive
   apt-get update
@@ -302,6 +316,7 @@ EOF
 }
 
 main() {
+  apply_fast_start_defaults
   ensure_base_packages
   sync_yakulingo_repo
   sync_bootstrap_script_copy

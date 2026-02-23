@@ -593,6 +593,10 @@ bash /workspace/yakulingo/tools/runpod_eval/runpod_nv_bootstrap.sh
 ```bash
 bash /workspace/scripts/runpod_nv_bootstrap.sh
 ```
+- 日次の高速起動（依存再導入・repo同期を省略）:
+```bash
+FAST_START=1 bash /workspace/scripts/runpod_nv_bootstrap.sh
+```
 
 オプション:
 - LobeHubを同居運用する場合は Node/pnpm も同時に導入
@@ -631,6 +635,10 @@ bash /workspace/scripts/runpod_lobehub_bootstrap.sh
 - `lobe-chat` にローカル変更がある場合は、`/workspace/lobe-chat.backup.YYYYMMDD-HHMMSS` へ自動退避して再cloneする。
 - `pgvector` が無い環境では、`postgresql-<major>-pgvector` の導入を試み、無い場合はソースビルドで導入する。
 - `pnpm approve-builds` の手動承認は不要（スクリプトが `onlyBuiltDependencies` / `ignoredBuiltDependencies` をグローバル設定）。
+- 日次の高速起動（依存再導入・repo同期・`pnpm install` を省略）:
+```bash
+FAST_START=1 bash /workspace/scripts/runpod_lobehub_bootstrap.sh
+```
 
 ```bash
 cat > /workspace/start.sh << 'SCRIPT_EOF'
@@ -3036,6 +3044,19 @@ EOF
 bash -n /tmp/run.sh
 bash /tmp/run.sh
 ```
+
+### 毎回の起動時間を短くしたい（高速起動モード）
+
+症状:
+- 毎回 `apt-get` / `git pull` / `pnpm install` が走り、起動待ちが長い。
+
+対処:
+1. 日次運用では `FAST_START=1` を使う。
+```bash
+FAST_START=1 bash /workspace/scripts/runpod_nv_bootstrap.sh
+FAST_START=1 bash /workspace/scripts/runpod_lobehub_bootstrap.sh
+```
+2. 依存や手順を更新した日だけ通常モードで実行する（`FAST_START` なし）。
 
 ### Pod再作成後に `lms: command not found` になる
 

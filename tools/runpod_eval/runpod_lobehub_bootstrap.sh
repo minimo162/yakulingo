@@ -34,6 +34,9 @@ AUTH_SECRET_FILE="${AUTH_SECRET_FILE:-${LOBE_ENV_DIR}/.auth_secret}"
 KEY_VAULTS_SECRET_FILE="${KEY_VAULTS_SECRET_FILE:-${LOBE_ENV_DIR}/.key_vaults_secret}"
 
 SKIP_PNPM_INSTALL="${SKIP_PNPM_INSTALL:-0}"
+SKIP_BASE_PACKAGES="${SKIP_BASE_PACKAGES:-0}"
+SYNC_LOBE_CHAT="${SYNC_LOBE_CHAT:-1}"
+FAST_START="${FAST_START:-0}"
 PGVECTOR_VERSION="${PGVECTOR_VERSION:-v0.8.1}"
 POSTGRES_CLUSTER_VERSION="${POSTGRES_CLUSTER_VERSION:-}"
 POSTGRES_CLUSTER_NAME="${POSTGRES_CLUSTER_NAME:-}"
@@ -42,7 +45,20 @@ log() {
   printf '[lobehub-bootstrap] %s\n' "$*"
 }
 
+apply_fast_start_defaults() {
+  if [ "${FAST_START}" = "1" ]; then
+    SKIP_BASE_PACKAGES=1
+    SYNC_LOBE_CHAT=0
+    SKIP_PNPM_INSTALL=1
+    log "FAST_START=1 -> SKIP_BASE_PACKAGES=1 SYNC_LOBE_CHAT=0 SKIP_PNPM_INSTALL=1"
+  fi
+}
+
 ensure_base_packages() {
+  if [ "${SKIP_BASE_PACKAGES}" = "1" ]; then
+    log "skip base package install (SKIP_BASE_PACKAGES=1)"
+    return
+  fi
   export DEBIAN_FRONTEND=noninteractive
   apt-get update
   apt-get install -y ca-certificates curl gnupg jq git nginx-full apache2-utils postgresql postgresql-contrib
@@ -70,6 +86,11 @@ ensure_pnpm_build_policy() {
 }
 
 sync_lobe_chat_repo() {
+  if [ "${SYNC_LOBE_CHAT}" != "1" ]; then
+    log "skip lobe-chat sync (SYNC_LOBE_CHAT=${SYNC_LOBE_CHAT})"
+    return
+  fi
+
   local backup
   if [ ! -d "${LOBE_CHAT_DIR}/.git" ]; then
     log "clone lobe-chat repo -> ${LOBE_CHAT_DIR}"
@@ -214,8 +235,11 @@ EOF
 
 ensure_lobehub_dependencies() {
   if [ "${SKIP_PNPM_INSTALL}" = "1" ]; then
-    log "skip pnpm install (SKIP_PNPM_INSTALL=1)"
-    return
+    if [ -d "${LOBE_CHAT_DIR}/node_modules" ]; then
+      log "skip pnpm install (SKIP_PNPM_INSTALL=1)"
+      return
+    fi
+    log "SKIP_PNPM_INSTALL=1 but node_modules is missing. run pnpm install."
   fi
 
   log "run pnpm install (first time may take long)"
@@ -352,6 +376,7 @@ health_check() {
 }
 
 main() {
+  apply_fast_start_defaults
   ensure_base_packages
   ensure_node_toolchain
   ensure_pnpm_build_policy

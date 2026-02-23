@@ -229,6 +229,7 @@ tools/runpod_eval/openwebui_client/runpod_api_key.obf
 # Node + htmx lightweight client runtime (local/generated)
 tools/runpod_eval/node_htmx_client/.runtime/
 tools/runpod_eval/node_htmx_client/_internal/runpod_api_key.obf
+tools/runpod_eval/node_htmx_client/_internal/.env.local
 
 # Splash screen signal file
 .splash_close

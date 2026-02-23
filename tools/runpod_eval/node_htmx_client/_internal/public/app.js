@@ -9,6 +9,8 @@
   const toolSearchForm = document.getElementById("tool-search-form");
   const toolShellForm = document.getElementById("tool-shell-form");
   const toolWriteForm = document.getElementById("tool-write-form");
+  const autoloopForm = document.getElementById("autoloop-form");
+  const modelSelect = document.getElementById("model");
 
   function scrollBottom(target) {
     if (!target) return;
@@ -63,6 +65,9 @@
       clearIfFound("tool-write-content");
       uncheckIfFound("tool-write-approved");
     }
+    if (autoloopForm && elt === autoloopForm && event.detail.successful) {
+      uncheckIfFound("autoloop-approve");
+    }
   });
 
   document.body.addEventListener("htmx:responseError", function (event) {
@@ -86,5 +91,15 @@
 
   if (promptInput) {
     promptInput.focus();
+  }
+
+  if (autoloopForm) {
+    autoloopForm.addEventListener("submit", function () {
+      const autoModel = document.getElementById("autoloop-model");
+      if (!autoModel) return;
+      if (!String(autoModel.value || "").trim() && modelSelect && modelSelect.value) {
+        autoModel.value = modelSelect.value;
+      }
+    });
   }
 })();

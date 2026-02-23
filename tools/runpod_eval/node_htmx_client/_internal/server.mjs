@@ -1,7 +1,8 @@
 import http from "node:http";
 import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -21,6 +22,11 @@ const toolContextEntries = Number.parseInt(process.env.TOOL_CONTEXT_ENTRIES || "
 const maxToolOutputChars = Number.parseInt(process.env.MAX_TOOL_OUTPUT_CHARS || "12000", 10);
 const maxReadBytes = Number.parseInt(process.env.MAX_READ_BYTES || "262144", 10);
 const localShellTimeoutMs = Number.parseInt(process.env.LOCAL_SHELL_TIMEOUT_MS || "20000", 10);
+const autonomousLoopMaxIters = Number.parseInt(process.env.AUTONOMOUS_LOOP_MAX_ITERS || "3", 10);
+const autonomousMaxFilesPerIter = Number.parseInt(process.env.AUTONOMOUS_MAX_FILES_PER_ITER || "4", 10);
+const autonomousMaxFileContextChars = Number.parseInt(process.env.AUTONOMOUS_MAX_FILE_CONTEXT_CHARS || "12000", 10);
+const autonomousMaxValidationCommands = Number.parseInt(process.env.AUTONOMOUS_MAX_VALIDATION_COMMANDS || "4", 10);
+const autonomousModelMaxTokens = Number.parseInt(process.env.AUTONOMOUS_MODEL_MAX_TOKENS || "4000", 10);
 const workspaceRoot = path.resolve((process.env.WORKSPACE_ROOT || process.cwd()).trim() || process.cwd());
 const configuredAllowPrefixes = (process.env.LOCAL_SHELL_ALLOWLIST || "")
   .split(",")
@@ -48,6 +54,23 @@ const codingModeSystemPrompt = [
   "Prefer concrete edits, executable commands, and risk notes.",
   "If local tool context is provided, treat it as source of truth.",
 ].join(" ");
+const autonomousPlannerSystemPrompt = [
+  "You are an autonomous coding planner.",
+  "Return ONLY valid JSON object.",
+  "Plan one iteration for local repository changes.",
+  "Do not include markdown.",
+  "Schema:",
+  '{"summary":"string","tasks":["string"],"target_files":[{"path":"relative/path","reason":"string"}],"validation_commands":["allowed command"],"done":false,"next_focus":"string"}',
+].join("\n");
+const autonomousEditorSystemPrompt = [
+  "You are an autonomous coding editor.",
+  "Return ONLY valid JSON object.",
+  "For each change, provide FULL file content after edit.",
+  "Do not include markdown.",
+  "Do not use absolute paths.",
+  "Schema:",
+  '{"summary":"string","changes":[{"path":"relative/path","action":"update|create","content":"full file content"}],"done":false,"final_message":"string"}',
+].join("\n");
 
 if (!runPodBaseUrl) {
   console.error("[node-htmx] RUNPOD_BASE_URL is not set.");
@@ -389,6 +412,515 @@ async function runSearch(pattern, glob) {
       done(new Error(`rg exited with code ${code}. ${stderr}`), true);
     });
   });
+}
+
+function sanitizeModelPath(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^\.([\\/])/, "")
+    .replaceAll("\\", "/");
+}
+
+async function readWorkspaceTextIfExists(relPath) {
+  const normalized = sanitizeModelPath(relPath);
+  try {
+    const resolvedPath = resolveWorkspacePath(normalized);
+    const info = await stat(resolvedPath);
+    if (!info.isFile()) {
+      throw new Error("Path is not a file.");
+    }
+    if (info.size > Math.max(1024, maxReadBytes)) {
+      throw new Error(`File is too large (${info.size} bytes).`);
+    }
+    const content = await readFile(resolvedPath, "utf8");
+    return {
+      exists: true,
+      relPath: toWorkspaceRelative(resolvedPath),
+      resolvedPath,
+      content,
+      sizeBytes: info.size,
+      error: "",
+    };
+  } catch (err) {
+    if (err?.code === "ENOENT") {
+      return {
+        exists: false,
+        relPath: normalized,
+        resolvedPath: "",
+        content: "",
+        sizeBytes: 0,
+        error: "",
+      };
+    }
+    return {
+      exists: false,
+      relPath: normalized,
+      resolvedPath: "",
+      content: "",
+      sizeBytes: 0,
+      error: err?.message || String(err),
+    };
+  }
+}
+
+function parseModelJsonObject(rawText) {
+  const text = String(rawText || "").trim();
+  if (!text) {
+    throw new Error("Model response is empty.");
+  }
+
+  const candidates = [text];
+  const blockRegex = /```(?:json)?\s*([\s\S]*?)```/gi;
+  for (const match of text.matchAll(blockRegex)) {
+    if (match[1]) {
+      candidates.push(String(match[1]).trim());
+    }
+  }
+  const firstBrace = text.indexOf("{");
+  const lastBrace = text.lastIndexOf("}");
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    candidates.push(text.slice(firstBrace, lastBrace + 1).trim());
+  }
+
+  const seen = new Set();
+  for (const candidate of candidates) {
+    const sample = String(candidate || "").trim();
+    if (!sample || seen.has(sample)) continue;
+    seen.add(sample);
+    try {
+      const parsed = JSON.parse(sample);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch {
+      // try next candidate
+    }
+  }
+
+  throw new Error(`Model JSON parse failed. raw=${truncateText(text, 1200)}`);
+}
+
+function normalizePlanObject(rawObject) {
+  const obj = rawObject && typeof rawObject === "object" ? rawObject : {};
+  const tasksRaw = Array.isArray(obj.tasks) ? obj.tasks : [];
+  const targetRaw = Array.isArray(obj.target_files)
+    ? obj.target_files
+    : (Array.isArray(obj.targetFiles) ? obj.targetFiles : []);
+  const validationRaw = Array.isArray(obj.validation_commands)
+    ? obj.validation_commands
+    : (Array.isArray(obj.validationCommands) ? obj.validationCommands : []);
+
+  const targetFiles = targetRaw
+    .map((item) => {
+      if (typeof item === "string") {
+        return { path: sanitizeModelPath(item), reason: "" };
+      }
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+      const p = sanitizeModelPath(item.path);
+      if (!p) return null;
+      return { path: p, reason: String(item.reason || "").trim() };
+    })
+    .filter(Boolean)
+    .slice(0, Math.max(1, autonomousMaxFilesPerIter));
+
+  return {
+    summary: String(obj.summary || "").trim(),
+    tasks: tasksRaw
+      .map((item) => String(item || "").trim())
+      .filter(Boolean)
+      .slice(0, 12),
+    targetFiles,
+    validationCommands: validationRaw
+      .map((item) => String(item || "").trim())
+      .filter(Boolean)
+      .slice(0, Math.max(1, autonomousMaxValidationCommands)),
+    done: obj.done === true,
+    nextFocus: String(obj.next_focus || obj.nextFocus || "").trim(),
+  };
+}
+
+function normalizeProposalObject(rawObject) {
+  const obj = rawObject && typeof rawObject === "object" ? rawObject : {};
+  const changesRaw = Array.isArray(obj.changes) ? obj.changes : (Array.isArray(obj.files) ? obj.files : []);
+  const changes = changesRaw
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const relPath = sanitizeModelPath(item.path);
+      if (!relPath) return null;
+      const action = String(item.action || "update").trim().toLowerCase();
+      if (action !== "update" && action !== "create") {
+        return null;
+      }
+      return {
+        path: relPath,
+        action,
+        content: String(item.content || ""),
+      };
+    })
+    .filter(Boolean)
+    .slice(0, Math.max(1, autonomousMaxFilesPerIter));
+
+  return {
+    summary: String(obj.summary || "").trim(),
+    changes,
+    done: obj.done === true,
+    finalMessage: String(obj.final_message || obj.finalMessage || "").trim(),
+  };
+}
+
+async function callRunPodChatText({
+  model = defaultModel,
+  temperature = 0.2,
+  messages,
+  maxTokens = autonomousModelMaxTokens,
+}) {
+  const response = await callRunPodJson("/chat/completions", {
+    model: String(model || defaultModel).trim() || defaultModel,
+    messages,
+    temperature: Number.isFinite(temperature) ? temperature : 0.2,
+    max_tokens: Math.max(256, maxTokens),
+    stream: false,
+  });
+  return extractAssistantText(response) || "";
+}
+
+function normalizeTempDiffPaths(diffText, beforePath, afterPath, relPath) {
+  const rel = sanitizeModelPath(relPath);
+  const beforeCandidates = [beforePath, beforePath.replaceAll("\\", "/"), beforePath.replaceAll("/", "\\")];
+  const afterCandidates = [afterPath, afterPath.replaceAll("\\", "/"), afterPath.replaceAll("/", "\\")];
+
+  let text = String(diffText || "");
+  for (const item of beforeCandidates) {
+    if (item) {
+      text = text.split(item).join(`a/${rel}`);
+    }
+  }
+  for (const item of afterCandidates) {
+    if (item) {
+      text = text.split(item).join(`b/${rel}`);
+    }
+  }
+  return text;
+}
+
+async function createPreviewDiff({ relPath, oldContent, newContent }) {
+  if (String(oldContent) === String(newContent)) {
+    return "No textual changes.";
+  }
+
+  const tempDir = await mkdtemp(path.join(tmpdir(), "runpod-loop-diff-"));
+  const beforePath = path.join(tempDir, "before.txt");
+  const afterPath = path.join(tempDir, "after.txt");
+
+  await writeFile(beforePath, String(oldContent || ""), "utf8");
+  await writeFile(afterPath, String(newContent || ""), "utf8");
+
+  try {
+    const result = await new Promise((resolve) => {
+      let stdout = "";
+      let stderr = "";
+      let spawnError = "";
+
+      const child = spawn("git", ["--no-pager", "diff", "--no-index", "--", beforePath, afterPath], {
+        cwd: workspaceRoot,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+
+      child.stdout.on("data", (chunk) => {
+        stdout += chunk.toString("utf8");
+      });
+      child.stderr.on("data", (chunk) => {
+        stderr += chunk.toString("utf8");
+      });
+      child.on("error", (err) => {
+        spawnError = err?.message || String(err);
+      });
+      child.on("close", (code) => {
+        resolve({
+          code: Number.isInteger(code) ? code : 1,
+          stdout,
+          stderr,
+          spawnError,
+        });
+      });
+    });
+
+    if (result.spawnError) {
+      throw new Error(result.spawnError);
+    }
+    if (result.code !== 0 && result.code !== 1) {
+      throw new Error(result.stderr || `git diff exited with code ${result.code}`);
+    }
+    const diff = normalizeTempDiffPaths(result.stdout || "", beforePath, afterPath, relPath);
+    if (diff.trim()) {
+      return truncateText(diff, maxToolOutputChars);
+    }
+  } catch {
+    // fallback to a simplified preview when git diff is unavailable.
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+
+  return [
+    `diff fallback for ${sanitizeModelPath(relPath)}`,
+    "[before]",
+    truncateText(oldContent || "", 1800),
+    "",
+    "[after]",
+    truncateText(newContent || "", 1800),
+  ].join("\n");
+}
+
+async function runAutonomousLoop({
+  session,
+  objective,
+  model,
+  temperature,
+  includeToolContext,
+  maxIterations,
+  autoApply,
+  runValidation,
+}) {
+  const htmlParts = [];
+  const appliedPaths = [];
+  let previousOutcome = "";
+
+  for (let iter = 1; iter <= maxIterations; iter += 1) {
+    const plannerMessages = [
+      { role: "system", content: autonomousPlannerSystemPrompt },
+    ];
+    if (includeToolContext) {
+      const toolContext = buildToolContext(session);
+      if (toolContext) {
+        plannerMessages.push({
+          role: "system",
+          content: `Local tool context:\n${toolContext}`,
+        });
+      }
+    }
+    plannerMessages.push({
+      role: "user",
+      content: [
+        `Goal:\n${objective}`,
+        previousOutcome ? `Previous outcome:\n${previousOutcome}` : "",
+        `Iteration: ${iter}/${maxIterations}`,
+      ].filter(Boolean).join("\n\n"),
+    });
+
+    const plannerRaw = await callRunPodChatText({
+      model,
+      temperature,
+      messages: plannerMessages,
+      maxTokens: Math.min(autonomousModelMaxTokens, 2000),
+    });
+    const plan = normalizePlanObject(parseModelJsonObject(plannerRaw));
+    const planText = JSON.stringify(plan, null, 2);
+    appendToolLog(session, {
+      title: `autoloop plan #${iter}`,
+      summary: plan.summary || `iteration ${iter}`,
+      detail: planText,
+    });
+    htmlParts.push(renderToolResult({
+      title: `Autoloop plan #${iter}`,
+      meta: plan.summary || `iteration ${iter}`,
+      body: planText,
+    }));
+
+    if (plan.done) {
+      previousOutcome = "Planner marked work as done.";
+      break;
+    }
+
+    if (plan.targetFiles.length === 0) {
+      previousOutcome = "Planner returned no target_files.";
+      htmlParts.push(renderToolResult({
+        title: `Autoloop stopped #${iter}`,
+        body: previousOutcome,
+        isError: true,
+      }));
+      break;
+    }
+
+    const fileContexts = [];
+    for (const target of plan.targetFiles.slice(0, Math.max(1, autonomousMaxFilesPerIter))) {
+      const snapshot = await readWorkspaceTextIfExists(target.path);
+      if (snapshot.error) {
+        fileContexts.push({
+          path: snapshot.relPath,
+          exists: false,
+          error: snapshot.error,
+          content: "",
+        });
+        continue;
+      }
+      fileContexts.push({
+        path: snapshot.relPath,
+        exists: snapshot.exists,
+        reason: target.reason || "",
+        size_bytes: snapshot.sizeBytes,
+        content: truncateText(snapshot.content, autonomousMaxFileContextChars),
+      });
+    }
+
+    const editorMessages = [
+      { role: "system", content: autonomousEditorSystemPrompt },
+    ];
+    if (includeToolContext) {
+      const toolContext = buildToolContext(session);
+      if (toolContext) {
+        editorMessages.push({
+          role: "system",
+          content: `Local tool context:\n${toolContext}`,
+        });
+      }
+    }
+    editorMessages.push({
+      role: "user",
+      content: [
+        `Goal:\n${objective}`,
+        `Plan:\n${JSON.stringify(plan, null, 2)}`,
+        `Target file contexts:\n${JSON.stringify(fileContexts, null, 2)}`,
+      ].join("\n\n"),
+    });
+
+    const editorRaw = await callRunPodChatText({
+      model,
+      temperature,
+      messages: editorMessages,
+      maxTokens: autonomousModelMaxTokens,
+    });
+    const proposal = normalizeProposalObject(parseModelJsonObject(editorRaw));
+    const proposalText = JSON.stringify(proposal, null, 2);
+    appendToolLog(session, {
+      title: `autoloop proposal #${iter}`,
+      summary: proposal.summary || `changes=${proposal.changes.length}`,
+      detail: proposalText,
+    });
+    htmlParts.push(renderToolResult({
+      title: `Autoloop proposal #${iter}`,
+      meta: proposal.summary || `changes=${proposal.changes.length}`,
+      body: proposalText,
+    }));
+
+    if (proposal.changes.length === 0) {
+      previousOutcome = "Editor returned no changes.";
+      if (proposal.done) {
+        break;
+      }
+      htmlParts.push(renderToolResult({
+        title: `Autoloop stopped #${iter}`,
+        body: previousOutcome,
+        isError: true,
+      }));
+      break;
+    }
+
+    let appliedInIter = 0;
+    for (const change of proposal.changes.slice(0, Math.max(1, autonomousMaxFilesPerIter))) {
+      try {
+        const relPath = sanitizeModelPath(change.path);
+        const snapshot = await readWorkspaceTextIfExists(relPath);
+        const oldContent = snapshot.exists ? snapshot.content : "";
+        const newContent = String(change.content || "");
+        const diffText = await createPreviewDiff({ relPath, oldContent, newContent });
+        appendToolLog(session, {
+          title: `autoloop diff #${iter} ${relPath}`,
+          summary: `action=${change.action}`,
+          detail: diffText,
+        });
+        htmlParts.push(renderToolResult({
+          title: `Autoloop diff #${iter}: ${relPath}`,
+          meta: `action=${change.action}`,
+          body: diffText,
+        }));
+
+        if (!autoApply) {
+          continue;
+        }
+        if (oldContent === newContent) {
+          continue;
+        }
+        const resolvedPath = resolveWorkspacePath(relPath);
+        await mkdir(path.dirname(resolvedPath), { recursive: true });
+        await writeFile(resolvedPath, newContent, "utf8");
+        appliedPaths.push(relPath);
+        appliedInIter += 1;
+        appendToolLog(session, {
+          title: `autoloop apply #${iter} ${relPath}`,
+          summary: `bytes=${Buffer.byteLength(newContent, "utf8")}`,
+          detail: "Applied successfully.",
+        });
+        htmlParts.push(renderToolResult({
+          title: `Autoloop apply #${iter}: ${relPath}`,
+          meta: `bytes=${Buffer.byteLength(newContent, "utf8")}`,
+          body: "Applied successfully.",
+        }));
+      } catch (err) {
+        const relPath = sanitizeModelPath(change.path);
+        const message = err?.message || String(err);
+        appendToolLog(session, {
+          title: `autoloop change error #${iter} ${relPath}`,
+          summary: "skipped",
+          detail: message,
+        });
+        htmlParts.push(renderToolResult({
+          title: `Autoloop change error #${iter}: ${relPath}`,
+          body: message,
+          isError: true,
+        }));
+      }
+    }
+
+    previousOutcome = `Applied ${appliedInIter} file(s).`;
+
+    if (runValidation && autoApply && plan.validationCommands.length > 0) {
+      for (const command of plan.validationCommands.slice(0, Math.max(1, autonomousMaxValidationCommands))) {
+        if (!isAllowedShellCommand(command)) {
+          const text = `Validation command blocked by allowlist: ${command}`;
+          appendToolLog(session, {
+            title: `autoloop validate blocked #${iter}`,
+            summary: command,
+            detail: text,
+          });
+          htmlParts.push(renderToolResult({
+            title: `Autoloop validation blocked #${iter}`,
+            body: text,
+            isError: true,
+          }));
+          continue;
+        }
+        const result = await runShellCommand(command, workspaceRoot);
+        const output = [
+          `$ ${command}`,
+          result.stdout ? `\n[stdout]\n${result.stdout}` : "",
+          result.stderr ? `\n[stderr]\n${result.stderr}` : "",
+        ].join("");
+        appendToolLog(session, {
+          title: `autoloop validate #${iter}`,
+          summary: `exit=${result.exitCode}`,
+          detail: output,
+        });
+        htmlParts.push(renderToolResult({
+          title: `Autoloop validation #${iter}`,
+          meta: `exit=${result.exitCode} timeout=${result.timedOut ? "yes" : "no"}`,
+          body: output || "(no output)",
+          isError: result.exitCode !== 0 || result.timedOut || Boolean(result.spawnError),
+        }));
+      }
+    }
+
+    if (proposal.done || plan.done) {
+      break;
+    }
+  }
+
+  const uniqueApplied = [...new Set(appliedPaths)];
+  return {
+    html: htmlParts.join(""),
+    appliedPaths: uniqueApplied,
+  };
 }
 
 async function callRunPodJson(endpointPath, body) {
@@ -758,6 +1290,96 @@ const server = http.createServer(async (req, res) => {
     } catch (err) {
       send(res, 200, renderToolResult({
         title: "Tool write error",
+        body: err?.message || String(err),
+        isError: true,
+      }), "text/html; charset=utf-8");
+    }
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/autoloop/run") {
+    const session = getOrCreateSession(req, res);
+    try {
+      const bodyText = await readBody(req);
+      const data = new URLSearchParams(bodyText);
+      const objective = (data.get("objective") || "").trim();
+      const model = (data.get("model") || defaultModel).trim() || defaultModel;
+      const temperatureRaw = (data.get("temperature") || "0.2").trim();
+      const loopRaw = (data.get("maxIterations") || "1").trim();
+      const includeToolContext = data.get("includeToolContext") === "on";
+      const autoApply = data.get("autoApply") === "on";
+      const approveAutoApply = data.get("approveAutoApply") === "on";
+      const runValidation = data.get("runValidation") === "on";
+
+      if (!objective) {
+        send(res, 200, renderToolResult({
+          title: "Autoloop error",
+          body: "Objective is empty.",
+          isError: true,
+        }), "text/html; charset=utf-8");
+        return;
+      }
+      if (autoApply && !approveAutoApply) {
+        send(res, 200, renderToolResult({
+          title: "Autoloop blocked",
+          body: "Enable \"I approve autonomous apply\" before auto-apply mode.",
+          isError: true,
+        }), "text/html; charset=utf-8");
+        return;
+      }
+
+      const parsedTemperature = Number.parseFloat(temperatureRaw);
+      const parsedLoops = Number.parseInt(loopRaw, 10);
+      const maxIterations = Math.min(
+        Math.max(1, Number.isInteger(parsedLoops) ? parsedLoops : 1),
+        Math.max(1, autonomousLoopMaxIters),
+      );
+      const temperature = Number.isFinite(parsedTemperature) ? parsedTemperature : 0.2;
+
+      const startMeta = [
+        `model=${model}`,
+        `iterations=${maxIterations}`,
+        `autoApply=${autoApply ? "yes" : "no"}`,
+        `validation=${runValidation ? "yes" : "no"}`,
+      ].join(" ");
+      appendToolLog(session, {
+        title: "autoloop start",
+        summary: startMeta,
+        detail: objective,
+      });
+
+      const started = Date.now();
+      const loopResult = await runAutonomousLoop({
+        session,
+        objective,
+        model,
+        temperature,
+        includeToolContext,
+        maxIterations,
+        autoApply,
+        runValidation,
+      });
+      const elapsedMs = Date.now() - started;
+      const finalBody = [
+        `elapsed=${elapsedMs}ms`,
+        `applied_files=${loopResult.appliedPaths.length}`,
+        loopResult.appliedPaths.length > 0 ? `paths=${loopResult.appliedPaths.join(", ")}` : "",
+      ].filter(Boolean).join("\n");
+      appendToolLog(session, {
+        title: "autoloop finished",
+        summary: `elapsed=${elapsedMs}ms applied=${loopResult.appliedPaths.length}`,
+        detail: finalBody,
+      });
+
+      const finishCard = renderToolResult({
+        title: "Autoloop finished",
+        meta: `elapsed=${elapsedMs}ms`,
+        body: finalBody,
+      });
+      send(res, 200, `${loopResult.html}${finishCard}`, "text/html; charset=utf-8");
+    } catch (err) {
+      send(res, 200, renderToolResult({
+        title: "Autoloop error",
         body: err?.message || String(err),
         isError: true,
       }), "text/html; charset=utf-8");

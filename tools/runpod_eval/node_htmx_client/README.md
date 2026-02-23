@@ -23,15 +23,18 @@ Everything else is in `_internal`.
 
 ## First-Time Admin Setup
 
-1. Open:
+1. Keep shared defaults in:
    - `tools/runpod_eval/node_htmx_client/_internal/.env.example`
-2. Set:
+2. Create local (not tracked) config:
+   - Copy `tools/runpod_eval/node_htmx_client/_internal/.env.local.example`
+   - To `tools/runpod_eval/node_htmx_client/_internal/.env.local`
+3. Set in `.env.local`:
    - `RUNPOD_BASE_URL=https://<pod-id>-11434.proxy.runpod.net/v1`
    - Keep `RUNPOD_API_KEY=__USE_DPAPI__`
-3. Optional shared obfuscated key file (recommended for team):
+4. Optional shared obfuscated key file (recommended for team):
    - Run `tools/runpod_eval/node_htmx_client/_internal/set-runpod-api-key-shared.bat`
    - This generates `_internal/runpod_api_key.obf`
-4. Distribute this folder to members.
+5. Distribute this folder to members.
 
 Recommended additional settings for local coding mode:
 - `WORKSPACE_ROOT=.` (or your target repo path)
@@ -40,8 +43,9 @@ Recommended additional settings for local coding mode:
 
 ## Per-User Behavior
 
-Each launch reads config from shared file:
-- `tools/runpod_eval/node_htmx_client/_internal/.env.example`
+Each launch reads config in this order:
+- `tools/runpod_eval/node_htmx_client/_internal/.env.local` (primary, untracked)
+- `tools/runpod_eval/node_htmx_client/_internal/.env.example` (fallback)
 
 Per-user local files are:
 - `%LOCALAPPDATA%\YakuLingoRunpodHtmx\runpod_api_key.dpapi`
@@ -49,7 +53,7 @@ Per-user local files are:
 - `%LOCALAPPDATA%\YakuLingoRunpodHtmx\logs\...`
 
 `start.bat` behavior:
-- Always uses shared `_internal/.env.example` as config source.
+- Uses `_internal/.env.local` first, then `_internal/.env.example`.
 - Uses local DPAPI key if available.
 - If no local key, imports shared obfuscated key from `_internal/runpod_api_key.obf`.
 - Starts local Node server and opens browser.
@@ -110,6 +114,25 @@ Safety guardrails:
 - Shell commands are filtered by allowed prefixes (`LOCAL_SHELL_ALLOWLIST`).
 - Shell command chaining chars (`;`, `&`, `|`, `>`, `<`, backtick, newline)
   are blocked.
+
+## Autonomous Loop (plan -> diff -> auto apply)
+
+The app includes an autonomous loop form:
+- Planner step: model returns JSON plan (`target_files`, `tasks`, validations)
+- Diff step: model returns full-file JSON edits and server generates diff preview
+- Apply step: if enabled, edits are written to local files automatically
+
+Notes:
+- `auto apply` requires explicit approval checkbox in UI.
+- Diff preview is generated before write.
+- Validation commands are executed only if they pass shell allowlist.
+
+Env knobs:
+- `AUTONOMOUS_LOOP_MAX_ITERS`
+- `AUTONOMOUS_MAX_FILES_PER_ITER`
+- `AUTONOMOUS_MAX_FILE_CONTEXT_CHARS`
+- `AUTONOMOUS_MAX_VALIDATION_COMMANDS`
+- `AUTONOMOUS_MODEL_MAX_TOKENS`
 
 ## Notes
 

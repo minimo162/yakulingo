@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>RunPod Chat (Node + htmx)</title>
+  <title>RunPod Local Coder (Node + htmx)</title>
   <link rel="stylesheet" href="/styles.css">
   <script src="/vendor/htmx.min.js"></script>
   <script src="/app.js" defer></script>
@@ -151,6 +151,62 @@
       <div class="actions">
         <span id="tool-indicator" class="indicator htmx-indicator">Running tool...</span>
       </div>
+    </section>
+
+    <section class="panel">
+      <h2>Autonomous Loop</h2>
+      <form
+        id="autoloop-form"
+        class="autoloop-form"
+        hx-post="/api/autoloop/run"
+        hx-target="#tool-log"
+        hx-swap="beforeend"
+        hx-indicator="#autoloop-indicator"
+      >
+        <div class="row">
+          <label for="autoloop-objective">Objective</label>
+          <textarea id="autoloop-objective" name="objective" rows="4" placeholder="例: server.mjs の /api/chat/form を関数分割して可読性を上げる" required></textarea>
+        </div>
+
+        <div class="autoloop-grid">
+          <div class="row">
+            <label for="autoloop-model">Model</label>
+            <input id="autoloop-model" name="model" type="text" placeholder="gpt-oss-swallow-120b-iq4xs">
+          </div>
+          <div class="row">
+            <label for="autoloop-temperature">Temperature</label>
+            <input id="autoloop-temperature" name="temperature" type="number" min="0" max="2" step="0.1" value="0.2">
+          </div>
+          <div class="row">
+            <label for="autoloop-iters">Iterations</label>
+            <input id="autoloop-iters" name="maxIterations" type="number" min="1" max="3" value="1">
+          </div>
+        </div>
+
+        <div class="row check-row">
+          <label class="checkbox-inline">
+            <input type="checkbox" name="includeToolContext" checked>
+            Include local tool context
+          </label>
+          <label class="checkbox-inline">
+            <input type="checkbox" name="autoApply" checked>
+            Auto apply changes
+          </label>
+          <label class="checkbox-inline">
+            <input type="checkbox" name="runValidation">
+            Run validation commands from plan
+          </label>
+          <label class="checkbox-inline">
+            <input id="autoloop-approve" type="checkbox" name="approveAutoApply">
+            I approve autonomous apply
+          </label>
+        </div>
+
+        <div class="actions">
+          <button type="submit">Run Autonomous Loop</button>
+          <span id="autoloop-indicator" class="indicator htmx-indicator">Running autonomous loop...</span>
+        </div>
+      </form>
     </section>
 
     <section class="panel">

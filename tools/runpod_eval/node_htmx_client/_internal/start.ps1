@@ -27,6 +27,21 @@ function Get-EnvValue {
   return (($line -split "=", 2)[1]).Trim()
 }
 
+function Get-ConfigValue {
+  param(
+    [Parameter(Mandatory = $true)] [string]$Key,
+    [Parameter(Mandatory = $true)] [string[]]$FilePaths
+  )
+  foreach ($file in $FilePaths) {
+    if ([string]::IsNullOrWhiteSpace($file)) { continue }
+    $value = Get-EnvValue -Key $Key -FilePath $file
+    if (-not [string]::IsNullOrWhiteSpace($value)) {
+      return $value
+    }
+  }
+  return $null
+}
+
 function Test-PlaceholderValue {
   param([string]$Value)
   if ([string]::IsNullOrWhiteSpace($Value)) { return $true }
@@ -121,6 +136,8 @@ $logDir = Join-Path $userDir "logs"
 $outLog = Join-Path $logDir "runpod-htmx-$userSlug.out.log"
 $errLog = Join-Path $logDir "runpod-htmx-$userSlug.err.log"
 $configEnvFile = Join-Path $PSScriptRoot ".env.example"
+$localEnvFile = Join-Path $PSScriptRoot ".env.local"
+$localEnvTemplateFile = Join-Path $PSScriptRoot ".env.local.example"
 $sharedObfFile = Join-Path $PSScriptRoot "runpod_api_key.obf"
 
 New-Item -ItemType Directory -Force -Path $userDir | Out-Null
@@ -132,20 +149,32 @@ if (!(Test-Path $configEnvFile)) {
   exit 1
 }
 
-$baseUrl = Get-EnvValue -Key "RUNPOD_BASE_URL" -FilePath $configEnvFile
+$configFiles = @($localEnvFile, $configEnvFile)
+
+$baseUrl = Get-ConfigValue -Key "RUNPOD_BASE_URL" -FilePaths $configFiles
 if (Test-PlaceholderValue -Value $baseUrl) {
+  if (!(Test-Path $localEnvFile)) {
+    if (Test-Path $localEnvTemplateFile) {
+      Copy-Item -Path $localEnvTemplateFile -Destination $localEnvFile -Force
+    } else {
+      Set-Content -Path $localEnvFile -Value @(
+        "RUNPOD_BASE_URL=https://<pod-id>-11434.proxy.runpod.net/v1"
+        "RUNPOD_API_KEY=__USE_DPAPI__"
+      ) -Encoding UTF8
+    }
+  }
   Write-Host "Please update these values in:"
-  Write-Host "  $configEnvFile"
+  Write-Host "  $localEnvFile"
   Write-Host ""
   Write-Host "Required:"
   Write-Host "  RUNPOD_BASE_URL=https://<pod-id>-11434.proxy.runpod.net/v1"
   Write-Host "  RUNPOD_API_KEY=__USE_DPAPI__   (keep this marker)"
   Write-Host ""
-  Start-Process notepad.exe $configEnvFile | Out-Null
+  Start-Process notepad.exe $localEnvFile | Out-Null
   exit 1
 }
 
-$keyInEnv = Get-EnvValue -Key "RUNPOD_API_KEY" -FilePath $configEnvFile
+$keyInEnv = Get-ConfigValue -Key "RUNPOD_API_KEY" -FilePaths $configFiles
 if (-not (Test-PlaceholderValue -Value $keyInEnv)) {
   Save-RunPodApiKey -ApiKey $keyInEnv -FilePath $apiKeyStoreFile
 }
@@ -175,7 +204,7 @@ if ([string]::IsNullOrWhiteSpace($runPodApiKey)) {
 }
 
 if (-not $SkipConnectionTest) {
-  & (Join-Path $PSScriptRoot "test-runpod-connection.ps1") -EnvFile $configEnvFile -ApiKey $runPodApiKey
+  & (Join-Path $PSScriptRoot "test-runpod-connection.ps1") -EnvFile $localEnvFile -FallbackEnvFile $configEnvFile -ApiKey $runPodApiKey
 }
 
 $nodeExe = Resolve-NodeExe -BaseDir $BaseDir
@@ -209,7 +238,7 @@ if (Test-Path $pidFile) {
   if ($existingPid -gt 0) {
     $p = Get-Process -Id $existingPid -ErrorAction SilentlyContinue
     if ($p) {
-      $existingPort = Get-EnvValue -Key "APP_PORT" -FilePath $configEnvFile
+      $existingPort = Get-ConfigValue -Key "APP_PORT" -FilePaths $configFiles
       if ($PSBoundParameters.ContainsKey("Port") -and $Port -gt 0) {
         $existingPort = "$Port"
       }
@@ -222,25 +251,25 @@ if (Test-Path $pidFile) {
   Remove-Item -Force $pidFile -ErrorAction SilentlyContinue
 }
 
-$defaultModel = Get-EnvValue -Key "DEFAULT_MODEL" -FilePath $configEnvFile
+$defaultModel = Get-ConfigValue -Key "DEFAULT_MODEL" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($defaultModel)) {
   $defaultModel = "gpt-oss-swallow-120b-iq4xs"
 }
 
-$appPort = Get-EnvValue -Key "APP_PORT" -FilePath $configEnvFile
+$appPort = Get-ConfigValue -Key "APP_PORT" -FilePaths $configFiles
 if ($PSBoundParameters.ContainsKey("Port") -and $Port -gt 0) { $appPort = "$Port" }
 if ([string]::IsNullOrWhiteSpace($appPort)) { $appPort = "3030" }
 [int]$parsedAppPort = 0
 [void][int]::TryParse($appPort, [ref]$parsedAppPort)
 if ($parsedAppPort -le 0) { $appPort = "3030" }
 
-$appBind = Get-EnvValue -Key "APP_BIND" -FilePath $configEnvFile
+$appBind = Get-ConfigValue -Key "APP_BIND" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($appBind)) { $appBind = "127.0.0.1" }
 
-$timeoutMs = Get-EnvValue -Key "RUNPOD_REQUEST_TIMEOUT_MS" -FilePath $configEnvFile
+$timeoutMs = Get-ConfigValue -Key "RUNPOD_REQUEST_TIMEOUT_MS" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($timeoutMs)) { $timeoutMs = "90000" }
 
-$workspaceRoot = Get-EnvValue -Key "WORKSPACE_ROOT" -FilePath $configEnvFile
+$workspaceRoot = Get-ConfigValue -Key "WORKSPACE_ROOT" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($workspaceRoot)) {
   $fallbackWorkspace = Join-Path $BaseDir "..\..\.."
   if (Test-Path $fallbackWorkspace) {
@@ -254,10 +283,25 @@ elseif (!(Split-Path -Path $workspaceRoot -IsAbsolute)) {
   $workspaceRoot = Join-Path $BaseDir $workspaceRoot
 }
 
-$localShellTimeout = Get-EnvValue -Key "LOCAL_SHELL_TIMEOUT_MS" -FilePath $configEnvFile
+$localShellTimeout = Get-ConfigValue -Key "LOCAL_SHELL_TIMEOUT_MS" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($localShellTimeout)) { $localShellTimeout = "20000" }
 
-$localShellAllowlist = Get-EnvValue -Key "LOCAL_SHELL_ALLOWLIST" -FilePath $configEnvFile
+$localShellAllowlist = Get-ConfigValue -Key "LOCAL_SHELL_ALLOWLIST" -FilePaths $configFiles
+
+$autoLoopMaxIters = Get-ConfigValue -Key "AUTONOMOUS_LOOP_MAX_ITERS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($autoLoopMaxIters)) { $autoLoopMaxIters = "3" }
+
+$autoMaxFiles = Get-ConfigValue -Key "AUTONOMOUS_MAX_FILES_PER_ITER" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($autoMaxFiles)) { $autoMaxFiles = "4" }
+
+$autoMaxContextChars = Get-ConfigValue -Key "AUTONOMOUS_MAX_FILE_CONTEXT_CHARS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($autoMaxContextChars)) { $autoMaxContextChars = "12000" }
+
+$autoMaxValidationCommands = Get-ConfigValue -Key "AUTONOMOUS_MAX_VALIDATION_COMMANDS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($autoMaxValidationCommands)) { $autoMaxValidationCommands = "4" }
+
+$autoModelMaxTokens = Get-ConfigValue -Key "AUTONOMOUS_MODEL_MAX_TOKENS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($autoModelMaxTokens)) { $autoModelMaxTokens = "4000" }
 
 $envVars = @{
   "RUNPOD_BASE_URL"         = $baseUrl
@@ -269,6 +313,11 @@ $envVars = @{
   "WORKSPACE_ROOT"          = $workspaceRoot
   "LOCAL_SHELL_TIMEOUT_MS"  = $localShellTimeout
   "LOCAL_SHELL_ALLOWLIST"   = $localShellAllowlist
+  "AUTONOMOUS_LOOP_MAX_ITERS" = $autoLoopMaxIters
+  "AUTONOMOUS_MAX_FILES_PER_ITER" = $autoMaxFiles
+  "AUTONOMOUS_MAX_FILE_CONTEXT_CHARS" = $autoMaxContextChars
+  "AUTONOMOUS_MAX_VALIDATION_COMMANDS" = $autoMaxValidationCommands
+  "AUTONOMOUS_MODEL_MAX_TOKENS" = $autoModelMaxTokens
 }
 
 $saved = @{}
@@ -324,7 +373,9 @@ if (-not $NoOpenBrowser) {
 Write-Host "RunPod HTMX client started."
 Write-Host "PID: $($proc.Id)"
 Write-Host "Node: $nodeExe"
-Write-Host "Config file: $configEnvFile"
+Write-Host "Config files:"
+Write-Host "  local: $localEnvFile"
+Write-Host "  shared: $configEnvFile"
 Write-Host "Secure key store: $apiKeyStoreFile"
 Write-Host "Workspace root: $workspaceRoot"
 Write-Host "Endpoint: $(Mask-Url -Url $baseUrl)"

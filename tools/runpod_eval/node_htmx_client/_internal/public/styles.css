@@ -146,6 +146,17 @@ button[type="submit"] {
   gap: 12px;
 }
 
+.autoloop-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.autoloop-form {
+  display: grid;
+  gap: 10px;
+}
+
 .tool-form {
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -224,6 +235,10 @@ button[type="submit"] {
   }
 
   .tool-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .autoloop-grid {
     grid-template-columns: 1fr;
   }
 

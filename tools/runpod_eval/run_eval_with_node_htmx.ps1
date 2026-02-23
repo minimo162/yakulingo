@@ -22,6 +22,17 @@ function Get-EnvValue {
   return (($line -split "=", 2)[1]).Trim()
 }
 
+function Get-ConfigValue {
+  param(
+    [Parameter(Mandatory = $true)][string]$Key,
+    [Parameter(Mandatory = $true)][string]$PrimaryFile,
+    [Parameter(Mandatory = $true)][string]$FallbackFile
+  )
+  $v = Get-EnvValue -Key $Key -FilePath $PrimaryFile
+  if (-not [string]::IsNullOrWhiteSpace($v)) { return $v }
+  return Get-EnvValue -Key $Key -FilePath $FallbackFile
+}
+
 function Test-PlaceholderValue {
   param([string]$Value)
   if ([string]::IsNullOrWhiteSpace($Value)) { return $true }
@@ -115,22 +126,23 @@ function Invoke-PythonScript {
 $runpodEvalDir = $PSScriptRoot
 $repoRoot = (Resolve-Path (Join-Path $runpodEvalDir "..\..")).Path
 $nodeInternalDir = Join-Path $runpodEvalDir "node_htmx_client\_internal"
+$configEnvLocalFile = Join-Path $nodeInternalDir ".env.local"
 $configEnvFile = Join-Path $nodeInternalDir ".env.example"
 $sharedObfFile = Join-Path $nodeInternalDir "runpod_api_key.obf"
 $localStoreDir = Join-Path $env:LOCALAPPDATA "YakuLingoRunpodHtmx"
 $apiKeyStoreFile = Join-Path $localStoreDir "runpod_api_key.dpapi"
 
-if (!(Test-Path $configEnvFile) -and [string]::IsNullOrWhiteSpace($BaseUrl)) {
-  throw "Config file not found: $configEnvFile"
+if (!(Test-Path $configEnvLocalFile) -and !(Test-Path $configEnvFile) -and [string]::IsNullOrWhiteSpace($BaseUrl)) {
+  throw "Config files not found: $configEnvLocalFile, $configEnvFile"
 }
 
 $resolvedBaseUrl = $null
 if (-not [string]::IsNullOrWhiteSpace($BaseUrl)) {
   $resolvedBaseUrl = $BaseUrl
 } else {
-  $baseUrlRaw = Get-EnvValue -Key "RUNPOD_BASE_URL" -FilePath $configEnvFile
+  $baseUrlRaw = Get-ConfigValue -Key "RUNPOD_BASE_URL" -PrimaryFile $configEnvLocalFile -FallbackFile $configEnvFile
   if (Test-PlaceholderValue -Value $baseUrlRaw) {
-    throw "RUNPOD_BASE_URL is not configured in $configEnvFile"
+    throw "RUNPOD_BASE_URL is not configured in $configEnvLocalFile or $configEnvFile"
   }
   $resolvedBaseUrl = $baseUrlRaw
 }
@@ -140,7 +152,7 @@ $resolvedApiKey = $null
 if (-not [string]::IsNullOrWhiteSpace($ApiKey)) {
   $resolvedApiKey = $ApiKey
 } else {
-  $apiKeyFromEnv = Get-EnvValue -Key "RUNPOD_API_KEY" -FilePath $configEnvFile
+  $apiKeyFromEnv = Get-ConfigValue -Key "RUNPOD_API_KEY" -PrimaryFile $configEnvLocalFile -FallbackFile $configEnvFile
   if (-not (Test-PlaceholderValue -Value $apiKeyFromEnv)) {
     $resolvedApiKey = $apiKeyFromEnv
   }

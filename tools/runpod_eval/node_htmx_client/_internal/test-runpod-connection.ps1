@@ -1,5 +1,6 @@
 param(
-  [string]$EnvFile = ".env.example",
+  [string]$EnvFile = ".env.local",
+  [string]$FallbackEnvFile = ".env.example",
   [string]$ApiKey = ""
 )
 
@@ -11,16 +12,27 @@ if (!(Split-Path -Path $resolvedEnvFile -IsAbsolute)) {
   $resolvedEnvFile = Join-Path $PSScriptRoot $resolvedEnvFile
 }
 
-if (!(Test-Path $resolvedEnvFile)) {
-  Write-Host "Env file not found: $resolvedEnvFile"
-  exit 1
+$resolvedFallbackEnvFile = $FallbackEnvFile
+if (!(Split-Path -Path $resolvedFallbackEnvFile -IsAbsolute)) {
+  $resolvedFallbackEnvFile = Join-Path $PSScriptRoot $resolvedFallbackEnvFile
 }
 
 function Get-EnvValue {
-  param([Parameter(Mandatory = $true)][string]$Key)
-  $line = Get-Content $resolvedEnvFile | Where-Object { $_ -match "^\s*$Key=" } | Select-Object -First 1
+  param(
+    [Parameter(Mandatory = $true)][string]$Key,
+    [Parameter(Mandatory = $true)][string]$FilePath
+  )
+  if (!(Test-Path $FilePath)) { return $null }
+  $line = Get-Content $FilePath | Where-Object { $_ -match "^\s*$Key=" } | Select-Object -First 1
   if (!$line) { return $null }
   return (($line -split "=", 2)[1]).Trim()
+}
+
+function Get-ConfigValue {
+  param([Parameter(Mandatory = $true)][string]$Key)
+  $v = Get-EnvValue -Key $Key -FilePath $resolvedEnvFile
+  if (-not [string]::IsNullOrWhiteSpace($v)) { return $v }
+  return Get-EnvValue -Key $Key -FilePath $resolvedFallbackEnvFile
 }
 
 function Test-PlaceholderValue {
@@ -43,17 +55,26 @@ function Mask-Url {
   }
 }
 
-$baseUrl = Get-EnvValue -Key "RUNPOD_BASE_URL"
+if (!(Test-Path $resolvedEnvFile) -and !(Test-Path $resolvedFallbackEnvFile)) {
+  Write-Host "Env files not found:"
+  Write-Host "  primary: $resolvedEnvFile"
+  Write-Host "  fallback: $resolvedFallbackEnvFile"
+  exit 1
+}
+
+$baseUrl = Get-ConfigValue -Key "RUNPOD_BASE_URL"
 $token = $ApiKey
 if ([string]::IsNullOrWhiteSpace($token)) {
   $token = $env:RUNPOD_API_KEY
 }
 if ([string]::IsNullOrWhiteSpace($token)) {
-  $token = Get-EnvValue -Key "RUNPOD_API_KEY"
+  $token = Get-ConfigValue -Key "RUNPOD_API_KEY"
 }
 
 if (Test-PlaceholderValue -Value $baseUrl) {
-  Write-Host "RUNPOD_BASE_URL is missing or placeholder in env file: $resolvedEnvFile"
+  Write-Host "RUNPOD_BASE_URL is missing or placeholder."
+  Write-Host "  primary: $resolvedEnvFile"
+  Write-Host "  fallback: $resolvedFallbackEnvFile"
   exit 1
 }
 

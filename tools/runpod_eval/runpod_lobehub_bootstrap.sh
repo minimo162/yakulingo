@@ -267,10 +267,10 @@ ensure_basic_auth_users() {
 
   rm -f "${LOBE_AUTH_FILE}" "${LOBE_AUTH_CREDS_FILE}"
   local i user pass
-  for i in $(seq -w 1 "${LOBE_AUTH_USER_COUNT}"); do
-    user="${LOBE_AUTH_USER_PREFIX}${i}"
+  for i in $(seq 1 "${LOBE_AUTH_USER_COUNT}"); do
+    user="$(printf "%s%02d" "${LOBE_AUTH_USER_PREFIX}" "${i}")"
     pass="$(openssl rand -base64 24 | tr -d '=+/' | cut -c1-"${LOBE_AUTH_PASSWORD_LENGTH}")"
-    if [ "${i}" = "01" ]; then
+    if [ ! -f "${LOBE_AUTH_FILE}" ]; then
       printf '%s\n' "${pass}" | htpasswd -iBc "${LOBE_AUTH_FILE}" "${user}" >/dev/null
     else
       printf '%s\n' "${pass}" | htpasswd -iB "${LOBE_AUTH_FILE}" "${user}" >/dev/null

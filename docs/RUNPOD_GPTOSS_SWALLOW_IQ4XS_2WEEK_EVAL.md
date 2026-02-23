@@ -3111,6 +3111,19 @@ mv /workspace/lobe-chat "/workspace/lobe-chat.backup.${TS}" 2>/dev/null || true
 bash /workspace/scripts/runpod_lobehub_bootstrap.sh
 ```
 
+### LobeHub復旧で `htpasswd: cannot modify file ... use '-c' to create it`
+
+症状:
+- `runpod_lobehub_bootstrap.sh` 実行の終盤で上記エラーが出る。
+
+対処:
+1. 最新の `runpod_lobehub_bootstrap.sh` に更新して再実行する（初回作成判定の不具合修正済み）。
+2. 応急処置としては認証ファイルを削除して再実行する。
+```bash
+rm -f /workspace/nginx-lobehub-auth/.htpasswd /workspace/lobehub_basic_auth_users.txt
+bash /workspace/scripts/runpod_lobehub_bootstrap.sh
+```
+
 ### `huggingface-cli: command not found` になる
 
 症状:

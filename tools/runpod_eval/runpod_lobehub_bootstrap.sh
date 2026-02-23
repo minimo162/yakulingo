@@ -373,14 +373,28 @@ health_check() {
   auth_user="${first%%:*}"
   auth_pass="${first#*:}"
 
-  local noauth_http auth_http
-  noauth_http="$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:${LOBE_AUTH_PORT}/")"
-  auth_http="$(curl -sS -L -u "${auth_user}:${auth_pass}" -o /dev/null -w '%{http_code}' "http://127.0.0.1:${LOBE_AUTH_PORT}/")"
+  local app_http noauth_http auth_http ok=0
+  for _ in $(seq 1 90); do
+    app_http="$(curl -sS -L -o /dev/null -w '%{http_code}' "http://127.0.0.1:${LOBE_PORT}/" || true)"
+    noauth_http="$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:${LOBE_AUTH_PORT}/" || true)"
+    auth_http="$(curl -sS -L -u "${auth_user}:${auth_pass}" -o /dev/null -w '%{http_code}' "http://127.0.0.1:${LOBE_AUTH_PORT}/" || true)"
 
-  log "health: ${LOBE_PORT}=$(curl -sS -L -o /dev/null -w '%{http_code}' "http://127.0.0.1:${LOBE_PORT}/")"
-  log "health: ${LOBE_AUTH_PORT} noauth=${noauth_http} auth=${auth_http}"
-  if [ "${noauth_http}" != "401" ] || [ "${auth_http}" != "200" ]; then
+    log "health: ${LOBE_PORT}=${app_http}"
+    log "health: ${LOBE_AUTH_PORT} noauth=${noauth_http} auth=${auth_http}"
+    if [[ "${app_http}" =~ ^[23][0-9][0-9]$ ]] &&
+      [ "${noauth_http}" = "401" ] &&
+      [[ "${auth_http}" =~ ^[23][0-9][0-9]$ ]]; then
+      ok=1
+      break
+    fi
+    sleep 2
+  done
+
+  if [ "${ok}" -ne 1 ]; then
     log "ERROR: unexpected health status for lobehub auth proxy"
+    curl -sS "http://127.0.0.1:${LOBE_PORT}/" -o /tmp/lobehub-3210-error.html || true
+    log "hint: /tmp/lobehub-3210-error.html and ${LOG_DIR}/lobehub-dev.log"
+    tail -n 120 "${LOG_DIR}/lobehub-dev.log" || true
     exit 1
   fi
 }

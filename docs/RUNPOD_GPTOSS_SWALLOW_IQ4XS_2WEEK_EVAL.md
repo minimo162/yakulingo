@@ -3146,6 +3146,22 @@ rm -f /workspace/nginx-lobehub-auth/.htpasswd /workspace/lobehub_basic_auth_user
 bash /workspace/scripts/runpod_lobehub_bootstrap.sh
 ```
 
+### LobeHub復旧の終盤で `health: 3210=500` / `auth=500` になる
+
+症状:
+- `runpod_lobehub_bootstrap.sh` の最後でヘルスチェックが `500` になり失敗する。
+
+背景:
+- `next dev` 初期コンパイル中に一時的な `500` が返ることがある。
+
+対処:
+1. 最新の `runpod_lobehub_bootstrap.sh` を使う（リトライ付きヘルスチェック対応済み）。
+2. 失敗時は以下を確認する。
+```bash
+tail -n 120 /workspace/logs/lobehub-dev.log
+head -n 40 /tmp/lobehub-3210-error.html
+```
+
 ### `huggingface-cli: command not found` になる
 
 症状:

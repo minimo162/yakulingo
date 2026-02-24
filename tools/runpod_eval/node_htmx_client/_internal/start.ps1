@@ -147,6 +147,30 @@ function Convert-RunPodBaseUrlToMcpUrl {
   }
 }
 
+function Test-IsLoopbackUrl {
+  param([string]$Url)
+  if ([string]::IsNullOrWhiteSpace($Url)) { return $false }
+  try {
+    $uri = [Uri]$Url
+    $host = "$($uri.Host)".Trim().ToLowerInvariant()
+    return @("127.0.0.1", "localhost", "::1", "[::1]") -contains $host
+  } catch {
+    return $false
+  }
+}
+
+function Test-IsRunPodProxyUrl {
+  param([string]$Url)
+  if ([string]::IsNullOrWhiteSpace($Url)) { return $false }
+  try {
+    $uri = [Uri]$Url
+    $host = "$($uri.Host)".Trim().ToLowerInvariant()
+    return $host.EndsWith(".proxy.runpod.net")
+  } catch {
+    return $false
+  }
+}
+
 function Resolve-NodeExe {
   param([Parameter(Mandatory = $true)][string]$BaseDir)
   $runtimeNode = Join-Path $BaseDir ".runtime\node\node.exe"
@@ -744,11 +768,21 @@ $playwrightRemoteMcpHeadersJson = Get-ConfigValue -Key "PLAYWRIGHT_REMOTE_MCP_HE
 if ([string]::IsNullOrWhiteSpace($playwrightRemoteMcpHeadersJson)) {
   $playwrightRemoteMcpHeadersJson = ""
 }
-if ($playwrightRemoteMcpEnabledNormalized -and (Test-PlaceholderValue -Value $playwrightRemoteMcpUrl) -and $playwrightRemoteMcpAutoFromRunPodNormalized) {
-  $derivedMcpUrl = Convert-RunPodBaseUrlToMcpUrl -BaseUrl $baseUrl
-  if (-not [string]::IsNullOrWhiteSpace($derivedMcpUrl)) {
-    $playwrightRemoteMcpUrl = $derivedMcpUrl
-    Write-Host "Auto-derived PLAYWRIGHT_REMOTE_MCP_URL from RUNPOD_BASE_URL: $(Mask-Url $playwrightRemoteMcpUrl)"
+if ($playwrightRemoteMcpEnabledNormalized -and $playwrightRemoteMcpAutoFromRunPodNormalized) {
+  $shouldDeriveRemoteMcpUrl = $false
+  if (Test-PlaceholderValue -Value $playwrightRemoteMcpUrl) {
+    $shouldDeriveRemoteMcpUrl = $true
+  } elseif ((Test-IsLoopbackUrl -Url $playwrightRemoteMcpUrl) -and (Test-IsRunPodProxyUrl -Url $baseUrl)) {
+    # Loopback MCP URL often fails when responses endpoint is remote.
+    # Prefer proxy /mcp route derived from RUNPOD_BASE_URL.
+    $shouldDeriveRemoteMcpUrl = $true
+  }
+  if ($shouldDeriveRemoteMcpUrl) {
+    $derivedMcpUrl = Convert-RunPodBaseUrlToMcpUrl -BaseUrl $baseUrl
+    if (-not [string]::IsNullOrWhiteSpace($derivedMcpUrl)) {
+      $playwrightRemoteMcpUrl = $derivedMcpUrl
+      Write-Host "Auto-derived PLAYWRIGHT_REMOTE_MCP_URL from RUNPOD_BASE_URL: $(Mask-Url $playwrightRemoteMcpUrl)"
+    }
   }
 }
 $playwrightRemoteMcpEnabledFlag = "0"
@@ -1123,6 +1157,16 @@ if ($playwrightRemoteMcpEnabledNormalized -and -not [string]::IsNullOrWhiteSpace
     server_label = $playwrightRemoteMcpServerLabel
     server_url = $playwrightRemoteMcpUrl
     allowed_tools = $pwAllowedTools
+  }
+  if ([string]::IsNullOrWhiteSpace($playwrightRemoteMcpHeadersJson) -and (Test-IsRunPodProxyUrl -Url $playwrightRemoteMcpUrl)) {
+    if (-not [string]::IsNullOrWhiteSpace($runPodApiKey)) {
+      $autoHeaders = @{
+        Authorization = "Bearer $runPodApiKey"
+        "x-api-key" = $runPodApiKey
+      }
+      $playwrightRemoteMcpHeadersJson = ($autoHeaders | ConvertTo-Json -Compress -Depth 4)
+      Write-Host "Auto-injected MCP auth headers for RunPod proxy URL."
+    }
   }
   if (-not [string]::IsNullOrWhiteSpace($playwrightRemoteMcpHeadersJson)) {
     try {

@@ -142,6 +142,10 @@ RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_FALLBACK_ENABLED = _get_bool_env(
     "RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_FALLBACK_ENABLED",
     True,
 )
+RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_PRIMARY = _get_bool_env(
+    "RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_PRIMARY",
+    True,
+)
 RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_URL = (
     os.getenv("RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_URL", "http://localhost:8931/mcp")
     or "http://localhost:8931/mcp"
@@ -1507,32 +1511,37 @@ async def _run_runpod_lmstudio_chat_plugin(prompt: str, *, base_url: str, live_w
         "stream": False,
         "integrations": [plugin_id],
     }
+    allowed_tools = _parse_csv(RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_ALLOWED_TOOLS_RAW)
+    ephemeral_payload = {
+        "model": DEFAULT_MODEL,
+        "input": prompt,
+        "stream": False,
+        "integrations": [
+            {
+                "type": "ephemeral_mcp",
+                "server_label": RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_LABEL,
+                "server_url": RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_URL,
+                "allowed_tools": allowed_tools,
+            }
+        ],
+    }
     headers = _runpod_auth_headers(include_content_type=True)
     timeout = httpx.Timeout(connect=20.0, read=120.0, write=30.0, pool=20.0)
     verify_setting = _runpod_httpx_verify_setting()
     async with httpx.AsyncClient(timeout=timeout, verify=verify_setting, trust_env=False) as client:
-        response = await client.post(chat_url, headers=headers, json=payload)
-        if (
-            RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_FALLBACK_ENABLED
-            and response.status_code in {400, 401, 403}
-        ):
-            preview = response.text[:1200] if response.text else ""
-            if "permission denied to use plugin" in preview.lower():
-                allowed_tools = _parse_csv(RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_ALLOWED_TOOLS_RAW)
-                ephemeral_payload = {
-                    "model": DEFAULT_MODEL,
-                    "input": prompt,
-                    "stream": False,
-                    "integrations": [
-                        {
-                            "type": "ephemeral_mcp",
-                            "server_label": RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_LABEL,
-                            "server_url": RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_URL,
-                            "allowed_tools": allowed_tools,
-                        }
-                    ],
-                }
-                response = await client.post(chat_url, headers=headers, json=ephemeral_payload)
+        if RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_PRIMARY:
+            response = await client.post(chat_url, headers=headers, json=ephemeral_payload)
+            if response.status_code >= 400:
+                response = await client.post(chat_url, headers=headers, json=payload)
+        else:
+            response = await client.post(chat_url, headers=headers, json=payload)
+            if (
+                RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_FALLBACK_ENABLED
+                and response.status_code in {400, 401, 403}
+            ):
+                preview = response.text[:1200] if response.text else ""
+                if "permission denied to use plugin" in preview.lower():
+                    response = await client.post(chat_url, headers=headers, json=ephemeral_payload)
     if response.status_code >= 400:
         preview = response.text[:800] if response.text else ""
         raise RuntimeError(f"lmstudio chat plugin failed: HTTP {response.status_code}. {preview}")

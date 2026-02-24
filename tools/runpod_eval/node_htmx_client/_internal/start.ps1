@@ -764,6 +764,15 @@ $playwrightRemoteMcpAllowedTools = Get-ConfigValue -Key "PLAYWRIGHT_REMOTE_MCP_A
 if ([string]::IsNullOrWhiteSpace($playwrightRemoteMcpAllowedTools)) {
   $playwrightRemoteMcpAllowedTools = "browser_navigate,browser_snapshot"
 }
+$playwrightRemoteMcpPreferLocalhost = Get-ConfigValue -Key "PLAYWRIGHT_REMOTE_MCP_PREFER_LOCALHOST" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($playwrightRemoteMcpPreferLocalhost)) { $playwrightRemoteMcpPreferLocalhost = "1" }
+$playwrightRemoteMcpPreferLocalhostNormalized = @("1", "true", "yes", "on") -contains ($playwrightRemoteMcpPreferLocalhost.Trim().ToLowerInvariant())
+$playwrightRemoteMcpLocalPort = Get-ConfigValue -Key "PLAYWRIGHT_REMOTE_MCP_LOCAL_PORT" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($playwrightRemoteMcpLocalPort)) { $playwrightRemoteMcpLocalPort = "8931" }
+$playwrightRemoteMcpLocalUrl = Get-ConfigValue -Key "PLAYWRIGHT_REMOTE_MCP_LOCAL_URL" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($playwrightRemoteMcpLocalUrl)) {
+  $playwrightRemoteMcpLocalUrl = "http://localhost:$playwrightRemoteMcpLocalPort/mcp"
+}
 $playwrightRemoteMcpHeadersJson = Get-ConfigValue -Key "PLAYWRIGHT_REMOTE_MCP_HEADERS_JSON" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($playwrightRemoteMcpHeadersJson)) {
   $playwrightRemoteMcpHeadersJson = ""
@@ -783,6 +792,17 @@ if ($playwrightRemoteMcpEnabledNormalized -and $playwrightRemoteMcpAutoFromRunPo
       $playwrightRemoteMcpUrl = $derivedMcpUrl
       Write-Host "Auto-derived PLAYWRIGHT_REMOTE_MCP_URL from RUNPOD_BASE_URL: $(Mask-Url $playwrightRemoteMcpUrl)"
     }
+  }
+}
+$preferLocalhostMcp = (
+  $playwrightRemoteMcpEnabledNormalized -and
+  $playwrightRemoteMcpPreferLocalhostNormalized -and
+  (Test-IsRunPodProxyUrl -Url $baseUrl)
+)
+if ($preferLocalhostMcp) {
+  if (-not [string]::IsNullOrWhiteSpace($playwrightRemoteMcpLocalUrl)) {
+    $playwrightRemoteMcpUrl = $playwrightRemoteMcpLocalUrl.Trim()
+    Write-Host "Using localhost MCP URL for RunPod-side connector: $playwrightRemoteMcpUrl"
   }
 }
 $playwrightRemoteMcpEnabledFlag = "0"

@@ -1233,6 +1233,14 @@ $runPodLmstudioChatPluginForLiveWebOnly = Get-ConfigValue -Key "RUNPOD_LMSTUDIO_
 if ([string]::IsNullOrWhiteSpace($runPodLmstudioChatPluginForLiveWebOnly)) { $runPodLmstudioChatPluginForLiveWebOnly = "1" }
 $runPodLmstudioChatPluginId = Get-ConfigValue -Key "RUNPOD_LMSTUDIO_CHAT_PLUGIN_ID" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($runPodLmstudioChatPluginId)) { $runPodLmstudioChatPluginId = "mcp/playwright" }
+$runPodLmstudioChatEphemeralMcpFallbackEnabled = Get-ConfigValue -Key "RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_FALLBACK_ENABLED" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($runPodLmstudioChatEphemeralMcpFallbackEnabled)) { $runPodLmstudioChatEphemeralMcpFallbackEnabled = "1" }
+$runPodLmstudioChatEphemeralMcpUrl = Get-ConfigValue -Key "RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_URL" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($runPodLmstudioChatEphemeralMcpUrl)) { $runPodLmstudioChatEphemeralMcpUrl = "http://localhost:8931/mcp" }
+$runPodLmstudioChatEphemeralMcpLabel = Get-ConfigValue -Key "RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_LABEL" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($runPodLmstudioChatEphemeralMcpLabel)) { $runPodLmstudioChatEphemeralMcpLabel = "playwright" }
+$runPodLmstudioChatEphemeralMcpAllowedTools = Get-ConfigValue -Key "RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_ALLOWED_TOOLS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($runPodLmstudioChatEphemeralMcpAllowedTools)) { $runPodLmstudioChatEphemeralMcpAllowedTools = "browser_navigate,browser_snapshot,browser_click,browser_type,browser_wait_for" }
 
 if ($localMcpEnabledNormalized) {
   $hasMcpModule = $false
@@ -1376,6 +1384,10 @@ $envVars = @{
   "RUNPOD_LMSTUDIO_CHAT_PLUGIN_ENABLED" = $runPodLmstudioChatPluginEnabled
   "RUNPOD_LMSTUDIO_CHAT_PLUGIN_FOR_LIVE_WEB_ONLY" = $runPodLmstudioChatPluginForLiveWebOnly
   "RUNPOD_LMSTUDIO_CHAT_PLUGIN_ID" = $runPodLmstudioChatPluginId
+  "RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_FALLBACK_ENABLED" = $runPodLmstudioChatEphemeralMcpFallbackEnabled
+  "RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_URL" = $runPodLmstudioChatEphemeralMcpUrl
+  "RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_LABEL" = $runPodLmstudioChatEphemeralMcpLabel
+  "RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_ALLOWED_TOOLS" = $runPodLmstudioChatEphemeralMcpAllowedTools
   "LOCAL_MCP_WEATHER_ENABLED" = $localMcpEnabledFlag
   "LOCAL_MCP_WEATHER_BIND" = $localMcpBind
   "LOCAL_MCP_WEATHER_PORT" = $localMcpPort

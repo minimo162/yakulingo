@@ -138,6 +138,25 @@ RUNPOD_LMSTUDIO_CHAT_PLUGIN_FOR_LIVE_WEB_ONLY = _get_bool_env(
 RUNPOD_LMSTUDIO_CHAT_PLUGIN_ID = (
     os.getenv("RUNPOD_LMSTUDIO_CHAT_PLUGIN_ID", "mcp/playwright") or "mcp/playwright"
 ).strip()
+RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_FALLBACK_ENABLED = _get_bool_env(
+    "RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_FALLBACK_ENABLED",
+    True,
+)
+RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_URL = (
+    os.getenv("RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_URL", "http://localhost:8931/mcp")
+    or "http://localhost:8931/mcp"
+).strip()
+RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_LABEL = (
+    os.getenv("RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_LABEL", "playwright")
+    or "playwright"
+).strip()
+RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_ALLOWED_TOOLS_RAW = (
+    os.getenv(
+        "RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_ALLOWED_TOOLS",
+        "browser_navigate,browser_snapshot,browser_click,browser_type,browser_wait_for",
+    )
+    or ""
+).strip()
 RUNPOD_TLS_VERIFY = _get_bool_env("RUNPOD_TLS_VERIFY", True)
 RUNPOD_CA_BUNDLE = (os.getenv("RUNPOD_CA_BUNDLE", "") or "").strip()
 RUNPOD_TLS_USE_SYSTEM_STORE = _get_bool_env("RUNPOD_TLS_USE_SYSTEM_STORE", True)
@@ -1390,6 +1409,33 @@ def _extract_lmstudio_chat_text(payload: dict) -> str:
     direct = str(payload.get("content", "") or "").strip()
     if direct:
         return direct
+    output_items = payload.get("output")
+    if isinstance(output_items, list):
+        chunks: list[str] = []
+        for item in output_items:
+            if not isinstance(item, dict):
+                continue
+            item_type = str(item.get("type", "") or "").strip().lower()
+            if item_type != "message":
+                continue
+            content = item.get("content")
+            if isinstance(content, str):
+                text = content.strip()
+                if text:
+                    chunks.append(text)
+                    continue
+            if isinstance(content, list):
+                for block in content:
+                    if isinstance(block, str):
+                        text = block.strip()
+                        if text:
+                            chunks.append(text)
+                    elif isinstance(block, dict):
+                        text = str(block.get("text", "") or "").strip()
+                        if text:
+                            chunks.append(text)
+        if chunks:
+            return "\n".join(chunks).strip()
     choices = payload.get("choices")
     if not isinstance(choices, list):
         return ""
@@ -1437,6 +1483,15 @@ def _build_lmstudio_chat_url(base_url: str) -> str:
         return ""
 
 
+def _parse_csv(value: str) -> list[str]:
+    rows: list[str] = []
+    for item in str(value or "").replace(";", ",").split(","):
+        row = str(item or "").strip()
+        if row:
+            rows.append(row)
+    return rows
+
+
 async def _run_runpod_lmstudio_chat_plugin(prompt: str, *, base_url: str, live_web_query: bool) -> str:
     chat_url = _build_lmstudio_chat_url(base_url)
     if not chat_url:
@@ -1448,15 +1503,36 @@ async def _run_runpod_lmstudio_chat_plugin(prompt: str, *, base_url: str, live_w
         return ""
     payload = {
         "model": DEFAULT_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
+        "input": prompt,
         "stream": False,
-        "integrations": [{"type": "plugin", "id": plugin_id}],
+        "integrations": [plugin_id],
     }
     headers = _runpod_auth_headers(include_content_type=True)
     timeout = httpx.Timeout(connect=20.0, read=120.0, write=30.0, pool=20.0)
     verify_setting = _runpod_httpx_verify_setting()
     async with httpx.AsyncClient(timeout=timeout, verify=verify_setting, trust_env=False) as client:
         response = await client.post(chat_url, headers=headers, json=payload)
+        if (
+            RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_FALLBACK_ENABLED
+            and response.status_code in {400, 401, 403}
+        ):
+            preview = response.text[:1200] if response.text else ""
+            if "permission denied to use plugin" in preview.lower():
+                allowed_tools = _parse_csv(RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_ALLOWED_TOOLS_RAW)
+                ephemeral_payload = {
+                    "model": DEFAULT_MODEL,
+                    "input": prompt,
+                    "stream": False,
+                    "integrations": [
+                        {
+                            "type": "ephemeral_mcp",
+                            "server_label": RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_LABEL,
+                            "server_url": RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_URL,
+                            "allowed_tools": allowed_tools,
+                        }
+                    ],
+                }
+                response = await client.post(chat_url, headers=headers, json=ephemeral_payload)
     if response.status_code >= 400:
         preview = response.text[:800] if response.text else ""
         raise RuntimeError(f"lmstudio chat plugin failed: HTTP {response.status_code}. {preview}")

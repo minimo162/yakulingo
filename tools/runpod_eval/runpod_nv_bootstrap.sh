@@ -343,9 +343,7 @@ http {
             if (\$http_x_api_key = "${token}") { set \$auth_ok 1; }
             if (\$http_authorization = "Bearer ${token}") { set \$auth_ok 1; }
             if (\$auth_ok = 0) { return 401; }
-
-            rewrite ^/mcp/(.*)$ /\$1 break;
-            proxy_pass http://127.0.0.1:${PLAYWRIGHT_MCP_PORT};
+            proxy_pass http://127.0.0.1:${PLAYWRIGHT_MCP_PORT}/mcp;
             proxy_http_version 1.1;
             # Playwright MCP validates Host and only accepts localhost:<port>.
             proxy_set_header Host localhost:${PLAYWRIGHT_MCP_PORT};

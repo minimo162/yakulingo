@@ -133,15 +133,15 @@ function Convert-RunPodBaseUrlToMcpUrl {
       $path = ($path -replace "/v1$", "")
     }
     if ($path -eq "/") {
-      $path = "/mcp/"
+      $path = "/mcp"
     } else {
-      $path = "$path/mcp/"
+      $path = "$path/mcp"
     }
     $builder = New-Object System.UriBuilder($uri)
     $builder.Path = $path
     $builder.Query = ""
     $builder.Fragment = ""
-    return $builder.Uri.AbsoluteUri
+    return $builder.Uri.AbsoluteUri.TrimEnd("/")
   } catch {
     return $null
   }

@@ -330,7 +330,8 @@ http {
             rewrite ^/mcp/(.*)$ /\$1 break;
             proxy_pass http://127.0.0.1:${PLAYWRIGHT_MCP_PORT};
             proxy_http_version 1.1;
-            proxy_set_header Host \$host;
+            # Playwright MCP validates Host and only accepts localhost:<port>.
+            proxy_set_header Host localhost:${PLAYWRIGHT_MCP_PORT};
             proxy_set_header X-Real-IP \$remote_addr;
             proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto \$scheme;

@@ -30,6 +30,7 @@ MODEL_KEY_RETRY_MAX="${MODEL_KEY_RETRY_MAX:-20}"
 MODEL_KEY_RETRY_DELAY_SEC="${MODEL_KEY_RETRY_DELAY_SEC:-3}"
 MODEL_KEY_REQUIRED="${MODEL_KEY_REQUIRED:-0}"
 ENABLE_PLAYWRIGHT_MCP="${ENABLE_PLAYWRIGHT_MCP:-1}"
+PLAYWRIGHT_MCP_HOST="${PLAYWRIGHT_MCP_HOST:-127.0.0.1}"
 PLAYWRIGHT_MCP_PORT="${PLAYWRIGHT_MCP_PORT:-8931}"
 PLAYWRIGHT_MCP_REQUIRED="${PLAYWRIGHT_MCP_REQUIRED:-0}"
 
@@ -262,6 +263,7 @@ MODEL_KEY_RETRY_MAX=${MODEL_KEY_RETRY_MAX}
 MODEL_KEY_RETRY_DELAY_SEC=${MODEL_KEY_RETRY_DELAY_SEC}
 MODEL_KEY_REQUIRED=${MODEL_KEY_REQUIRED}
 ENABLE_PLAYWRIGHT_MCP=${ENABLE_PLAYWRIGHT_MCP}
+PLAYWRIGHT_MCP_HOST=${PLAYWRIGHT_MCP_HOST}
 PLAYWRIGHT_MCP_PORT=${PLAYWRIGHT_MCP_PORT}
 PLAYWRIGHT_MCP_REQUIRED=${PLAYWRIGHT_MCP_REQUIRED}
 EOF
@@ -361,6 +363,7 @@ MODEL_KEY_RETRY_MAX="${MODEL_KEY_RETRY_MAX:-20}"
 MODEL_KEY_RETRY_DELAY_SEC="${MODEL_KEY_RETRY_DELAY_SEC:-3}"
 MODEL_KEY_REQUIRED="${MODEL_KEY_REQUIRED:-0}"
 ENABLE_PLAYWRIGHT_MCP="${ENABLE_PLAYWRIGHT_MCP:-1}"
+PLAYWRIGHT_MCP_HOST="${PLAYWRIGHT_MCP_HOST:-127.0.0.1}"
 PLAYWRIGHT_MCP_PORT="${PLAYWRIGHT_MCP_PORT:-8931}"
 PLAYWRIGHT_MCP_REQUIRED="${PLAYWRIGHT_MCP_REQUIRED:-0}"
 PLAYWRIGHT_MCP_LOG="${PLAYWRIGHT_MCP_LOG:-/workspace/playwright-mcp.log}"
@@ -400,12 +403,15 @@ start_playwright_mcp() {
   fi
 
   pkill -f '@playwright/mcp' >/dev/null 2>&1 || true
-  nohup npx -y @playwright/mcp@latest --port "${PLAYWRIGHT_MCP_PORT}" > "${PLAYWRIGHT_MCP_LOG}" 2>&1 &
+  nohup npx -y @playwright/mcp@latest --host "${PLAYWRIGHT_MCP_HOST}" --port "${PLAYWRIGHT_MCP_PORT}" > "${PLAYWRIGHT_MCP_LOG}" 2>&1 &
 
   local ready=0
   for _ in $(seq 1 30); do
     local code
     code="$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:${PLAYWRIGHT_MCP_PORT}/" || true)"
+    if [ "${code}" = "000" ] || [ -z "${code}" ]; then
+      code="$(curl -sS -o /dev/null -w '%{http_code}' "http://localhost:${PLAYWRIGHT_MCP_PORT}/" || true)"
+    fi
     if [ "${code}" != "000" ] && [ -n "${code}" ]; then
       ready=1
       break
@@ -422,7 +428,7 @@ start_playwright_mcp() {
     return 0
   fi
 
-  echo "[INFO] Playwright MCP started (port=${PLAYWRIGHT_MCP_PORT}, log=${PLAYWRIGHT_MCP_LOG})"
+  echo "[INFO] Playwright MCP started (host=${PLAYWRIGHT_MCP_HOST}, port=${PLAYWRIGHT_MCP_PORT}, log=${PLAYWRIGHT_MCP_LOG})"
   return 0
 }
 

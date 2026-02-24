@@ -861,6 +861,22 @@ if ($localMcpEnabledNormalized) {
 
 $appTimeZone = Get-ConfigValue -Key "APP_TIME_ZONE" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($appTimeZone)) { $appTimeZone = "Asia/Tokyo" }
+$weatherVerifiedFetchEnabled = Get-ConfigValue -Key "WEATHER_VERIFIED_FETCH_ENABLED" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($weatherVerifiedFetchEnabled)) { $weatherVerifiedFetchEnabled = "1" }
+$weatherVerifiedFetchMode = Get-ConfigValue -Key "WEATHER_VERIFIED_FETCH_MODE" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($weatherVerifiedFetchMode)) { $weatherVerifiedFetchMode = "strict" }
+$weatherDefaultLocation = Get-ConfigValue -Key "WEATHER_DEFAULT_LOCATION" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($weatherDefaultLocation)) { $weatherDefaultLocation = "広島" }
+$weatherOpenMeteoTimeoutSec = Get-ConfigValue -Key "WEATHER_OPENMETEO_TIMEOUT_SEC" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($weatherOpenMeteoTimeoutSec)) { $weatherOpenMeteoTimeoutSec = "20" }
+$weatherHttpTrustEnv = Get-ConfigValue -Key "WEATHER_HTTP_TRUST_ENV" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($weatherHttpTrustEnv)) { $weatherHttpTrustEnv = "1" }
+$weatherModelIntentEnabled = Get-ConfigValue -Key "WEATHER_MODEL_INTENT_ENABLED" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($weatherModelIntentEnabled)) { $weatherModelIntentEnabled = "1" }
+$playwrightModelQueryEnabled = Get-ConfigValue -Key "PLAYWRIGHT_MODEL_QUERY_ENABLED" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($playwrightModelQueryEnabled)) { $playwrightModelQueryEnabled = "1" }
+$progressLogMode = Get-ConfigValue -Key "PROGRESS_LOG_MODE" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($progressLogMode)) { $progressLogMode = "concise" }
 
 $timeoutMs = Get-ConfigValue -Key "RUNPOD_REQUEST_TIMEOUT_MS" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($timeoutMs)) { $timeoutMs = "120000" }
@@ -1288,6 +1304,14 @@ $envVars = @{
   "APP_PORT"                = $appPort
   "APP_BIND"                = $appBind
   "APP_TIME_ZONE"           = $appTimeZone
+  "WEATHER_VERIFIED_FETCH_ENABLED" = $weatherVerifiedFetchEnabled
+  "WEATHER_VERIFIED_FETCH_MODE" = $weatherVerifiedFetchMode
+  "WEATHER_DEFAULT_LOCATION" = $weatherDefaultLocation
+  "WEATHER_OPENMETEO_TIMEOUT_SEC" = $weatherOpenMeteoTimeoutSec
+  "WEATHER_HTTP_TRUST_ENV" = $weatherHttpTrustEnv
+  "WEATHER_MODEL_INTENT_ENABLED" = $weatherModelIntentEnabled
+  "PLAYWRIGHT_MODEL_QUERY_ENABLED" = $playwrightModelQueryEnabled
+  "PROGRESS_LOG_MODE" = $progressLogMode
   "RUNPOD_REQUEST_TIMEOUT_MS" = $timeoutMs
   "RUNPOD_HTTP_RETRY_MAX_ATTEMPTS" = $runPodRetryMaxAttempts
   "RUNPOD_HTTP_RETRY_DELAY_MS" = $runPodRetryDelayMs

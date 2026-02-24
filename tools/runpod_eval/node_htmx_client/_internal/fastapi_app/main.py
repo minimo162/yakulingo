@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 import html
 import json
 import os
@@ -68,6 +68,27 @@ AGENT_BACKEND = "codex_cli"
 
 APP_NAME = "LocaLingo"
 APP_TIME_ZONE = (os.getenv("APP_TIME_ZONE", "Asia/Tokyo") or "Asia/Tokyo").strip()
+WEATHER_VERIFIED_FETCH_ENABLED = _get_bool_env("WEATHER_VERIFIED_FETCH_ENABLED", True)
+WEATHER_VERIFIED_FETCH_MODE = _get_enum_env(
+    "WEATHER_VERIFIED_FETCH_MODE",
+    "strict",
+    {"off", "advisory", "strict"},
+)
+WEATHER_DEFAULT_LOCATION = (os.getenv("WEATHER_DEFAULT_LOCATION", "広島") or "広島").strip()
+WEATHER_OPENMETEO_TIMEOUT_SEC = _get_int_env(
+    "WEATHER_OPENMETEO_TIMEOUT_SEC",
+    20,
+    minimum=5,
+    maximum=120,
+)
+WEATHER_HTTP_TRUST_ENV = _get_bool_env("WEATHER_HTTP_TRUST_ENV", True)
+WEATHER_MODEL_INTENT_ENABLED = _get_bool_env("WEATHER_MODEL_INTENT_ENABLED", True)
+PLAYWRIGHT_MODEL_QUERY_ENABLED = _get_bool_env("PLAYWRIGHT_MODEL_QUERY_ENABLED", True)
+PROGRESS_LOG_MODE = _get_enum_env(
+    "PROGRESS_LOG_MODE",
+    "concise",
+    {"concise", "verbose", "off"},
+)
 DEFAULT_MODEL = (os.getenv("DEFAULT_MODEL", "gpt-oss-swallow-120b-iq4xs") or "gpt-oss-swallow-120b-iq4xs").strip()
 # Codex exec model defaults to the actual RunPod/LM Studio model ID.
 # (can be overridden explicitly via CODEX_EXEC_MODEL when needed)
@@ -341,10 +362,56 @@ MINIMAL_MODEL_INSTRUCTIONS_TEXT = (
     "You are running against an OpenAI-compatible Responses API endpoint.\n"
     "Be concise, accurate, and keep focus on the user's latest request.\n"
     "Use tools when needed, and preserve context across turns.\n"
+    "For requests that need current/latest/real-time facts, prefer tool usage over memory.\n"
+    "Before each external tool call, send a short one-line preamble of what you will check.\n"
+    "After tool usage, report what was checked and when, and avoid unsupported claims.\n"
+    "If tools are unavailable, explicitly state limits instead of guessing.\n"
     "Do not expose internal planning, tool selection rationale, or sandbox details.\n"
     "Do not mention AGENTS.md or skill names unless the user explicitly asks.\n"
     "If the user asks time-sensitive questions (today/latest/now), verify recency.\n"
 )
+
+TOOL_USE_POLICY_BASE_TEXT = (
+    "Tool-use policy:\n"
+    "- Decide naturally whether tools are needed based on the user query.\n"
+    "- For latest/current/real-time/external facts, use available tools first.\n"
+    "- Before each tool call, give one short action preamble in the answer stream.\n"
+    "- After each tool call, include a short observation with source/date if available.\n"
+    "- If tool execution fails or is unavailable, say so clearly and do not fabricate data.\n"
+    "- Keep this as concise action logs, not internal chain-of-thought.\n"
+    "- Final answer must be user-facing only. Do not include Step/Observation/tool-call transcripts.\n"
+    "- Put process updates in short preambles only; keep the final answer clean and direct.\n"
+    "- This UI already shows progress logs separately, so final answer must contain only results.\n"
+)
+
+
+def _friendly_trace_wait_message(elapsed_sec: int) -> str:
+    steps = [
+        "依頼内容を解析し、外部参照が必要かを判断しています。",
+        "参照先サイトを選び、アクセスを開始しています。",
+        "ページ内容を取得しています。",
+        "取得した内容の日付・更新時刻を確認しています。",
+        "取得結果を要約して回答を組み立てています。",
+    ]
+    index = min(max(0, int(elapsed_sec) // 6), len(steps) - 1)
+    return steps[index]
+
+
+def _progress_log_allowed() -> bool:
+    return PROGRESS_LOG_MODE != "off"
+
+
+def _progress_log_verbose() -> bool:
+    return PROGRESS_LOG_MODE == "verbose"
+
+
+def _progress_tool_card(meta: str, body: str, *, is_error: bool = False) -> str:
+    return _render_tool_card(
+        title="進行",
+        meta=str(meta or "").strip(),
+        body=str(body or "").strip(),
+        is_error=is_error,
+    )
 
 
 def _normalize_base_url(raw_url: str) -> str:
@@ -1224,6 +1291,343 @@ def _looks_like_no_network_answer(text: str) -> bool:
     return any(marker in normalized for marker in markers)
 
 
+def _prompt_likely_weather_query(prompt: str) -> bool:
+    text = str(prompt or "").strip().lower()
+    if not text:
+        return False
+    markers = (
+        "weather",
+        "forecast",
+        "天気",
+        "天候",
+        "気温",
+        "降水",
+        "雨",
+    )
+    return any(marker in text for marker in markers)
+
+
+def _extract_weather_location(prompt: str) -> str:
+    text = str(prompt or "").strip()
+    if not text:
+        return WEATHER_DEFAULT_LOCATION
+    patterns = (
+        r"([^\s、。,.!?]+?)の天気",
+        r"([^\s、。,.!?]+?)\s*(?:weather|forecast)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            value = str(match.group(1) or "").strip()
+            if value:
+                return value
+    if re.search(r"hiroshima|広島", text, flags=re.IGNORECASE):
+        return "広島"
+    return WEATHER_DEFAULT_LOCATION
+
+
+def _normalize_location_query(raw_location: str) -> str:
+    value = str(raw_location or "").strip()
+    if not value:
+        return ""
+    # Remove typical temporal/context prefixes for JP prompts (e.g. "今日の広島").
+    value = re.sub(
+        r"^(?:今日|本日|明日|明後日|きょう|あした|あさって|現在|今夜|今朝|今週|明日の?)の?",
+        "",
+        value,
+        flags=re.IGNORECASE,
+    ).strip()
+    # Remove trailing weather-related words.
+    value = re.sub(
+        r"(?:の)?(?:天気|天候|気温|予報|天気予報|週間予報|降水確率)$",
+        "",
+        value,
+        flags=re.IGNORECASE,
+    ).strip()
+    value = re.sub(r"[、。,.!?\s]+$", "", value).strip()
+    return value
+
+
+def _build_location_candidates(raw_location: str) -> list[str]:
+    base = _normalize_location_query(raw_location)
+    rows: list[str] = []
+    seen: set[str] = set()
+
+    def add(value: str) -> None:
+        v = str(value or "").strip()
+        if not v:
+            return
+        k = v.lower()
+        if k in seen:
+            return
+        seen.add(k)
+        rows.append(v)
+
+    add(raw_location)
+    add(base)
+    if base and not re.search(r"(県|都|府|市|区)$", base):
+        add(f"{base}市")
+        add(f"{base}県")
+    if re.search(r"広島", base or raw_location):
+        add("広島")
+        add("広島市")
+        add("Hiroshima")
+        add("Hiroshima, JP")
+    add(WEATHER_DEFAULT_LOCATION)
+    return rows
+
+
+def _weather_code_to_ja(code: int | None) -> str:
+    mapping = {
+        0: "快晴",
+        1: "晴れ",
+        2: "晴れ時々曇り",
+        3: "曇り",
+        45: "霧",
+        48: "霧",
+        51: "弱い霧雨",
+        53: "霧雨",
+        55: "強い霧雨",
+        61: "弱い雨",
+        63: "雨",
+        65: "強い雨",
+        71: "弱い雪",
+        73: "雪",
+        75: "強い雪",
+        80: "にわか雨",
+        81: "にわか雨",
+        82: "強いにわか雨",
+        95: "雷雨",
+    }
+    if code is None:
+        return "不明"
+    return mapping.get(int(code), f"weather_code={int(code)}")
+
+
+def _as_float(value: object) -> float | None:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
+def _as_int(value: object) -> int | None:
+    try:
+        if value is None:
+            return None
+        return int(round(float(value)))
+    except Exception:
+        return None
+
+
+def _pick_daily_value(daily: dict, key: str, index: int = 0) -> object:
+    series = daily.get(key)
+    if isinstance(series, list) and len(series) > index:
+        return series[index]
+    return None
+
+
+async def _fetch_verified_weather_snapshot(
+    location: str,
+    *,
+    target_date_local: str = "",
+    target_time_local: str = "",
+    day_label: str = "今日",
+) -> dict:
+    geocode_url = "https://geocoding-api.open-meteo.com/v1/search"
+    forecast_url = "https://api.open-meteo.com/v1/forecast"
+    timeout = httpx.Timeout(
+        connect=float(WEATHER_OPENMETEO_TIMEOUT_SEC),
+        read=float(WEATHER_OPENMETEO_TIMEOUT_SEC),
+        write=max(5.0, float(WEATHER_OPENMETEO_TIMEOUT_SEC) / 2.0),
+        pool=float(WEATHER_OPENMETEO_TIMEOUT_SEC),
+    )
+    expected_date = str(target_date_local or "").strip()
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", expected_date):
+        expected_date = _now_local_date_iso()
+    headers = {"cache-control": "no-cache", "pragma": "no-cache"}
+
+    async def _fetch_once(
+        verify_setting: bool | str | ssl.SSLContext,
+    ) -> tuple[dict, dict, str, float, float]:
+        async with httpx.AsyncClient(
+            timeout=timeout,
+            verify=verify_setting,
+            trust_env=WEATHER_HTTP_TRUST_ENV,
+        ) as client:
+            last_error = ""
+            geo: dict = {}
+            lat: float | None = None
+            lon: float | None = None
+            resolved_query = ""
+            for candidate in _build_location_candidates(location):
+                query_variants = [
+                    {"name": candidate, "count": 5, "language": "ja", "format": "json", "countryCode": "JP"},
+                    {"name": candidate, "count": 5, "language": "ja", "format": "json"},
+                    {"name": candidate, "count": 5, "language": "en", "format": "json", "countryCode": "JP"},
+                    {"name": candidate, "count": 5, "language": "en", "format": "json"},
+                ]
+                for params in query_variants:
+                    geo_res = await client.get(geocode_url, params=params, headers=headers)
+                    geo_res.raise_for_status()
+                    geo_data = geo_res.json() if geo_res.content else {}
+                    geo_results = geo_data.get("results") if isinstance(geo_data, dict) else None
+                    if not isinstance(geo_results, list) or not geo_results:
+                        last_error = f"no results for '{candidate}'"
+                        continue
+                    picked = None
+                    for row in geo_results:
+                        if not isinstance(row, dict):
+                            continue
+                        cc = str(row.get("country_code") or "").upper().strip()
+                        if cc == "JP":
+                            picked = row
+                            break
+                    if picked is None and isinstance(geo_results[0], dict):
+                        picked = geo_results[0]
+                    if not isinstance(picked, dict):
+                        last_error = f"invalid geocode rows for '{candidate}'"
+                        continue
+                    maybe_lat = _as_float(picked.get("latitude"))
+                    maybe_lon = _as_float(picked.get("longitude"))
+                    if maybe_lat is None or maybe_lon is None:
+                        last_error = f"coordinates missing for '{candidate}'"
+                        continue
+                    geo = picked
+                    lat = maybe_lat
+                    lon = maybe_lon
+                    resolved_query = candidate
+                    break
+                if lat is not None and lon is not None:
+                    break
+            if lat is None or lon is None:
+                raise RuntimeError(f"location not found: {location} ({last_error})")
+
+            forecast_res = await client.get(
+                forecast_url,
+                params={
+                    "latitude": lat,
+                    "longitude": lon,
+                    "timezone": APP_TIME_ZONE,
+                    "start_date": expected_date,
+                    "end_date": expected_date,
+                    "current": "temperature_2m,precipitation,weather_code,wind_speed_10m",
+                    "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max",
+                },
+                headers=headers,
+            )
+            forecast_res.raise_for_status()
+            forecast = forecast_res.json() if forecast_res.content else {}
+            return geo, forecast, (resolved_query or location), float(lat), float(lon)
+
+    verify_setting = _runpod_httpx_verify_setting()
+    try:
+        geo, forecast, resolved_query, lat, lon = await _fetch_once(verify_setting)
+    except Exception as exc:
+        if RUNPOD_TLS_VERIFY and _looks_like_tls_verify_failure(exc):
+            if RUNPOD_TLS_RETRY_NO_VERIFY:
+                try:
+                    geo, forecast, resolved_query, lat, lon = await _fetch_once(False)
+                except Exception as exc_retry:
+                    raise RuntimeError(
+                        "open-meteo TLS recovery failed: "
+                        f"first={exc}; retry_no_verify={exc_retry}"
+                    ) from exc_retry
+            else:
+                raise RuntimeError(
+                    "open-meteo TLS verification failed. "
+                    f"{exc} "
+                    "Set RUNPOD_CA_BUNDLE to your corporate root CA PEM or keep "
+                    "RUNPOD_TLS_USE_SYSTEM_STORE=1. "
+                    "As last resort only, set RUNPOD_TLS_RETRY_NO_VERIFY=1."
+                ) from exc
+        raise
+
+    daily = forecast.get("daily") if isinstance(forecast, dict) else {}
+    current = forecast.get("current") if isinstance(forecast, dict) else {}
+    if not isinstance(daily, dict):
+        daily = {}
+    if not isinstance(current, dict):
+        current = {}
+
+    date_local = ""
+    daily_dates = daily.get("time")
+    target_index = 0
+    if isinstance(daily_dates, list):
+        for idx, row in enumerate(daily_dates):
+            if str(row or "").strip() == expected_date:
+                target_index = idx
+                break
+        if daily_dates:
+            date_local = str(daily_dates[target_index] or "").strip()
+    if date_local != expected_date:
+        raise RuntimeError(
+            f"verified weather date mismatch: expected={expected_date} actual={date_local or '(none)'}"
+        )
+
+    weather_code_today = _as_int(_pick_daily_value(daily, "weather_code", target_index))
+    summary = {
+        "provider": "open-meteo",
+        "source_url": "https://api.open-meteo.com/v1/forecast",
+        "retrieved_at": datetime.utcnow().isoformat() + "Z",
+        "date_local": date_local,
+        "target_date": expected_date,
+        "target_time": str(target_time_local or "").strip(),
+        "day_label": str(day_label or "今日"),
+        "timezone": str(forecast.get("timezone") or APP_TIME_ZONE),
+        "location": {
+            "query": location,
+            "resolved_query": resolved_query,
+            "name": str(geo.get("name") or location),
+            "country": str(geo.get("country") or ""),
+            "admin1": str(geo.get("admin1") or ""),
+            "latitude": lat,
+            "longitude": lon,
+        },
+        "today": {
+            "condition": _weather_code_to_ja(weather_code_today),
+            "temperature_max_c": _as_float(_pick_daily_value(daily, "temperature_2m_max", target_index)),
+            "temperature_min_c": _as_float(_pick_daily_value(daily, "temperature_2m_min", target_index)),
+            "precipitation_probability_max": _as_int(
+                _pick_daily_value(daily, "precipitation_probability_max", target_index)
+            ),
+            "wind_speed_10m": _as_float(current.get("wind_speed_10m")),
+            "current_temperature_c": _as_float(current.get("temperature_2m")),
+            "current_precipitation": _as_float(current.get("precipitation")),
+            "current_observed_at": str(current.get("time") or "").strip(),
+        },
+    }
+    return summary
+
+
+def _render_verified_weather_answer(snapshot: dict) -> str:
+    location = snapshot.get("location") if isinstance(snapshot.get("location"), dict) else {}
+    today = snapshot.get("today") if isinstance(snapshot.get("today"), dict) else {}
+    date_local = str(snapshot.get("date_local") or _now_local_date_iso())
+    day_label = str(snapshot.get("day_label") or "今日")
+    name = str(location.get("name") or WEATHER_DEFAULT_LOCATION)
+    condition = str(today.get("condition") or "不明")
+    tmax = today.get("temperature_max_c")
+    tmin = today.get("temperature_min_c")
+    pop = today.get("precipitation_probability_max")
+    wind = today.get("wind_speed_10m")
+    observed = str(today.get("current_observed_at") or "").strip()
+    source = str(snapshot.get("source_url") or "https://api.open-meteo.com/v1/forecast")
+    tz = str(snapshot.get("timezone") or APP_TIME_ZONE)
+    return (
+        f"**{day_label}（{date_local}）の{name}の天気（検証済み）**\n\n"
+        f"- **概況**: {condition}\n"
+        f"- **最高気温**: {tmax if tmax is not None else '不明'} ℃\n"
+        f"- **最低気温**: {tmin if tmin is not None else '不明'} ℃\n"
+        f"- **降水確率（最大）**: {pop if pop is not None else '不明'}%\n"
+        f"- **風速（10m）**: {wind if wind is not None else '不明'} m/s\n\n"
+        f"出典: Open-Meteo (`{source}`)\n"
+        f"観測/予報時刻: {observed or 'N/A'} ({tz})"
+    )
+
+
 def _extract_turn_text_from_html(raw_html: str) -> str:
     value = str(raw_html or "")
     if not value:
@@ -1508,6 +1912,266 @@ def _now_local_date_iso() -> str:
     return f"{now.year:04d}-{now.month:02d}-{now.day:02d}"
 
 
+def _local_date_iso_with_offset(day_offset: int) -> str:
+    tz_name = APP_TIME_ZONE or "Asia/Tokyo"
+    safe_offset = max(0, int(day_offset or 0))
+    try:
+        now = datetime.now(ZoneInfo(tz_name))
+    except Exception:
+        now = datetime.utcnow()
+    target = now + timedelta(days=safe_offset)
+    return f"{target.year:04d}-{target.month:02d}-{target.day:02d}"
+
+
+def _extract_weather_day_offset(prompt: str) -> tuple[int, str]:
+    text = str(prompt or "").lower()
+    if any(token in text for token in ("明後日", "あさって", "day after tomorrow")):
+        return 2, "明後日"
+    if any(token in text for token in ("明日", "あした", "tomorrow")):
+        return 1, "明日"
+    return 0, "今日"
+
+
+def _weather_day_label(day_offset: int) -> str:
+    value = max(0, int(day_offset or 0))
+    if value == 0:
+        return "今日"
+    if value == 1:
+        return "明日"
+    if value == 2:
+        return "明後日"
+    return f"{value}日後"
+
+
+def _extract_explicit_date_from_prompt(prompt: str) -> str:
+    text = str(prompt or "")
+    m_iso = re.search(r"\b(20\d{2})[-/](\d{1,2})[-/](\d{1,2})\b", text)
+    if m_iso:
+        try:
+            return f"{int(m_iso.group(1)):04d}-{int(m_iso.group(2)):02d}-{int(m_iso.group(3)):02d}"
+        except Exception:
+            pass
+    m_jp = re.search(r"(20\d{2})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日", text)
+    if m_jp:
+        try:
+            return f"{int(m_jp.group(1)):04d}-{int(m_jp.group(2)):02d}-{int(m_jp.group(3)):02d}"
+        except Exception:
+            pass
+    return ""
+
+
+def _resolve_weather_target_date_and_label(prompt: str) -> tuple[str, str]:
+    explicit = _extract_explicit_date_from_prompt(prompt)
+    if explicit:
+        return explicit, explicit
+    day_offset, day_label = _extract_weather_day_offset(prompt)
+    return _local_date_iso_with_offset(day_offset), day_label
+
+
+async def _infer_weather_request_with_model(prompt: str, *, base_url: str) -> dict:
+    resolved_base_url = _normalize_base_url(base_url) or _normalize_base_url(RUNPOD_BASE_URL)
+    if not resolved_base_url:
+        raise RuntimeError("runpod base url is empty")
+    url = f"{resolved_base_url}/responses"
+    headers = _runpod_auth_headers(include_content_type=True)
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "location": {"type": "string"},
+            "target_date": {"type": "string", "pattern": r"^\d{4}-\d{2}-\d{2}$"},
+            "target_time": {"type": "string", "pattern": r"^\d{2}:\d{2}$"},
+            "timezone": {"type": "string"},
+            "reason": {"type": "string"},
+        },
+        "required": ["location", "target_date"],
+    }
+    current_date = _now_local_date_iso()
+    payload = {
+        "model": DEFAULT_MODEL,
+        "input": [
+            {
+                "role": "system",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": (
+                            "Extract weather request arguments for API use.\n"
+                            "Return strict JSON only.\n"
+                            "- location: city/region name\n"
+                            "- target_date: local date in YYYY-MM-DD\n"
+                            "- target_time: optional local time in HH:MM\n"
+                            "- timezone: IANA timezone name when inferable\n"
+                            f"Current local date reference: {current_date} ({APP_TIME_ZONE}).\n"
+                            "If location is omitted, use default location."
+                        ),
+                    }
+                ],
+            },
+            {"role": "user", "content": [{"type": "input_text", "text": str(prompt or "")}]},
+        ],
+        "text": {
+            "format": {
+                "type": "json_schema",
+                "name": "weather_request",
+                "schema": schema,
+                "strict": True,
+            }
+        },
+    }
+    timeout = httpx.Timeout(connect=15.0, read=45.0, write=15.0, pool=15.0)
+    async def _call_once(verify_setting: bool | str | ssl.SSLContext) -> httpx.Response:
+        async with httpx.AsyncClient(timeout=timeout, verify=verify_setting, trust_env=False) as client:
+            return await client.post(url, headers=headers, json=payload)
+
+    verify_setting = _runpod_httpx_verify_setting()
+    try:
+        response = await _call_once(verify_setting)
+    except Exception as exc:
+        if RUNPOD_TLS_VERIFY and _looks_like_tls_verify_failure(exc) and RUNPOD_TLS_RETRY_NO_VERIFY:
+            response = await _call_once(False)
+        else:
+            raise
+    if response.status_code >= 400:
+        preview = response.text[:400] if response.text else ""
+        raise RuntimeError(f"intent extraction failed: HTTP {response.status_code} {preview}")
+    data = response.json() if response.content else {}
+    text = _extract_responses_output_text(data if isinstance(data, dict) else {})
+    if not text:
+        raise RuntimeError("intent extraction returned empty output")
+    try:
+        parsed = json.loads(text)
+    except Exception as exc:
+        raise RuntimeError(f"intent extraction returned non-json: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise RuntimeError("intent extraction returned non-object")
+    location = str(parsed.get("location", "") or "").strip()
+    target_date = str(parsed.get("target_date", "") or "").strip()
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", target_date):
+        raise RuntimeError("intent extraction target_date is invalid")
+    target_time = str(parsed.get("target_time", "") or "").strip()
+    if target_time and (not re.match(r"^\d{2}:\d{2}$", target_time)):
+        target_time = ""
+    timezone = str(parsed.get("timezone", "") or "").strip() or APP_TIME_ZONE
+    if not location:
+        location = WEATHER_DEFAULT_LOCATION
+    day_label = target_date
+    if target_date == _local_date_iso_with_offset(0):
+        day_label = "今日"
+    elif target_date == _local_date_iso_with_offset(1):
+        day_label = "明日"
+    elif target_date == _local_date_iso_with_offset(2):
+        day_label = "明後日"
+    return {
+        "location": location,
+        "target_date": target_date,
+        "target_time": target_time,
+        "timezone": timezone,
+        "day_label": day_label,
+    }
+
+
+async def _infer_playwright_query_with_model(prompt: str, *, base_url: str) -> dict:
+    resolved_base_url = _normalize_base_url(base_url) or _normalize_base_url(RUNPOD_BASE_URL)
+    if not resolved_base_url:
+        raise RuntimeError("runpod base url is empty")
+    url = f"{resolved_base_url}/responses"
+    headers = _runpod_auth_headers(include_content_type=True)
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "search_query": {"type": "string"},
+            "primary_url": {"type": "string"},
+            "target_date": {"type": "string", "pattern": r"^\d{4}-\d{2}-\d{2}$"},
+            "must_check_fields": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["search_query", "target_date", "must_check_fields"],
+    }
+    current_date = _now_local_date_iso()
+    payload = {
+        "model": DEFAULT_MODEL,
+        "input": [
+            {
+                "role": "system",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": (
+                            "Create a concise browser search plan for Playwright MCP.\n"
+                            "Return strict JSON only.\n"
+                            "- search_query: query text suitable for web search\n"
+                            "- primary_url: preferred first URL (optional)\n"
+                            "- target_date: YYYY-MM-DD date expected in fetched content\n"
+                            "- must_check_fields: key facts to verify on page\n"
+                            f"Current local date reference: {current_date} ({APP_TIME_ZONE})."
+                        ),
+                    }
+                ],
+            },
+            {"role": "user", "content": [{"type": "input_text", "text": str(prompt or "")}]},
+        ],
+        "text": {
+            "format": {
+                "type": "json_schema",
+                "name": "playwright_query_plan",
+                "schema": schema,
+                "strict": True,
+            }
+        },
+    }
+    timeout = httpx.Timeout(connect=15.0, read=45.0, write=15.0, pool=15.0)
+    verify_setting = _runpod_httpx_verify_setting()
+    async with httpx.AsyncClient(timeout=timeout, verify=verify_setting, trust_env=False) as client:
+        response = await client.post(url, headers=headers, json=payload)
+    if response.status_code >= 400:
+        preview = response.text[:400] if response.text else ""
+        raise RuntimeError(f"playwright plan extraction failed: HTTP {response.status_code} {preview}")
+    data = response.json() if response.content else {}
+    text = _extract_responses_output_text(data if isinstance(data, dict) else {})
+    if not text:
+        raise RuntimeError("playwright plan extraction returned empty output")
+    parsed = json.loads(text)
+    if not isinstance(parsed, dict):
+        raise RuntimeError("playwright plan extraction returned non-object")
+    search_query = str(parsed.get("search_query", "") or "").strip()
+    primary_url = str(parsed.get("primary_url", "") or "").strip()
+    target_date = str(parsed.get("target_date", "") or "").strip()
+    must_check_fields = parsed.get("must_check_fields")
+    if not isinstance(must_check_fields, list):
+        must_check_fields = []
+    checks = [str(row).strip() for row in must_check_fields if str(row).strip()]
+    if not search_query:
+        raise RuntimeError("playwright plan missing search_query")
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", target_date):
+        target_date = _now_local_date_iso()
+    return {
+        "search_query": search_query,
+        "primary_url": primary_url,
+        "target_date": target_date,
+        "must_check_fields": checks[:8],
+    }
+
+
+def _build_tool_use_policy_text(*, live_web_query: bool) -> str:
+    rows = [TOOL_USE_POLICY_BASE_TEXT.strip()]
+    if live_web_query:
+        rows.append(
+            f"Recency guard: treat local date as {_now_local_date_iso()} ({APP_TIME_ZONE}). "
+            "Do not use stale values without explicitly saying they are stale."
+        )
+    return "\n".join(rows).strip()
+
+
+def _inject_tool_policy_into_prompt(prompt: str, *, live_web_query: bool) -> str:
+    return (
+        "[System policy]\n"
+        f"{_build_tool_use_policy_text(live_web_query=live_web_query)}\n\n"
+        "[User request]\n"
+        f"{prompt}"
+    )
+
+
 def _build_live_web_guarded_prompt(prompt: str) -> str:
     today = _now_local_date_iso()
     return (
@@ -1532,16 +2196,310 @@ def _contains_date_mismatch(text: str, expected_date: str) -> bool:
     return found != expected_date
 
 
-async def _run_runpod_lmstudio_chat_plugin(prompt: str, *, base_url: str, live_web_query: bool) -> str:
+def _strip_tool_transcript_blocks(text: str) -> str:
+    value = str(text or "")
+    if not value:
+        return ""
+
+    def _replace(match: re.Match[str]) -> str:
+        block = str(match.group(0) or "")
+        lowered = block.lower()
+        markers = (
+            "browser_navigate",
+            "browser_snapshot",
+            "browser_wait_for",
+            "browser_click",
+            "browser_type",
+            "web_search",
+            "tool_call",
+            "mcp",
+        )
+        if any(marker in lowered for marker in markers):
+            return ""
+        return block
+
+    return re.sub(r"```[\s\S]*?```", _replace, value, flags=re.IGNORECASE)
+
+
+def _find_first_non_process_answer_start(lines: list[str], process_idx: int) -> int:
+    final_markers = (
+        r"^\s*#{1,6}\s*(今日|本日|結論|回答|summary|final answer)\b",
+        r"^\s*(今日|本日|結論|回答|summary|final answer)\b",
+        r"^\s*\|.+\|",  # markdown table row
+        r"^\s*[-*]\s*(今日|本日|結論|回答)\b",
+    )
+    compiled = [re.compile(p, flags=re.IGNORECASE) for p in final_markers]
+    for idx in range(process_idx + 1, len(lines)):
+        line = str(lines[idx] or "")
+        if not line.strip():
+            continue
+        if any(p.search(line) for p in compiled):
+            return idx
+    return -1
+
+
+def _sanitize_user_facing_answer(text: str) -> str:
+    value = _strip_tool_transcript_blocks(str(text or "")).strip()
+    if not value:
+        return ""
+
+    lines = value.splitlines()
+    process_patterns = [
+        re.compile(r"^\s*[-*#\s]*step\s*\d+\b", flags=re.IGNORECASE),
+        re.compile(r"^\s*[-*#\s]*observation\b", flags=re.IGNORECASE),
+        re.compile(r"^\s*[-*#\s]*(tool|tools)\s*(execution|run|call)\b", flags=re.IGNORECASE),
+        re.compile(r"^\s*[-*#\s]*(進行ログ|ツール実行|観測結果)\b", flags=re.IGNORECASE),
+    ]
+    process_idx = -1
+    for idx, line in enumerate(lines[:80]):
+        if any(p.search(str(line or "")) for p in process_patterns):
+            process_idx = idx
+            break
+
+    if process_idx >= 0:
+        answer_start = _find_first_non_process_answer_start(lines, process_idx)
+        if answer_start >= 0:
+            value = "\n".join(lines[answer_start:]).strip()
+        else:
+            filtered: list[str] = []
+            for line in lines:
+                if any(p.search(str(line or "")) for p in process_patterns):
+                    continue
+                filtered.append(line)
+            value = "\n".join(filtered).strip()
+
+    # Collapse excessive separators left by removed transcript blocks.
+    value = re.sub(r"\n{3,}", "\n\n", value, flags=re.MULTILINE).strip()
+    return value
+
+
+def _extract_metric_value(text: str, patterns: list[str]) -> float | None:
+    body = str(text or "")
+    for pattern in patterns:
+        match = re.search(pattern, body, flags=re.IGNORECASE)
+        if not match:
+            continue
+        try:
+            return float(str(match.group(1)))
+        except Exception:
+            continue
+    return None
+
+
+def _weather_answer_likely_inconsistent(answer_text: str, snapshot: dict) -> list[str]:
+    issues: list[str] = []
+    today = snapshot.get("today") if isinstance(snapshot.get("today"), dict) else {}
+    if not isinstance(today, dict):
+        return issues
+    answer = str(answer_text or "")
+    if not answer.strip():
+        return ["empty_answer"]
+
+    answer_tmax = _extract_metric_value(answer, [r"最高[^0-9\-]*([0-9]+(?:\.[0-9]+)?)"])
+    answer_tmin = _extract_metric_value(answer, [r"最低[^0-9\-]*([0-9]+(?:\.[0-9]+)?)"])
+    answer_pop = _extract_metric_value(answer, [r"降水[^0-9\-]*([0-9]+(?:\.[0-9]+)?)\s*%"])
+
+    snap_tmax = _as_float(today.get("temperature_max_c"))
+    snap_tmin = _as_float(today.get("temperature_min_c"))
+    snap_pop = _as_float(today.get("precipitation_probability_max"))
+
+    if answer_tmax is not None and snap_tmax is not None and abs(answer_tmax - snap_tmax) > 1.5:
+        issues.append(f"max_temp_mismatch:{answer_tmax}->{snap_tmax}")
+    if answer_tmin is not None and snap_tmin is not None and abs(answer_tmin - snap_tmin) > 1.5:
+        issues.append(f"min_temp_mismatch:{answer_tmin}->{snap_tmin}")
+    if answer_pop is not None and snap_pop is not None and abs(answer_pop - snap_pop) > 20:
+        issues.append(f"precip_mismatch:{answer_pop}->{snap_pop}")
+
+    expected_date = str(snapshot.get("date_local") or "").strip()
+    if expected_date and _contains_date_mismatch(answer, expected_date):
+        issues.append("date_mismatch")
+
+    return issues
+
+
+def _safe_preview_json(value: object, max_chars: int = 1200) -> str:
+    try:
+        text = json.dumps(value, ensure_ascii=False)
+    except Exception:
+        text = str(value)
+    text = str(text or "").strip()
+    if len(text) <= max_chars:
+        return text
+    return f"{text[:max_chars]}..."
+
+
+def _tool_result_status_label(status: str, *, is_error: bool) -> str:
+    normalized = str(status or "").strip().lower()
+    if is_error or ("fail" in normalized) or ("error" in normalized):
+        return "失敗"
+    if any(token in normalized for token in ("complete", "done", "success", "ok")):
+        return "完了"
+    if any(token in normalized for token in ("run", "progress", "queue", "processing")):
+        return "進行中"
+    return "実行"
+
+
+def _humanize_tool_item_message(item_type: str, item: dict, *, source: str) -> tuple[str, str]:
+    status = str(item.get("status", "") or "").strip()
+    query = str(item.get("query", "") or "").strip()
+    tool = str(item.get("tool", "") or item.get("name", "") or "").strip()
+    action = str(item.get("action", "") or "").strip()
+    url = str(item.get("url", "") or "").strip()
+    server = str(item.get("server", "") or "").strip()
+    is_error = ("fail" in status.lower()) or ("error" in status.lower())
+    status_label = _tool_result_status_label(status, is_error=is_error)
+
+    if "web_search" in item_type:
+        target = query or "（検索語なし）"
+        return "進行ログ", f"{status_label}: Web検索を実行しました\n検索語: {target}"
+    if "mcp" in item_type:
+        action_name = tool or action or "MCP操作"
+        target = url or query or "（対象情報なし）"
+        scope = f"サーバー: {server}\n" if server else ""
+        return "進行ログ", f"{status_label}: {action_name} を実行しました\n{scope}対象: {target}"
+    if "function" in item_type or "tool" in item_type:
+        action_name = tool or action or "ツール呼び出し"
+        target = url or query
+        if target:
+            return "進行ログ", f"{status_label}: {action_name} を実行しました\n対象: {target}"
+        return "進行ログ", f"{status_label}: {action_name} を実行しました"
+    return "進行ログ", f"{status_label}: {source} で外部処理を実行しました"
+
+
+def _collect_tool_trace_entries(payload: dict, *, source: str) -> list[dict[str, str | bool]]:
+    if not isinstance(payload, dict):
+        return []
+    traces: list[dict[str, str | bool]] = []
+    seen: set[str] = set()
+
+    def add_trace(title: str, meta: str, body: str, is_error: bool = False) -> None:
+        clean_title = str(title or "").strip()
+        clean_meta = str(meta or "").strip()
+        clean_body = str(body or "").strip() or "(no details)"
+        key = json.dumps([clean_title, clean_meta, clean_body], ensure_ascii=False)
+        if key in seen:
+            return
+        seen.add(key)
+        traces.append(
+            {
+                "title": clean_title,
+                "meta": clean_meta,
+                "body": clean_body,
+                "is_error": bool(is_error),
+            }
+        )
+
+    direct_tool_calls = payload.get("tool_calls")
+    if isinstance(direct_tool_calls, list):
+        for idx, call in enumerate(direct_tool_calls, start=1):
+            if not isinstance(call, dict):
+                continue
+            name = str(call.get("name", "") or call.get("type", "") or f"tool_call_{idx}").strip()
+            title, message = _humanize_tool_item_message("tool_call", call, source=source)
+            add_trace(
+                title,
+                f"index={idx}",
+                f"{message}\nname={name}",
+                False,
+            )
+
+    output_items = payload.get("output")
+    if isinstance(output_items, list):
+        for item in output_items:
+            if not isinstance(item, dict):
+                continue
+            item_type = str(item.get("type", "") or "").strip().lower()
+            if any(token in item_type for token in ("tool", "web_search", "mcp", "function")):
+                item_id = str(item.get("id", "") or "").strip()
+                status = str(item.get("status", "") or "").strip()
+                meta = (f"id={item_id} " if item_id else "") + (f"type={item_type} " if item_type else "") + (f"status={status}" if status else "")
+                meta = meta.strip()
+                title, human_message = _humanize_tool_item_message(item_type, item, source=source)
+                fields: list[str] = []
+                for key in ("query", "name", "tool", "server", "action", "url"):
+                    value = str(item.get(key, "") or "").strip()
+                    if value:
+                        fields.append(f"{key}: {value}")
+                result = item.get("result")
+                if result is not None:
+                    fields.append(f"result: {_safe_preview_json(result)}")
+                err = item.get("error")
+                if err is not None:
+                    fields.append(f"error: {_safe_preview_json(err)}")
+                detail = "\n".join(fields) if fields else _safe_preview_json(item)
+                body = f"{human_message}\n{detail}".strip()
+                add_trace(
+                    title,
+                    meta,
+                    body,
+                    "failed" in status.lower() or "error" in status.lower(),
+                )
+
+    return traces
+
+
+def _render_tool_trace_cards(payload: dict, *, source: str) -> list[str]:
+    cards: list[str] = []
+    for row in _collect_tool_trace_entries(payload, source=source):
+        cards.append(
+            _render_tool_card(
+                title=str(row.get("title", "") or "Tool trace"),
+                meta=str(row.get("meta", "") or ""),
+                body=str(row.get("body", "") or ""),
+                is_error=bool(row.get("is_error", False)),
+            )
+        )
+    return cards
+
+
+async def _run_runpod_lmstudio_chat_plugin(
+    prompt: str,
+    *,
+    base_url: str,
+    live_web_query: bool,
+) -> tuple[str, list[str]]:
     chat_url = _build_lmstudio_chat_url(base_url)
     if not chat_url:
-        return ""
+        return "", []
     if RUNPOD_LMSTUDIO_CHAT_PLUGIN_FOR_LIVE_WEB_ONLY and (not live_web_query):
-        return ""
+        return "", []
     plugin_id = str(RUNPOD_LMSTUDIO_CHAT_PLUGIN_ID or "").strip()
     if not plugin_id:
-        return ""
+        return "", []
+    trace_cards: list[str] = []
+
+    weather_query = _prompt_likely_weather_query(prompt)
+    weather_location = _extract_weather_location(prompt) if weather_query else ""
+    weather_target_date, weather_day_label = _resolve_weather_target_date_and_label(prompt) if weather_query else ("", "今日")
+    weather_target_time = ""
+    if weather_query and WEATHER_MODEL_INTENT_ENABLED:
+        try:
+            intent = await _infer_weather_request_with_model(prompt, base_url=base_url)
+            weather_location = str(intent.get("location") or weather_location).strip() or weather_location
+            weather_target_date = str(intent.get("target_date") or weather_target_date).strip() or weather_target_date
+            weather_target_time = str(intent.get("target_time") or "").strip()
+            weather_day_label = str(intent.get("day_label") or weather_day_label)
+            if _progress_log_allowed():
+                trace_cards.append(
+                    _progress_tool_card(
+                        "要求解析",
+                        f"モデル抽出: 地名={weather_location}, 対象日={weather_day_label}（{weather_target_date}）",
+                    )
+                )
+        except Exception:
+            if _progress_log_verbose() and _progress_log_allowed():
+                trace_cards.append(
+                    _progress_tool_card(
+                        "要求解析",
+                        "モデル抽出に失敗したため、ローカル解析で継続します。",
+                    )
+                )
+
     effective_prompt = _build_live_web_guarded_prompt(prompt) if live_web_query else prompt
+    effective_prompt = _inject_tool_policy_into_prompt(
+        effective_prompt,
+        live_web_query=live_web_query,
+    )
     payload = {
         "model": DEFAULT_MODEL,
         "input": effective_prompt,
@@ -1565,10 +2523,28 @@ async def _run_runpod_lmstudio_chat_plugin(prompt: str, *, base_url: str, live_w
     headers = _runpod_auth_headers(include_content_type=True)
     timeout = httpx.Timeout(connect=20.0, read=120.0, write=30.0, pool=20.0)
     verify_setting = _runpod_httpx_verify_setting()
+    if _progress_log_allowed():
+        trace_cards.append(
+            _progress_tool_card(
+                "外部情報取得",
+                (
+                    "最新データ確認のため、"
+                    f"{'MCPブラウザ連携' if RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_PRIMARY else 'plugin連携'}を実行します。"
+                ),
+            )
+        )
     async with httpx.AsyncClient(timeout=timeout, verify=verify_setting, trust_env=False) as client:
         if RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_PRIMARY:
             response = await client.post(chat_url, headers=headers, json=ephemeral_payload)
             if response.status_code >= 400:
+                if _progress_log_allowed():
+                    trace_cards.append(
+                        _progress_tool_card(
+                            f"切替 (HTTP {response.status_code})",
+                            "最初の取得経路で失敗したため、別経路で再試行します。",
+                            is_error=True,
+                        )
+                    )
                 response = await client.post(chat_url, headers=headers, json=payload)
         else:
             response = await client.post(chat_url, headers=headers, json=payload)
@@ -1578,29 +2554,119 @@ async def _run_runpod_lmstudio_chat_plugin(prompt: str, *, base_url: str, live_w
             ):
                 preview = response.text[:1200] if response.text else ""
                 if "permission denied to use plugin" in preview.lower():
+                    if _progress_log_allowed():
+                        trace_cards.append(
+                            _progress_tool_card(
+                                "切替 (権限不足)",
+                                "plugin権限不足のため、ephemeral_mcp連携へ切り替えます。",
+                                is_error=True,
+                            )
+                        )
                     response = await client.post(chat_url, headers=headers, json=ephemeral_payload)
     if response.status_code >= 400:
         preview = response.text[:800] if response.text else ""
         raise RuntimeError(f"lmstudio chat plugin failed: HTTP {response.status_code}. {preview}")
     data = response.json() if response.content else {}
     payload_data = data if isinstance(data, dict) else {}
+    if _progress_log_verbose():
+        trace_cards.extend(_render_tool_trace_cards(payload_data, source="LMStudio"))
     text = _extract_lmstudio_chat_text(payload_data)
-    if live_web_query and text and _contains_date_mismatch(text, _now_local_date_iso()):
+    expected_live_date = weather_target_date if weather_query else _now_local_date_iso()
+    if live_web_query and text and _contains_date_mismatch(text, expected_live_date):
         retry_payload = dict(ephemeral_payload if RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_PRIMARY else payload)
         retry_payload["input"] = (
             f"{effective_prompt}\n"
-            f"- The prior answer contained a date mismatch. Use date={_now_local_date_iso()} only.\n"
+            f"- The prior answer contained a date mismatch. Use date={expected_live_date} only.\n"
         )
         async with httpx.AsyncClient(timeout=timeout, verify=verify_setting, trust_env=False) as client:
             retry = await client.post(chat_url, headers=headers, json=retry_payload)
         if retry.status_code < 400:
             retry_data = retry.json() if retry.content else {}
-            retry_text = _extract_lmstudio_chat_text(retry_data if isinstance(retry_data, dict) else {})
+            retry_payload_dict = retry_data if isinstance(retry_data, dict) else {}
+            if _progress_log_allowed():
+                trace_cards.append(
+                    _progress_tool_card(
+                        "日付再確認",
+                        "日付不一致を検知したため、当日日付条件で再取得しました。",
+                    )
+                )
+            if _progress_log_verbose():
+                trace_cards.extend(_render_tool_trace_cards(retry_payload_dict, source="LMStudio retry"))
+            retry_text = _extract_lmstudio_chat_text(retry_payload_dict)
             if retry_text:
                 text = retry_text
+
+    if (
+        weather_query
+        and WEATHER_VERIFIED_FETCH_ENABLED
+        and WEATHER_VERIFIED_FETCH_MODE in {"strict", "advisory"}
+    ):
+        try:
+            snapshot = await _fetch_verified_weather_snapshot(
+                weather_location,
+                target_date_local=weather_target_date,
+                target_time_local=weather_target_time,
+                day_label=weather_day_label,
+            )
+            if _progress_log_allowed():
+                trace_cards.append(
+                    _progress_tool_card(
+                        "検証済みデータ",
+                        (
+                            f"Open-Meteoで {snapshot.get('day_label', weather_day_label)}（{snapshot.get('date_local')}）の"
+                            f"{(snapshot.get('location') or {}).get('name', weather_location)} を確認しました。"
+                        ),
+                    )
+                )
+
+            mismatch_issues = _weather_answer_likely_inconsistent(text, snapshot)
+            rewrite_required = WEATHER_VERIFIED_FETCH_MODE == "strict" or bool(mismatch_issues)
+            if rewrite_required:
+                if _progress_log_allowed() and mismatch_issues:
+                    trace_cards.append(
+                        _progress_tool_card(
+                            "検証結果",
+                            "ドラフト回答と検証データに差分があるため、検証値で整合させます。",
+                        )
+                    )
+                rewrite_prompt = (
+                    "次のドラフト回答を、検証済みJSONを唯一の正として数値/日付のみ修正してください。"
+                    "語調と構成はできるだけ維持し、手順説明やツールログは出力しないこと。\n\n"
+                    "[ドラフト回答]\n"
+                    f"{text}\n\n"
+                    "[検証済みJSON]\n"
+                    f"{json.dumps(snapshot, ensure_ascii=False)}\n"
+                )
+                rewrite_payload = {
+                    "model": DEFAULT_MODEL,
+                    "input": rewrite_prompt,
+                    "stream": False,
+                }
+                async with httpx.AsyncClient(timeout=timeout, verify=verify_setting, trust_env=False) as client:
+                    rewrite_res = await client.post(chat_url, headers=headers, json=rewrite_payload)
+                if rewrite_res.status_code < 400:
+                    rewrite_data = rewrite_res.json() if rewrite_res.content else {}
+                    rewrite_text = _extract_lmstudio_chat_text(
+                        rewrite_data if isinstance(rewrite_data, dict) else {}
+                    )
+                    rewrite_text = _sanitize_user_facing_answer(rewrite_text)
+                    if rewrite_text:
+                        text = rewrite_text
+                elif WEATHER_VERIFIED_FETCH_MODE == "strict":
+                    text = _render_verified_weather_answer(snapshot)
+        except Exception as exc:
+            if _progress_log_allowed():
+                trace_cards.append(
+                    _progress_tool_card(
+                        "検証済みデータ",
+                        f"Open-Meteo検証に失敗しました: {exc}",
+                        is_error=True,
+                    )
+                )
+    text = _sanitize_user_facing_answer(text)
     if not text:
         raise RuntimeError("lmstudio chat plugin returned no assistant text.")
-    return text
+    return text, trace_cards
 
 
 def _build_responses_tools_payload() -> list[dict]:
@@ -1698,25 +2764,30 @@ def _responses_payload_has_tool_evidence(payload: dict) -> bool:
     return False
 
 
-async def _run_runpod_responses_fallback(prompt: str, *, base_url: str = "") -> str:
+async def _run_runpod_responses_fallback(prompt: str, *, base_url: str = "") -> tuple[str, list[str]]:
     default_base_url = _normalize_base_url(RUNPOD_BASE_URL)
     if (not default_base_url) and RUNPOD_BASE_URL_CANDIDATES:
         default_base_url = RUNPOD_BASE_URL_CANDIDATES[0]
     resolved_base_url = _normalize_base_url(base_url) or default_base_url
     if not resolved_base_url:
-        return ""
+        return "", []
     url = f"{resolved_base_url}/responses"
     headers = _runpod_auth_headers(include_content_type=True)
+    live_web_query = _prompt_likely_requires_live_web(prompt)
+    policy_text = _build_tool_use_policy_text(live_web_query=live_web_query)
     payload_base = {
         "model": DEFAULT_MODEL,
         "input": [
+            {
+                "role": "system",
+                "content": [{"type": "input_text", "text": policy_text}],
+            },
             {
                 "role": "user",
                 "content": [{"type": "input_text", "text": prompt}],
             }
         ],
     }
-    live_web_query = _prompt_likely_requires_live_web(prompt)
     if RUNPOD_LMSTUDIO_CHAT_PLUGIN_ENABLED and (
         (not RUNPOD_LMSTUDIO_CHAT_PLUGIN_FOR_LIVE_WEB_ONLY) or live_web_query
     ):
@@ -1742,10 +2813,11 @@ async def _run_runpod_responses_fallback(prompt: str, *, base_url: str = "") -> 
         write=20.0,
         pool=20.0,
     )
-    async def _run_once(verify_setting: bool | str) -> str:
+    async def _run_once(verify_setting: bool | str | ssl.SSLContext) -> tuple[str, list[str]]:
         # Bypass OS proxy env for RunPod direct calls; proxy interception often breaks auth/TLS.
         async with httpx.AsyncClient(timeout=timeout, verify=verify_setting, trust_env=False) as client:
-            async def _run_once_with_payload(payload: dict) -> str:
+            async def _run_once_with_payload(payload: dict) -> tuple[str, list[str]]:
+                trace_cards: list[str] = []
                 background_error = ""
                 if RUNPOD_RESPONSES_BACKGROUND_ENABLED:
                     background_payload = dict(payload)
@@ -1754,6 +2826,8 @@ async def _run_runpod_responses_fallback(prompt: str, *, base_url: str = "") -> 
                     if bg_res.status_code < 400:
                         bg_data = bg_res.json() if bg_res.content else {}
                         bg_payload = bg_data if isinstance(bg_data, dict) else {}
+                        if _progress_log_verbose():
+                            trace_cards.extend(_render_tool_trace_cards(bg_payload, source="Responses background"))
                         bg_text = _extract_responses_output_text(bg_payload)
                         bg_status = _extract_responses_status(bg_payload)
                         bg_has_tool = _responses_payload_has_tool_evidence(bg_payload)
@@ -1763,7 +2837,7 @@ async def _run_runpod_responses_fallback(prompt: str, *, base_url: str = "") -> 
                             or bg_has_tool
                             or (not enforce_tool_evidence)
                         ):
-                            return bg_text
+                            return _sanitize_user_facing_answer(bg_text), trace_cards
                         if bg_status == "completed" and enforce_tool_evidence and (not bg_has_tool):
                             raise RuntimeError(
                                 "responses tools were not executed for live-web prompt (completed without tool evidence)."
@@ -1784,6 +2858,8 @@ async def _run_runpod_responses_fallback(prompt: str, *, base_url: str = "") -> 
                                     break
                                 poll_data = poll_res.json() if poll_res.content else {}
                                 poll_payload = poll_data if isinstance(poll_data, dict) else {}
+                                if _progress_log_verbose():
+                                    trace_cards.extend(_render_tool_trace_cards(poll_payload, source="Responses poll"))
                                 poll_text = _extract_responses_output_text(poll_payload)
                                 poll_status = _extract_responses_status(poll_payload)
                                 poll_has_tool = _responses_payload_has_tool_evidence(poll_payload)
@@ -1792,7 +2868,7 @@ async def _run_runpod_responses_fallback(prompt: str, *, base_url: str = "") -> 
                                     or poll_has_tool
                                     or (not enforce_tool_evidence)
                                 ):
-                                    return poll_text
+                                    return _sanitize_user_facing_answer(poll_text), trace_cards
                                 if poll_status == "completed":
                                     if enforce_tool_evidence and (not poll_has_tool):
                                         raise RuntimeError(
@@ -1821,14 +2897,17 @@ async def _run_runpod_responses_fallback(prompt: str, *, base_url: str = "") -> 
                     raise RuntimeError(f"responses fallback failed: HTTP {res.status_code}. {preview}{detail}")
                 data = res.json() if res.content else {}
                 payload_data = data if isinstance(data, dict) else {}
+                if _progress_log_verbose():
+                    trace_cards.extend(_render_tool_trace_cards(payload_data, source="Responses final"))
                 text = _extract_responses_output_text(payload_data)
+                text = _sanitize_user_facing_answer(text)
                 if not text:
                     raise RuntimeError("responses fallback returned no assistant text.")
                 if enforce_tool_evidence and not _responses_payload_has_tool_evidence(payload_data):
                     raise RuntimeError(
                         "responses tools were not executed for live-web prompt (final response without tool evidence)."
                     )
-                return text
+                return text, trace_cards
 
             return await _run_once_with_payload(payload_base)
 
@@ -2170,6 +3249,8 @@ async def _iter_codex_chat_events(prompt: str) -> AsyncIterator[dict]:
 async def _iter_codex_chat_events_background_poll(prompt: str) -> AsyncIterator[dict]:
     started_at = time.monotonic()
     prepared_prompt, prompt_info = _prepare_codex_prompt(prompt)
+    live_web_query = _prompt_likely_requires_live_web(prepared_prompt)
+    playwright_plan: dict | None = None
 
     if bool(prompt_info.get("compressed")):
         yield {
@@ -2196,6 +3277,46 @@ async def _iter_codex_chat_events_background_poll(prompt: str) -> AsyncIterator[
     )
     yield {"type": "status", "step": 0, "message": start_status_message}
 
+    if PLAYWRIGHT_MODEL_QUERY_ENABLED and live_web_query:
+        preferred_for_plan = await _select_runpod_base_url(attempt_index=1)
+        if not preferred_for_plan:
+            preferred_for_plan = _normalize_base_url(RUNPOD_BASE_URL)
+        if preferred_for_plan:
+            try:
+                playwright_plan = await _infer_playwright_query_with_model(
+                    prepared_prompt,
+                    base_url=preferred_for_plan,
+                )
+                if _progress_log_allowed():
+                    yield {
+                        "type": "tool_card",
+                        "html": _progress_tool_card(
+                            "要求解析",
+                            (
+                                f"検索クエリ: {playwright_plan.get('search_query', '')}\n"
+                                f"対象日: {playwright_plan.get('target_date', '')}"
+                            ),
+                        ),
+                    }
+                plan_json = json.dumps(playwright_plan, ensure_ascii=False)
+                prepared_prompt = (
+                    f"{prepared_prompt}\n\n"
+                    "[Playwright Query Plan JSON]\n"
+                    f"{plan_json}\n"
+                    "Use this plan for browser navigation/search order. "
+                    "Prefer primary_url when provided. "
+                    "Validate extracted facts against target_date and must_check_fields."
+                )
+            except Exception as exc:
+                if _progress_log_verbose() and _progress_log_allowed():
+                    yield {
+                        "type": "tool_card",
+                        "html": _progress_tool_card(
+                            "要求解析",
+                            f"Playwright検索計画の抽出に失敗したため通常実行します: {exc}",
+                        ),
+                    }
+
     preferred_route = await _select_runpod_base_url(attempt_index=1)
     if not preferred_route:
         preferred_route = _normalize_base_url(RUNPOD_BASE_URL)
@@ -2203,6 +3324,7 @@ async def _iter_codex_chat_events_background_poll(prompt: str) -> AsyncIterator[
 
     recovery_error = ""
     recovered_text = ""
+    recovered_trace_cards: list[str] = []
     used_route = ""
     for route in fallback_routes:
         used_route = route
@@ -2212,7 +3334,32 @@ async def _iter_codex_chat_events_background_poll(prompt: str) -> AsyncIterator[
                 "step": 1,
                 "message": f"Responses mode: polling via {_route_status_label(route)}...",
             }
-            recovered_text = await _run_runpod_responses_fallback(prepared_prompt, base_url=route)
+            if _progress_log_allowed():
+                yield {
+                    "type": "tool_card",
+                    "html": _progress_tool_card(
+                        "開始",
+                        "回答生成を開始しました。",
+                    ),
+                }
+            fallback_task = asyncio.create_task(
+                _run_runpod_responses_fallback(prepared_prompt, base_url=route)
+            )
+            tick = 0
+            emitted_wait_log = False
+            while not fallback_task.done():
+                await asyncio.sleep(2.0)
+                tick += 2
+                if _progress_log_allowed() and (not emitted_wait_log) and tick >= 10:
+                    emitted_wait_log = True
+                    yield {
+                        "type": "tool_card",
+                        "html": _progress_tool_card(
+                            f"処理中 ({tick}s)",
+                            _friendly_trace_wait_message(tick),
+                        ),
+                    }
+            recovered_text, recovered_trace_cards = await fallback_task
             _mark_runpod_route_success(route)
             break
         except Exception as exc:
@@ -2222,6 +3369,8 @@ async def _iter_codex_chat_events_background_poll(prompt: str) -> AsyncIterator[
 
     elapsed_ms = int((time.monotonic() - started_at) * 1000)
     if recovered_text:
+        for card in recovered_trace_cards:
+            yield {"type": "tool_card", "html": card}
         yield {"type": "assistant_stream_start", "model": DEFAULT_MODEL, "totalChars": len(recovered_text)}
         yield {"type": "assistant_stream_delta", "delta": recovered_text}
         yield {"type": "assistant_stream_done", "elapsedMs": elapsed_ms, "totalChars": len(recovered_text)}
@@ -2513,6 +3662,7 @@ async def _iter_codex_chat_events_resilient(prompt: str) -> AsyncIterator[dict]:
         fallback_routes = _runpod_route_fallback_order(last_base_url_used)
         recovery_error = ""
         recovered_text = ""
+        recovered_trace_cards: list[str] = []
         used_recovery_route = ""
         for fallback_route in fallback_routes:
             used_recovery_route = fallback_route
@@ -2525,7 +3675,7 @@ async def _iter_codex_chat_events_resilient(prompt: str) -> AsyncIterator[dict]:
                         f"{_route_status_label(fallback_route)}..."
                     ),
                 }
-                recovered_text = await _run_runpod_responses_fallback(
+                recovered_text, recovered_trace_cards = await _run_runpod_responses_fallback(
                     prepared_prompt,
                     base_url=fallback_route,
                 )
@@ -2537,6 +3687,8 @@ async def _iter_codex_chat_events_resilient(prompt: str) -> AsyncIterator[dict]:
                 continue
 
         if recovered_text:
+            for card in recovered_trace_cards:
+                yield {"type": "tool_card", "html": card}
             if not assistant_stream_started:
                 yield {"type": "assistant_stream_start", "model": DEFAULT_MODEL, "totalChars": len(recovered_text)}
                 yield {"type": "assistant_stream_delta", "delta": recovered_text}

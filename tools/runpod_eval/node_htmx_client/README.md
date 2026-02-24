@@ -1,4 +1,4 @@
-# LocaLingo (RunPod FastAPI + HTMX Client)
+﻿# LocaLingo (RunPod FastAPI + HTMX Client)
 
 This is a lightweight local client app for RunPod LM Studio.
 
@@ -259,6 +259,20 @@ Relative date handling (today/tomorrow):
 - `APP_TIME_ZONE=Asia/Tokyo` (default)
 - Auto tool chat injects `current_date_jst/current_utc_iso` into system context.
 - For weather "today" prompts, mismatched explicit past/future calendar dates are normalized.
+
+Verified weather fetch (Open-Meteo):
+- WEATHER_VERIFIED_FETCH_ENABLED=1
+- WEATHER_VERIFIED_FETCH_MODE=strict|advisory|off (strict default)
+- WEATHER_DEFAULT_LOCATION=Hiroshima
+- WEATHER_OPENMETEO_TIMEOUT_SEC=20
+- WEATHER_HTTP_TRUST_ENV=1 (uses HTTP(S)_PROXY/NO_PROXY when required)
+- WEATHER_MODEL_INTENT_ENABLED=1 (model extracts location/target_date/target_time via JSON schema first)
+- PLAYWRIGHT_MODEL_QUERY_ENABLED=1 (model generates Playwright search plan via JSON schema)
+- PROGRESS_LOG_MODE=concise|verbose|off (concise default)
+- Flow: Playwright draft -> Open-Meteo verification -> rewrite/fix if mismatched.
+- In strict, final weather values are forced to match Open-Meteo for the requested target date.
+- In advisory, Open-Meteo is used as validation/reference but wording remains model-driven.
+- Source endpoint: https://api.open-meteo.com/v1/forecast (+ geocoding API).
 
 Generation best-practice settings:
 - `GENERATION_TEMPERATURE=0.6`

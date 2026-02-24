@@ -1227,6 +1227,12 @@ $runPodResponsesRequireToolForLiveWeb = Get-ConfigValue -Key "RUNPOD_RESPONSES_R
 if ([string]::IsNullOrWhiteSpace($runPodResponsesRequireToolForLiveWeb)) { $runPodResponsesRequireToolForLiveWeb = "1" }
 $runPodResponsesHardFailOnMissingTool = Get-ConfigValue -Key "RUNPOD_RESPONSES_HARD_FAIL_ON_MISSING_TOOL" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($runPodResponsesHardFailOnMissingTool)) { $runPodResponsesHardFailOnMissingTool = "0" }
+$runPodLmstudioChatPluginEnabled = Get-ConfigValue -Key "RUNPOD_LMSTUDIO_CHAT_PLUGIN_ENABLED" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($runPodLmstudioChatPluginEnabled)) { $runPodLmstudioChatPluginEnabled = "1" }
+$runPodLmstudioChatPluginForLiveWebOnly = Get-ConfigValue -Key "RUNPOD_LMSTUDIO_CHAT_PLUGIN_FOR_LIVE_WEB_ONLY" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($runPodLmstudioChatPluginForLiveWebOnly)) { $runPodLmstudioChatPluginForLiveWebOnly = "1" }
+$runPodLmstudioChatPluginId = Get-ConfigValue -Key "RUNPOD_LMSTUDIO_CHAT_PLUGIN_ID" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($runPodLmstudioChatPluginId)) { $runPodLmstudioChatPluginId = "mcp/playwright" }
 
 if ($localMcpEnabledNormalized) {
   $hasMcpModule = $false
@@ -1367,6 +1373,9 @@ $envVars = @{
   "RUNPOD_RESPONSES_LIVE_WEB_TOOL_CHOICE" = $runPodResponsesLiveWebToolChoice
   "RUNPOD_RESPONSES_REQUIRE_TOOL_FOR_LIVE_WEB" = $runPodResponsesRequireToolForLiveWeb
   "RUNPOD_RESPONSES_HARD_FAIL_ON_MISSING_TOOL" = $runPodResponsesHardFailOnMissingTool
+  "RUNPOD_LMSTUDIO_CHAT_PLUGIN_ENABLED" = $runPodLmstudioChatPluginEnabled
+  "RUNPOD_LMSTUDIO_CHAT_PLUGIN_FOR_LIVE_WEB_ONLY" = $runPodLmstudioChatPluginForLiveWebOnly
+  "RUNPOD_LMSTUDIO_CHAT_PLUGIN_ID" = $runPodLmstudioChatPluginId
   "LOCAL_MCP_WEATHER_ENABLED" = $localMcpEnabledFlag
   "LOCAL_MCP_WEATHER_BIND" = $localMcpBind
   "LOCAL_MCP_WEATHER_PORT" = $localMcpPort

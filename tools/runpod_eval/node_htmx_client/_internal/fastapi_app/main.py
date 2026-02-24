@@ -127,6 +127,17 @@ RUNPOD_RESPONSES_HARD_FAIL_ON_MISSING_TOOL = _get_bool_env(
     "RUNPOD_RESPONSES_HARD_FAIL_ON_MISSING_TOOL",
     False,
 )
+RUNPOD_LMSTUDIO_CHAT_PLUGIN_ENABLED = _get_bool_env(
+    "RUNPOD_LMSTUDIO_CHAT_PLUGIN_ENABLED",
+    True,
+)
+RUNPOD_LMSTUDIO_CHAT_PLUGIN_FOR_LIVE_WEB_ONLY = _get_bool_env(
+    "RUNPOD_LMSTUDIO_CHAT_PLUGIN_FOR_LIVE_WEB_ONLY",
+    True,
+)
+RUNPOD_LMSTUDIO_CHAT_PLUGIN_ID = (
+    os.getenv("RUNPOD_LMSTUDIO_CHAT_PLUGIN_ID", "mcp/playwright") or "mcp/playwright"
+).strip()
 RUNPOD_TLS_VERIFY = _get_bool_env("RUNPOD_TLS_VERIFY", True)
 RUNPOD_CA_BUNDLE = (os.getenv("RUNPOD_CA_BUNDLE", "") or "").strip()
 RUNPOD_TLS_USE_SYSTEM_STORE = _get_bool_env("RUNPOD_TLS_USE_SYSTEM_STORE", True)
@@ -1373,6 +1384,90 @@ def _extract_responses_id(payload: dict) -> str:
     return ""
 
 
+def _extract_lmstudio_chat_text(payload: dict) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    direct = str(payload.get("content", "") or "").strip()
+    if direct:
+        return direct
+    choices = payload.get("choices")
+    if not isinstance(choices, list):
+        return ""
+    chunks: list[str] = []
+    for choice in choices:
+        if not isinstance(choice, dict):
+            continue
+        message = choice.get("message")
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        if isinstance(content, str):
+            text = content.strip()
+            if text:
+                chunks.append(text)
+            continue
+        if isinstance(content, list):
+            for block in content:
+                if isinstance(block, str):
+                    text = block.strip()
+                    if text:
+                        chunks.append(text)
+                elif isinstance(block, dict):
+                    text = str(block.get("text", "") or "").strip()
+                    if text:
+                        chunks.append(text)
+    return "\n".join(chunks).strip()
+
+
+def _build_lmstudio_chat_url(base_url: str) -> str:
+    normalized = _normalize_base_url(base_url)
+    if not normalized:
+        return ""
+    try:
+        parsed = urlsplit(normalized)
+        path = (parsed.path or "").rstrip("/")
+        if path.endswith("/v1"):
+            path = path[:-3]
+        if not path:
+            path = "/api/v1/chat"
+        else:
+            path = f"{path}/api/v1/chat"
+        return f"{parsed.scheme}://{parsed.netloc}{path}"
+    except Exception:
+        return ""
+
+
+async def _run_runpod_lmstudio_chat_plugin(prompt: str, *, base_url: str, live_web_query: bool) -> str:
+    chat_url = _build_lmstudio_chat_url(base_url)
+    if not chat_url:
+        return ""
+    if RUNPOD_LMSTUDIO_CHAT_PLUGIN_FOR_LIVE_WEB_ONLY and (not live_web_query):
+        return ""
+    plugin_id = str(RUNPOD_LMSTUDIO_CHAT_PLUGIN_ID or "").strip()
+    if not plugin_id:
+        return ""
+    payload = {
+        "model": DEFAULT_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": False,
+        "integrations": [{"type": "plugin", "id": plugin_id}],
+    }
+    headers = _runpod_auth_headers(include_content_type=True)
+    timeout = httpx.Timeout(connect=20.0, read=120.0, write=30.0, pool=20.0)
+    verify_setting = _runpod_httpx_verify_setting()
+    async with httpx.AsyncClient(timeout=timeout, verify=verify_setting, trust_env=False) as client:
+        response = await client.post(chat_url, headers=headers, json=payload)
+    if response.status_code >= 400:
+        preview = response.text[:800] if response.text else ""
+        raise RuntimeError(f"lmstudio chat plugin failed: HTTP {response.status_code}. {preview}")
+    data = response.json() if response.content else {}
+    payload_data = data if isinstance(data, dict) else {}
+    text = _extract_lmstudio_chat_text(payload_data)
+    if not text:
+        raise RuntimeError("lmstudio chat plugin returned no assistant text.")
+    return text
+
+
 def _build_responses_tools_payload() -> list[dict]:
     if not RUNPOD_RESPONSES_TOOLS_ENABLED:
         return []
@@ -1487,6 +1582,14 @@ async def _run_runpod_responses_fallback(prompt: str, *, base_url: str = "") -> 
         ],
     }
     live_web_query = _prompt_likely_requires_live_web(prompt)
+    if RUNPOD_LMSTUDIO_CHAT_PLUGIN_ENABLED and (
+        (not RUNPOD_LMSTUDIO_CHAT_PLUGIN_FOR_LIVE_WEB_ONLY) or live_web_query
+    ):
+        return await _run_runpod_lmstudio_chat_plugin(
+            prompt,
+            base_url=resolved_base_url,
+            live_web_query=live_web_query,
+        )
     require_tool_for_prompt = RUNPOD_RESPONSES_REQUIRE_TOOL_FOR_LIVE_WEB and live_web_query
     enforce_tool_evidence = require_tool_for_prompt and RUNPOD_RESPONSES_HARD_FAIL_ON_MISSING_TOOL
     tool_choice = RUNPOD_RESPONSES_TOOL_CHOICE

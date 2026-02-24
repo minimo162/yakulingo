@@ -340,6 +340,22 @@ http {
             proxy_read_timeout 3600;
         }
 
+        location ^~ /api/v1/ {
+            set \$auth_ok 0;
+            if (\$http_x_api_key = "${token}") { set \$auth_ok 1; }
+            if (\$http_authorization = "Bearer ${token}") { set \$auth_ok 1; }
+            if (\$auth_ok = 0) { return 401; }
+
+            proxy_pass http://127.0.0.1:${LMS_SERVER_PORT};
+            proxy_http_version 1.1;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+            proxy_buffering off;
+            proxy_read_timeout 3600;
+        }
+
         location ^~ /mcp/ {
             set \$auth_ok 0;
             if (\$http_x_api_key = "${token}") { set \$auth_ok 1; }

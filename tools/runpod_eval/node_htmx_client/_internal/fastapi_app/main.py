@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 import html
 import json
 import os
@@ -12,6 +13,7 @@ import time
 from pathlib import Path
 from typing import AsyncIterator, Optional
 from urllib.parse import parse_qs, urlsplit
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import FastAPI, Request, Response
@@ -65,6 +67,7 @@ REQUESTED_AGENT_BACKEND = (os.getenv("AGENT_BACKEND", "") or "").strip().lower()
 AGENT_BACKEND = "codex_cli"
 
 APP_NAME = "LocaLingo"
+APP_TIME_ZONE = (os.getenv("APP_TIME_ZONE", "Asia/Tokyo") or "Asia/Tokyo").strip()
 DEFAULT_MODEL = (os.getenv("DEFAULT_MODEL", "gpt-oss-swallow-120b-iq4xs") or "gpt-oss-swallow-120b-iq4xs").strip()
 # Codex exec model defaults to the actual RunPod/LM Studio model ID.
 # (can be overridden explicitly via CODEX_EXEC_MODEL when needed)
@@ -1496,6 +1499,39 @@ def _parse_csv(value: str) -> list[str]:
     return rows
 
 
+def _now_local_date_iso() -> str:
+    tz_name = APP_TIME_ZONE or "Asia/Tokyo"
+    try:
+        now = datetime.now(ZoneInfo(tz_name))
+    except Exception:
+        now = datetime.utcnow()
+    return f"{now.year:04d}-{now.month:02d}-{now.day:02d}"
+
+
+def _build_live_web_guarded_prompt(prompt: str) -> str:
+    today = _now_local_date_iso()
+    return (
+        f"{prompt}\n\n"
+        f"[Time Guard]\n"
+        f"- Current date: {today} ({APP_TIME_ZONE}).\n"
+        f"- Use live web results for this date.\n"
+        f"- If exact date cannot be verified from fetched page, state that clearly.\n"
+        f"- Do not invent past/future dates.\n"
+    )
+
+
+def _contains_date_mismatch(text: str, expected_date: str) -> bool:
+    body = str(text or "")
+    m = re.search(r"(20\d{2})[年/\-\.](\d{1,2})[月/\-\.](\d{1,2})日?", body)
+    if not m:
+        return False
+    try:
+        found = f"{int(m.group(1)):04d}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+    except Exception:
+        return False
+    return found != expected_date
+
+
 async def _run_runpod_lmstudio_chat_plugin(prompt: str, *, base_url: str, live_web_query: bool) -> str:
     chat_url = _build_lmstudio_chat_url(base_url)
     if not chat_url:
@@ -1505,16 +1541,17 @@ async def _run_runpod_lmstudio_chat_plugin(prompt: str, *, base_url: str, live_w
     plugin_id = str(RUNPOD_LMSTUDIO_CHAT_PLUGIN_ID or "").strip()
     if not plugin_id:
         return ""
+    effective_prompt = _build_live_web_guarded_prompt(prompt) if live_web_query else prompt
     payload = {
         "model": DEFAULT_MODEL,
-        "input": prompt,
+        "input": effective_prompt,
         "stream": False,
         "integrations": [plugin_id],
     }
     allowed_tools = _parse_csv(RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_ALLOWED_TOOLS_RAW)
     ephemeral_payload = {
         "model": DEFAULT_MODEL,
-        "input": prompt,
+        "input": effective_prompt,
         "stream": False,
         "integrations": [
             {
@@ -1548,6 +1585,19 @@ async def _run_runpod_lmstudio_chat_plugin(prompt: str, *, base_url: str, live_w
     data = response.json() if response.content else {}
     payload_data = data if isinstance(data, dict) else {}
     text = _extract_lmstudio_chat_text(payload_data)
+    if live_web_query and text and _contains_date_mismatch(text, _now_local_date_iso()):
+        retry_payload = dict(ephemeral_payload if RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_PRIMARY else payload)
+        retry_payload["input"] = (
+            f"{effective_prompt}\n"
+            f"- The prior answer contained a date mismatch. Use date={_now_local_date_iso()} only.\n"
+        )
+        async with httpx.AsyncClient(timeout=timeout, verify=verify_setting, trust_env=False) as client:
+            retry = await client.post(chat_url, headers=headers, json=retry_payload)
+        if retry.status_code < 400:
+            retry_data = retry.json() if retry.content else {}
+            retry_text = _extract_lmstudio_chat_text(retry_data if isinstance(retry_data, dict) else {})
+            if retry_text:
+                text = retry_text
     if not text:
         raise RuntimeError("lmstudio chat plugin returned no assistant text.")
     return text

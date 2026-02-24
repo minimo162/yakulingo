@@ -119,6 +119,34 @@ function Mask-Url {
   }
 }
 
+function Convert-RunPodBaseUrlToMcpUrl {
+  param([string]$BaseUrl)
+  if ([string]::IsNullOrWhiteSpace($BaseUrl)) { return $null }
+  if (Test-PlaceholderValue -Value $BaseUrl) { return $null }
+  try {
+    $uri = [Uri]$BaseUrl
+    $path = $uri.AbsolutePath
+    if ([string]::IsNullOrWhiteSpace($path)) { $path = "/" }
+    $path = $path.TrimEnd("/")
+    if ($path -eq "") { $path = "/" }
+    if ($path -match "/v1$") {
+      $path = ($path -replace "/v1$", "")
+    }
+    if ($path -eq "/") {
+      $path = "/mcp"
+    } else {
+      $path = "$path/mcp"
+    }
+    $builder = New-Object System.UriBuilder($uri)
+    $builder.Path = $path
+    $builder.Query = ""
+    $builder.Fragment = ""
+    return $builder.Uri.AbsoluteUri.TrimEnd("/")
+  } catch {
+    return $null
+  }
+}
+
 function Resolve-NodeExe {
   param([Parameter(Mandatory = $true)][string]$BaseDir)
   $runtimeNode = Join-Path $BaseDir ".runtime\node\node.exe"
@@ -267,6 +295,75 @@ function Test-IsLocaLingoFastApiProcessId {
   return Test-IsLocaLingoFastApiCommandLine -CommandLine $cmd -Marker $Marker
 }
 
+function Get-ListeningProcessIdsByPort {
+  param([int]$Port)
+  if ($Port -le 0) { return @() }
+  $pids = @()
+  try {
+    $rows = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction Stop
+    if ($rows) {
+      $pids += @($rows | ForEach-Object { [int]$_.OwningProcess })
+    }
+  } catch {
+    try {
+      $netstatRows = & cmd /c "netstat -ano -p tcp | findstr LISTENING"
+      foreach ($line in $netstatRows) {
+        if ($line -match "^\s*TCP\s+\S+:(\d+)\s+\S+\s+LISTENING\s+(\d+)\s*$") {
+          $linePort = 0
+          $linePid = 0
+          [void][int]::TryParse($matches[1], [ref]$linePort)
+          [void][int]::TryParse($matches[2], [ref]$linePid)
+          if ($linePort -eq $Port -and $linePid -gt 0) {
+            $pids += $linePid
+          }
+        }
+      }
+    } catch {
+      return @()
+    }
+  }
+  return @($pids | Where-Object { $_ -gt 0 } | Sort-Object -Unique)
+}
+
+function Test-IsAnyNodeHtmxServerCommandLine {
+  param([string]$CommandLine)
+  if ([string]::IsNullOrWhiteSpace($CommandLine)) { return $false }
+  $normalizedCmd = Normalize-PathForMatch -Value $CommandLine
+  if ([string]::IsNullOrWhiteSpace($normalizedCmd)) { return $false }
+  if ($normalizedCmd.Contains("/node_htmx_client/_internal/server.mjs")) { return $true }
+  if ($normalizedCmd.Contains("node_htmx_client") -and $normalizedCmd.Contains("server.mjs")) { return $true }
+  return $false
+}
+
+function Get-LocaLingoPortOccupierProcessIds {
+  param(
+    [int[]]$Ports,
+    [string]$FastApiMarker
+  )
+  $targets = @()
+  foreach ($port in @($Ports | Where-Object { $_ -gt 0 } | Sort-Object -Unique)) {
+    $listeningPids = Get-ListeningProcessIdsByPort -Port $port
+    foreach ($listenPid in $listeningPids) {
+      if ($listenPid -le 0 -or $listenPid -eq $PID) { continue }
+      $rows = Get-CimInstance Win32_Process -Filter "ProcessId = $listenPid" -ErrorAction SilentlyContinue
+      if (-not $rows) { continue }
+      $row = $rows | Select-Object -First 1
+      $name = "$($row.Name)"
+      $cmd = "$($row.CommandLine)"
+      $isTarget = $false
+      if ($name -match "^node(\.exe)?$") {
+        $isTarget = Test-IsAnyNodeHtmxServerCommandLine -CommandLine $cmd
+      } elseif ($name -match "^python(\.exe)?$") {
+        $isTarget = Test-IsLocaLingoFastApiCommandLine -CommandLine $cmd -Marker $FastApiMarker
+      }
+      if ($isTarget) {
+        $targets += $listenPid
+      }
+    }
+  }
+  return @($targets | Sort-Object -Unique)
+}
+
 function Stop-ProcessByIdSafe {
   param([int]$ProcessId)
   if ($ProcessId -le 0) { return $false }
@@ -313,6 +410,9 @@ $pidFile = Join-Path $userDir "runpod-htmx-$userSlug.pid"
 $logDir = Join-Path $userDir "logs"
 $outLog = Join-Path $logDir "runpod-htmx-$userSlug.out.log"
 $errLog = Join-Path $logDir "runpod-htmx-$userSlug.err.log"
+$mcpPidFile = Join-Path $userDir "runpod-htmx-mcp-$userSlug.pid"
+$mcpOutLog = Join-Path $logDir "runpod-htmx-mcp-$userSlug.out.log"
+$mcpErrLog = Join-Path $logDir "runpod-htmx-mcp-$userSlug.err.log"
 $configEnvFile = Join-Path $PSScriptRoot ".env.example"
 $localEnvFile = Join-Path $PSScriptRoot ".env.local"
 $localEnvTemplateFile = Join-Path $PSScriptRoot ".env.local.example"
@@ -437,6 +537,8 @@ if (!(Test-Path $serverScript)) {
   Write-Host "Server script not found: $serverScript"
   exit 1
 }
+$localMcpScript = Join-Path $PSScriptRoot "mcp_weather_server.py"
+$localMcpMarker = $localMcpScript
 $fastApiAppDir = Join-Path $PSScriptRoot "fastapi_app"
 if (!(Test-Path $fastApiAppDir)) {
   Write-Host "FastAPI app directory not found: $fastApiAppDir"
@@ -498,8 +600,20 @@ if (Test-Path $pidFile) {
     $restartTargets += $pidFromFile
   }
 }
+if (Test-Path $mcpPidFile) {
+  $existingMcpPidRaw = (Get-Content -Raw $mcpPidFile).Trim()
+  [int]$mcpPidFromFile = 0
+  [void][int]::TryParse($existingMcpPidRaw, [ref]$mcpPidFromFile)
+  if (
+    $mcpPidFromFile -gt 0 -and
+    (Test-IsLocaLingoFastApiProcessId -ProcessId $mcpPidFromFile -Marker $localMcpMarker)
+  ) {
+    $restartTargets += $mcpPidFromFile
+  }
+}
 $restartTargets += Get-LocaLingoServerProcessIds -ServerScriptPath $serverScript
 $restartTargets += Get-LocaLingoFastApiProcessIds -Marker $fastApiAppMarker
+$restartTargets += Get-LocaLingoFastApiProcessIds -Marker $localMcpMarker
 $restartTargets = @($restartTargets | Where-Object { $_ -gt 0 -and $_ -ne $PID } | Sort-Object -Unique)
 
 if ($restartTargets.Count -gt 0) {
@@ -516,6 +630,7 @@ if ($restartTargets.Count -gt 0) {
 }
 
 Remove-Item -Force $pidFile -ErrorAction SilentlyContinue
+Remove-Item -Force $mcpPidFile -ErrorAction SilentlyContinue
 
 $defaultModel = Get-ConfigValue -Key "DEFAULT_MODEL" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($defaultModel)) {
@@ -546,6 +661,84 @@ if ($enginePort -eq $appPort) {
   }
 }
 
+$localMcpEnabled = Get-ConfigValue -Key "LOCAL_MCP_WEATHER_ENABLED" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($localMcpEnabled)) { $localMcpEnabled = "0" }
+$localMcpEnabledNormalized = @("1", "true", "yes", "on") -contains ($localMcpEnabled.Trim().ToLowerInvariant())
+
+$localMcpBind = Get-ConfigValue -Key "LOCAL_MCP_WEATHER_BIND" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($localMcpBind)) { $localMcpBind = "127.0.0.1" }
+
+$localMcpPort = Get-ConfigValue -Key "LOCAL_MCP_WEATHER_PORT" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($localMcpPort)) { $localMcpPort = "8765" }
+[int]$parsedLocalMcpPort = 0
+[void][int]::TryParse($localMcpPort, [ref]$parsedLocalMcpPort)
+if ($parsedLocalMcpPort -le 0) { $localMcpPort = "8765" }
+
+$localMcpPublicUrl = Get-ConfigValue -Key "LOCAL_MCP_WEATHER_PUBLIC_URL" -FilePaths $configFiles
+$localMcpLabel = Get-ConfigValue -Key "LOCAL_MCP_WEATHER_SERVER_LABEL" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($localMcpLabel)) { $localMcpLabel = "weather" }
+$localMcpAllowedTools = Get-ConfigValue -Key "LOCAL_MCP_WEATHER_ALLOWED_TOOLS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($localMcpAllowedTools)) { $localMcpAllowedTools = "search_weather" }
+
+$playwrightRemoteMcpEnabled = Get-ConfigValue -Key "PLAYWRIGHT_REMOTE_MCP_ENABLED" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($playwrightRemoteMcpEnabled)) { $playwrightRemoteMcpEnabled = "0" }
+$playwrightRemoteMcpEnabledNormalized = @("1", "true", "yes", "on") -contains ($playwrightRemoteMcpEnabled.Trim().ToLowerInvariant())
+$playwrightRemoteMcpServerLabel = Get-ConfigValue -Key "PLAYWRIGHT_REMOTE_MCP_SERVER_LABEL" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($playwrightRemoteMcpServerLabel)) { $playwrightRemoteMcpServerLabel = "playwright" }
+$playwrightRemoteMcpUrl = Get-ConfigValue -Key "PLAYWRIGHT_REMOTE_MCP_URL" -FilePaths $configFiles
+$playwrightRemoteMcpAutoFromRunPod = Get-ConfigValue -Key "PLAYWRIGHT_REMOTE_MCP_AUTO_FROM_RUNPOD" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($playwrightRemoteMcpAutoFromRunPod)) { $playwrightRemoteMcpAutoFromRunPod = "1" }
+$playwrightRemoteMcpAutoFromRunPodNormalized = @("1", "true", "yes", "on") -contains ($playwrightRemoteMcpAutoFromRunPod.Trim().ToLowerInvariant())
+$playwrightRemoteMcpAllowedTools = Get-ConfigValue -Key "PLAYWRIGHT_REMOTE_MCP_ALLOWED_TOOLS" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($playwrightRemoteMcpAllowedTools)) {
+  $playwrightRemoteMcpAllowedTools = "browser_navigate,browser_snapshot"
+}
+if ($playwrightRemoteMcpEnabledNormalized -and (Test-PlaceholderValue -Value $playwrightRemoteMcpUrl) -and $playwrightRemoteMcpAutoFromRunPodNormalized) {
+  $derivedMcpUrl = Convert-RunPodBaseUrlToMcpUrl -BaseUrl $baseUrl
+  if (-not [string]::IsNullOrWhiteSpace($derivedMcpUrl)) {
+    $playwrightRemoteMcpUrl = $derivedMcpUrl
+    Write-Host "Auto-derived PLAYWRIGHT_REMOTE_MCP_URL from RUNPOD_BASE_URL: $(Mask-Url $playwrightRemoteMcpUrl)"
+  }
+}
+$playwrightRemoteMcpEnabledFlag = "0"
+if ($playwrightRemoteMcpEnabledNormalized) { $playwrightRemoteMcpEnabledFlag = "1" }
+
+$portConflictTargets = Get-LocaLingoPortOccupierProcessIds -Ports @([int]$appPort, [int]$enginePort) -FastApiMarker $fastApiAppMarker
+$portConflictTargets = @($portConflictTargets | Where-Object { $_ -gt 0 -and $_ -ne $PID } | Sort-Object -Unique)
+if ($portConflictTargets.Count -gt 0) {
+  Write-Host "Detected stale LocaLingo process(es) on target port(s): $($portConflictTargets -join ', ')"
+  foreach ($procId in $portConflictTargets) {
+    Write-Host "Stopping port-conflict PID=$procId ..."
+    [void](Stop-ProcessByIdSafe -ProcessId $procId)
+  }
+  for ($i = 0; $i -lt 20; $i++) {
+    $alive = @($portConflictTargets | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue })
+    if ($alive.Count -eq 0) { break }
+    Start-Sleep -Milliseconds 200
+  }
+}
+
+if ($localMcpEnabledNormalized) {
+  if (!(Test-Path $localMcpScript)) {
+    Write-Host "Local MCP weather server script not found: $localMcpScript"
+    exit 1
+  }
+  $mcpPortConflictTargets = Get-LocaLingoPortOccupierProcessIds -Ports @([int]$localMcpPort) -FastApiMarker $localMcpMarker
+  $mcpPortConflictTargets = @($mcpPortConflictTargets | Where-Object { $_ -gt 0 -and $_ -ne $PID } | Sort-Object -Unique)
+  if ($mcpPortConflictTargets.Count -gt 0) {
+    Write-Host "Detected stale local MCP process(es) on target port: $($mcpPortConflictTargets -join ', ')"
+    foreach ($procId in $mcpPortConflictTargets) {
+      Write-Host "Stopping MCP port-conflict PID=$procId ..."
+      [void](Stop-ProcessByIdSafe -ProcessId $procId)
+    }
+    for ($i = 0; $i -lt 20; $i++) {
+      $alive = @($mcpPortConflictTargets | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue })
+      if ($alive.Count -eq 0) { break }
+      Start-Sleep -Milliseconds 200
+    }
+  }
+}
+
 $appTimeZone = Get-ConfigValue -Key "APP_TIME_ZONE" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($appTimeZone)) { $appTimeZone = "Asia/Tokyo" }
 
@@ -572,6 +765,9 @@ if ([string]::IsNullOrWhiteSpace($runPodHealthcheckOnChat)) { $runPodHealthcheck
 
 $runPodHealthcheckTtlMs = Get-ConfigValue -Key "RUNPOD_HEALTHCHECK_TTL_MS" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($runPodHealthcheckTtlMs)) { $runPodHealthcheckTtlMs = "20000" }
+$runPodTlsVerify = Get-ConfigValue -Key "RUNPOD_TLS_VERIFY" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($runPodTlsVerify)) { $runPodTlsVerify = "1" }
+$runPodCaBundle = Get-ConfigValue -Key "RUNPOD_CA_BUNDLE" -FilePaths $configFiles
 
 $workspaceRoot = Join-Path $BaseDir "workspace"
 if (!(Test-Path $workspaceRoot)) {
@@ -689,8 +885,11 @@ $codexHome = Get-ConfigValue -Key "CODEX_HOME" -FilePaths $configFiles
 $codexExecTimeoutSec = Get-ConfigValue -Key "CODEX_EXEC_TIMEOUT_SEC" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($codexExecTimeoutSec)) { $codexExecTimeoutSec = "900" }
 
+$codexExecRouteMode = Get-ConfigValue -Key "CODEX_EXEC_ROUTE_MODE" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexExecRouteMode)) { $codexExecRouteMode = "background_poll" }
+
 $codexNativeMode = Get-ConfigValue -Key "CODEX_NATIVE_MODE" -FilePaths $configFiles
-if ([string]::IsNullOrWhiteSpace($codexNativeMode)) { $codexNativeMode = "1" }
+if ([string]::IsNullOrWhiteSpace($codexNativeMode)) { $codexNativeMode = "0" }
 
 $codexFullAuto = Get-ConfigValue -Key "CODEX_FULL_AUTO" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($codexFullAuto)) { $codexFullAuto = "1" }
@@ -707,7 +906,7 @@ $codexProviderRequestMaxRetries = Get-ConfigValue -Key "CODEX_PROVIDER_REQUEST_M
 if ([string]::IsNullOrWhiteSpace($codexProviderRequestMaxRetries)) { $codexProviderRequestMaxRetries = "1" }
 
 $codexProviderStreamMaxRetries = Get-ConfigValue -Key "CODEX_PROVIDER_STREAM_MAX_RETRIES" -FilePaths $configFiles
-if ([string]::IsNullOrWhiteSpace($codexProviderStreamMaxRetries)) { $codexProviderStreamMaxRetries = "1" }
+if ([string]::IsNullOrWhiteSpace($codexProviderStreamMaxRetries)) { $codexProviderStreamMaxRetries = "2" }
 
 $codexProviderStreamIdleTimeoutMs = Get-ConfigValue -Key "CODEX_PROVIDER_STREAM_IDLE_TIMEOUT_MS" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($codexProviderStreamIdleTimeoutMs)) { $codexProviderStreamIdleTimeoutMs = "45000" }
@@ -805,6 +1004,115 @@ if ([string]::IsNullOrWhiteSpace($runPodResponsesPollIntervalMs)) { $runPodRespo
 $runPodResponsesPollTimeoutMs = Get-ConfigValue -Key "RUNPOD_RESPONSES_POLL_TIMEOUT_MS" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($runPodResponsesPollTimeoutMs)) { $runPodResponsesPollTimeoutMs = "90000" }
 
+$runPodResponsesToolsEnabled = Get-ConfigValue -Key "RUNPOD_RESPONSES_TOOLS_ENABLED" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($runPodResponsesToolsEnabled)) { $runPodResponsesToolsEnabled = "1" }
+
+$runPodResponsesToolTypes = Get-ConfigValue -Key "RUNPOD_RESPONSES_TOOL_TYPES" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($runPodResponsesToolTypes)) { $runPodResponsesToolTypes = "" }
+
+$runPodResponsesFunctionToolsJson = Get-ConfigValue -Key "RUNPOD_RESPONSES_FUNCTION_TOOLS_JSON" -FilePaths $configFiles
+$runPodResponsesMcpToolsJson = Get-ConfigValue -Key "RUNPOD_RESPONSES_MCP_TOOLS_JSON" -FilePaths $configFiles
+
+if ($localMcpEnabledNormalized -and [string]::IsNullOrWhiteSpace($runPodResponsesMcpToolsJson)) {
+  $resolvedMcpUrl = "$localMcpPublicUrl".Trim()
+  if ([string]::IsNullOrWhiteSpace($resolvedMcpUrl)) {
+    $resolvedMcpUrl = "http://$localMcpBind`:$localMcpPort/mcp"
+  }
+  $allowedTools = @()
+  foreach ($item in "$localMcpAllowedTools".Split(",")) {
+    $tool = "$item".Trim()
+    if (-not [string]::IsNullOrWhiteSpace($tool)) {
+      $allowedTools += $tool
+    }
+  }
+  if ($allowedTools.Count -eq 0) {
+    $allowedTools = @("search_weather")
+  }
+  $autoMcpTool = @{
+    type = "mcp"
+    server_label = $localMcpLabel
+    server_url = $resolvedMcpUrl
+    allowed_tools = $allowedTools
+  }
+  $runPodResponsesMcpToolsJson = "[" + (($autoMcpTool | ConvertTo-Json -Compress -Depth 6).Trim()) + "]"
+}
+
+if ($playwrightRemoteMcpEnabledNormalized -and -not [string]::IsNullOrWhiteSpace($playwrightRemoteMcpUrl)) {
+  $pwAllowedTools = @()
+  foreach ($item in "$playwrightRemoteMcpAllowedTools".Split(",")) {
+    $tool = "$item".Trim()
+    if (-not [string]::IsNullOrWhiteSpace($tool)) {
+      $pwAllowedTools += $tool
+    }
+  }
+  if ($pwAllowedTools.Count -eq 0) {
+    $pwAllowedTools = @("browser_navigate", "browser_snapshot")
+  }
+  $playwrightMcpTool = @{
+    type = "mcp"
+    server_label = $playwrightRemoteMcpServerLabel
+    server_url = $playwrightRemoteMcpUrl
+    allowed_tools = $pwAllowedTools
+  }
+  if ([string]::IsNullOrWhiteSpace($runPodResponsesMcpToolsJson)) {
+    $runPodResponsesMcpToolsJson = "[" + (($playwrightMcpTool | ConvertTo-Json -Compress -Depth 6).Trim()) + "]"
+  } else {
+    try {
+      $parsedMcpTools = $runPodResponsesMcpToolsJson | ConvertFrom-Json -ErrorAction Stop
+      $list = @()
+      if ($parsedMcpTools -is [System.Array]) {
+        $list += $parsedMcpTools
+      } else {
+        $list += $parsedMcpTools
+      }
+      $list += [pscustomobject]$playwrightMcpTool
+      $runPodResponsesMcpToolsJson = ($list | ConvertTo-Json -Compress -Depth 8)
+    } catch {
+      Write-Warning "RUNPOD_RESPONSES_MCP_TOOLS_JSON is not valid JSON. Appending Playwright MCP tool was skipped."
+    }
+  }
+}
+
+$runPodResponsesToolChoice = Get-ConfigValue -Key "RUNPOD_RESPONSES_TOOL_CHOICE" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($runPodResponsesToolChoice)) { $runPodResponsesToolChoice = "auto" }
+
+$runPodResponsesLiveWebToolChoice = Get-ConfigValue -Key "RUNPOD_RESPONSES_LIVE_WEB_TOOL_CHOICE" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($runPodResponsesLiveWebToolChoice)) { $runPodResponsesLiveWebToolChoice = "required" }
+
+$runPodResponsesRequireToolForLiveWeb = Get-ConfigValue -Key "RUNPOD_RESPONSES_REQUIRE_TOOL_FOR_LIVE_WEB" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($runPodResponsesRequireToolForLiveWeb)) { $runPodResponsesRequireToolForLiveWeb = "1" }
+
+if ($localMcpEnabledNormalized) {
+  $hasMcpModule = $false
+  try {
+    & $pythonExe -c "import mcp" *>$null
+    $hasMcpModule = ($LASTEXITCODE -eq 0)
+  } catch {
+    $hasMcpModule = $false
+  }
+  if (-not $hasMcpModule) {
+    Write-Host "Local MCP server dependencies are missing. Preparing bundled Python runtime packages..."
+    $preparePyScript = Join-Path $PSScriptRoot "prepare-python-runtime.ps1"
+    if (!(Test-Path $preparePyScript)) {
+      Write-Host "prepare-python-runtime.ps1 not found: $preparePyScript"
+      exit 1
+    }
+    $prepareArgs = @{ "PythonSpec" = $pythonRuntimeSpec }
+    if (-not [string]::IsNullOrWhiteSpace($pythonRuntimeUvTarget)) {
+      $prepareArgs["UvTarget"] = $pythonRuntimeUvTarget
+    }
+    & $preparePyScript @prepareArgs
+    $pythonExe = Resolve-PythonExe -BaseDir $BaseDir
+    if ([string]::IsNullOrWhiteSpace($pythonExe)) {
+      Write-Host "Failed to resolve Python runtime after dependency install."
+      exit 1
+    }
+  }
+}
+
+$localMcpEnabledFlag = "0"
+if ($localMcpEnabledNormalized) { $localMcpEnabledFlag = "1" }
+
 $envVars = @{
   "RUNPOD_BASE_URL"         = $baseUrl
   "RUNPOD_BASE_URL_CANDIDATES" = $runPodBaseUrlCandidates
@@ -826,6 +1134,8 @@ $envVars = @{
   "RUNPOD_CHAT_TIMEOUT_MS" = $runPodChatTimeoutMs
   "RUNPOD_HEALTHCHECK_ON_CHAT" = $runPodHealthcheckOnChat
   "RUNPOD_HEALTHCHECK_TTL_MS" = $runPodHealthcheckTtlMs
+  "RUNPOD_TLS_VERIFY" = $runPodTlsVerify
+  "RUNPOD_CA_BUNDLE" = $runPodCaBundle
   "WORKSPACE_ROOT"          = $workspaceRoot
   "WORKSPACE_STATE_FILE"    = $workspaceStateFile
   "LOCAL_SHELL_TIMEOUT_MS"  = $localShellTimeout
@@ -864,6 +1174,7 @@ $envVars = @{
   "CODEX_BUNDLED_PACKAGE" = $codexBundledPackage
   "CODEX_HOME" = $codexHome
   "CODEX_EXEC_TIMEOUT_SEC" = $codexExecTimeoutSec
+  "CODEX_EXEC_ROUTE_MODE" = $codexExecRouteMode
   "CODEX_NATIVE_MODE" = $codexNativeMode
   "CODEX_FULL_AUTO" = $codexFullAuto
   "CODEX_SKIP_GIT_REPO_CHECK" = $codexSkipGitRepoCheck
@@ -900,6 +1211,24 @@ $envVars = @{
   "RUNPOD_RESPONSES_BACKGROUND_ENABLED" = $runPodResponsesBackgroundEnabled
   "RUNPOD_RESPONSES_POLL_INTERVAL_MS" = $runPodResponsesPollIntervalMs
   "RUNPOD_RESPONSES_POLL_TIMEOUT_MS" = $runPodResponsesPollTimeoutMs
+  "RUNPOD_RESPONSES_TOOLS_ENABLED" = $runPodResponsesToolsEnabled
+  "RUNPOD_RESPONSES_TOOL_TYPES" = $runPodResponsesToolTypes
+  "RUNPOD_RESPONSES_FUNCTION_TOOLS_JSON" = $runPodResponsesFunctionToolsJson
+  "RUNPOD_RESPONSES_MCP_TOOLS_JSON" = $runPodResponsesMcpToolsJson
+  "RUNPOD_RESPONSES_TOOL_CHOICE" = $runPodResponsesToolChoice
+  "RUNPOD_RESPONSES_LIVE_WEB_TOOL_CHOICE" = $runPodResponsesLiveWebToolChoice
+  "RUNPOD_RESPONSES_REQUIRE_TOOL_FOR_LIVE_WEB" = $runPodResponsesRequireToolForLiveWeb
+  "LOCAL_MCP_WEATHER_ENABLED" = $localMcpEnabledFlag
+  "LOCAL_MCP_WEATHER_BIND" = $localMcpBind
+  "LOCAL_MCP_WEATHER_PORT" = $localMcpPort
+  "LOCAL_MCP_WEATHER_PUBLIC_URL" = $localMcpPublicUrl
+  "LOCAL_MCP_WEATHER_SERVER_LABEL" = $localMcpLabel
+  "LOCAL_MCP_WEATHER_ALLOWED_TOOLS" = $localMcpAllowedTools
+  "PLAYWRIGHT_REMOTE_MCP_ENABLED" = $playwrightRemoteMcpEnabledFlag
+  "PLAYWRIGHT_REMOTE_MCP_SERVER_LABEL" = $playwrightRemoteMcpServerLabel
+  "PLAYWRIGHT_REMOTE_MCP_URL" = $playwrightRemoteMcpUrl
+  "PLAYWRIGHT_REMOTE_MCP_AUTO_FROM_RUNPOD" = $playwrightRemoteMcpAutoFromRunPod
+  "PLAYWRIGHT_REMOTE_MCP_ALLOWED_TOOLS" = $playwrightRemoteMcpAllowedTools
   "NODE_BIN" = $nodeExe
   "ENGINE_BIND" = $engineBind
   "ENGINE_PORT" = $enginePort
@@ -911,7 +1240,19 @@ foreach ($k in $envVars.Keys) {
   [Environment]::SetEnvironmentVariable($k, $envVars[$k], "Process")
 }
 
+$localMcpProc = $null
 try {
+  if ($localMcpEnabledNormalized) {
+    $localMcpProc = Start-Process -FilePath $pythonExe `
+      -ArgumentList @($localMcpScript, "--host", $localMcpBind, "--port", $localMcpPort) `
+      -PassThru `
+      -WindowStyle Hidden `
+      -WorkingDirectory $PSScriptRoot `
+      -RedirectStandardOutput $mcpOutLog `
+      -RedirectStandardError $mcpErrLog
+    $localMcpProc.Id | Set-Content -Path $mcpPidFile -Encoding ASCII
+  }
+
   $proc = Start-Process -FilePath $pythonExe `
     -ArgumentList @("-m", "uvicorn", "fastapi_app.main:app", "--host", $appBind, "--port", $appPort) `
     -PassThru `
@@ -930,13 +1271,29 @@ $proc.Id | Set-Content -Path $pidFile -Encoding ASCII
 
 $url = "http://localhost:$appPort/"
 if (-not $NoHealthCheck) {
+  $expectedService = "fastapi-htmx-client"
   $ready = $false
+  $lastStatusCode = 0
+  $lastObservedService = ""
   for ($i = 1; $i -le 30; $i++) {
     try {
       $resp = Invoke-WebRequest -Uri "http://127.0.0.1:$appPort/health" -Method GET -TimeoutSec 3 -UseBasicParsing
+      $lastStatusCode = [int]$resp.StatusCode
       if ($resp.StatusCode -eq 200) {
-        $ready = $true
-        break
+        $observedService = ""
+        try {
+          $payload = $resp.Content | ConvertFrom-Json -ErrorAction Stop
+          if ($payload -and $payload.PSObject.Properties.Name -contains "service") {
+            $observedService = "$($payload.service)"
+          }
+        } catch {
+          $observedService = ""
+        }
+        $lastObservedService = $observedService
+        if ($observedService -eq $expectedService) {
+          $ready = $true
+          break
+        }
       }
     } catch {
       Start-Sleep -Seconds 1
@@ -945,9 +1302,21 @@ if (-not $NoHealthCheck) {
     Start-Sleep -Seconds 1
   }
   if (-not $ready) {
-    Write-Warning "Client launched but health check timed out."
+    if (-not [string]::IsNullOrWhiteSpace($lastObservedService) -and $lastObservedService -ne $expectedService) {
+      Write-Warning "Health endpoint responded with unexpected service '$lastObservedService' on port $appPort."
+    } elseif ($lastStatusCode -gt 0) {
+      Write-Warning "Health endpoint status was $lastStatusCode on port $appPort."
+    } else {
+      Write-Warning "Health endpoint did not respond on port $appPort."
+    }
+    Write-Warning "Expected service: $expectedService"
     Write-Host "Out log: $outLog"
     Write-Host "Err log: $errLog"
+    [void](Stop-ProcessByIdSafe -ProcessId $proc.Id)
+    if ($localMcpProc) {
+      [void](Stop-ProcessByIdSafe -ProcessId $localMcpProc.Id)
+    }
+    exit 1
   }
 }
 
@@ -958,6 +1327,12 @@ if (-not $NoOpenBrowser) {
 Write-Host "LocaLingo started."
 Write-Host "PID: $($proc.Id)"
 Write-Host "FastAPI: $pythonExe -m uvicorn fastapi_app.main:app"
+if ($localMcpEnabledNormalized) {
+  Write-Host "Local MCP weather: $pythonExe $localMcpScript --host $localMcpBind --port $localMcpPort"
+  Write-Host "Local MCP URL: http://$localMcpBind`:$localMcpPort/mcp"
+  Write-Host "MCP out log: $mcpOutLog"
+  Write-Host "MCP err log: $mcpErrLog"
+}
 Write-Host "Node (engine): $nodeExe"
 Write-Host "Codex (bundled): $bundledCodexExe"
 Write-Host "UV: $uvExe"
@@ -969,6 +1344,7 @@ Write-Host "Secure key store: $apiKeyStoreFile"
 Write-Host "Workspace root: $workspaceRoot"
 Write-Host "Workspace state file: $workspaceStateFile"
 Write-Host "Agent backend: $agentBackendNormalized"
+Write-Host "Codex route mode: $codexExecRouteMode"
 Write-Host "Endpoint: $(Mask-Url -Url $baseUrl)"
 Write-Host "Connection test mode: $connectionTestModeNormalized"
 Write-Host "URL: $url"

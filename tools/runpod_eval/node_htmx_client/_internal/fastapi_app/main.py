@@ -100,6 +100,30 @@ RUNPOD_RESPONSES_POLL_TIMEOUT_MS = _get_int_env(
     minimum=5000,
     maximum=600000,
 )
+RUNPOD_RESPONSES_TOOLS_ENABLED = _get_bool_env("RUNPOD_RESPONSES_TOOLS_ENABLED", True)
+RUNPOD_RESPONSES_TOOL_TYPES_RAW = (os.getenv("RUNPOD_RESPONSES_TOOL_TYPES", "") or "").strip()
+RUNPOD_RESPONSES_FUNCTION_TOOLS_JSON = (
+    os.getenv("RUNPOD_RESPONSES_FUNCTION_TOOLS_JSON", "") or ""
+).strip()
+RUNPOD_RESPONSES_MCP_TOOLS_JSON = (
+    os.getenv("RUNPOD_RESPONSES_MCP_TOOLS_JSON", "") or ""
+).strip()
+RUNPOD_RESPONSES_TOOL_CHOICE = _get_enum_env(
+    "RUNPOD_RESPONSES_TOOL_CHOICE",
+    "auto",
+    {"none", "auto", "required"},
+)
+RUNPOD_RESPONSES_LIVE_WEB_TOOL_CHOICE = _get_enum_env(
+    "RUNPOD_RESPONSES_LIVE_WEB_TOOL_CHOICE",
+    "required",
+    {"inherit", "none", "auto", "required"},
+)
+RUNPOD_RESPONSES_REQUIRE_TOOL_FOR_LIVE_WEB = _get_bool_env(
+    "RUNPOD_RESPONSES_REQUIRE_TOOL_FOR_LIVE_WEB",
+    True,
+)
+RUNPOD_TLS_VERIFY = _get_bool_env("RUNPOD_TLS_VERIFY", True)
+RUNPOD_CA_BUNDLE = (os.getenv("RUNPOD_CA_BUNDLE", "") or "").strip()
 WORKSPACE_ROOT_ENV = (os.getenv("WORKSPACE_ROOT", "") or "").strip()
 WORKSPACE_STATE_FILE = (os.getenv("WORKSPACE_STATE_FILE", "") or "").strip()
 CODEX_BIN = (os.getenv("CODEX_BIN", "") or "").strip()
@@ -108,7 +132,16 @@ CODEX_REQUIRE_BUNDLED = _get_bool_env("CODEX_REQUIRE_BUNDLED", True)
 CODEX_BUNDLED_PACKAGE = (os.getenv("CODEX_BUNDLED_PACKAGE", "@openai/codex@latest") or "@openai/codex@latest").strip()
 CODEX_HOME_ENV = (os.getenv("CODEX_HOME", "") or "").strip()
 CODEX_EXEC_TIMEOUT_SEC = max(30, int((os.getenv("CODEX_EXEC_TIMEOUT_SEC", "900") or "900").strip() or "900"))
-CODEX_NATIVE_MODE = _get_bool_env("CODEX_NATIVE_MODE", True)
+CODEX_NATIVE_MODE_RAW = (os.getenv("CODEX_NATIVE_MODE", "") or "").strip()
+CODEX_NATIVE_MODE = _get_bool_env("CODEX_NATIVE_MODE", False)
+CODEX_EXEC_ROUTE_MODE_RAW = (os.getenv("CODEX_EXEC_ROUTE_MODE", "") or "").strip().lower()
+_CODEX_EXEC_ROUTE_MODE_ALLOWED = {"native", "resilient", "background_poll"}
+if CODEX_EXEC_ROUTE_MODE_RAW in _CODEX_EXEC_ROUTE_MODE_ALLOWED:
+    CODEX_EXEC_ROUTE_MODE = CODEX_EXEC_ROUTE_MODE_RAW
+elif CODEX_NATIVE_MODE_RAW:
+    CODEX_EXEC_ROUTE_MODE = "native" if CODEX_NATIVE_MODE else "resilient"
+else:
+    CODEX_EXEC_ROUTE_MODE = "background_poll"
 CODEX_FULL_AUTO = str(os.getenv("CODEX_FULL_AUTO", "1")).strip().lower() in {"1", "true", "yes", "on"}
 CODEX_SKIP_GIT_REPO_CHECK = str(os.getenv("CODEX_SKIP_GIT_REPO_CHECK", "1")).strip().lower() in {"1", "true", "yes", "on"}
 CODEX_DANGEROUS_BYPASS = str(os.getenv("CODEX_DANGEROUS_BYPASS", "0")).strip().lower() in {"1", "true", "yes", "on"}
@@ -316,6 +349,39 @@ def _route_status_label(base_url: str) -> str:
         return base_url
 
 
+def _runpod_httpx_verify_setting() -> bool | str:
+    if not RUNPOD_TLS_VERIFY:
+        return False
+    if RUNPOD_CA_BUNDLE:
+        path = Path(RUNPOD_CA_BUNDLE).expanduser()
+        if path.exists():
+            return str(path)
+    return True
+
+
+def _has_proxy_env() -> bool:
+    keys = (
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+    )
+    return any(bool((os.getenv(k, "") or "").strip()) for k in keys)
+
+
+def _looks_like_tls_verify_failure(exc: Exception | str) -> bool:
+    text = str(exc or "").lower()
+    markers = (
+        "certificate verify failed",
+        "unable to get local issuer certificate",
+        "self-signed certificate",
+        "ssl: cert",
+    )
+    return any(marker in text for marker in markers)
+
+
 def _mark_runpod_route_success(base_url: str) -> None:
     if not base_url:
         return
@@ -345,8 +411,9 @@ async def _probe_runpod_base_url(base_url: str) -> tuple[bool, str]:
         headers["x-api-key"] = RUNPOD_API_KEY
     timeout_sec = max(1.0, RUNPOD_ROUTE_PROBE_TIMEOUT_MS / 1000.0)
     timeout = httpx.Timeout(connect=timeout_sec, read=timeout_sec, write=timeout_sec, pool=timeout_sec)
+    verify_setting = _runpod_httpx_verify_setting()
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(timeout=timeout, verify=verify_setting) as client:
             response = await client.get(probe_url, headers=headers)
         if 200 <= response.status_code < 500:
             return True, ""
@@ -662,8 +729,13 @@ def _ensure_codex_config(
     provider_id = str(CODEX_LMSTUDIO_PROVIDER_ID or "lmstudio-runpod").strip()
     if not provider_id:
         provider_id = "lmstudio-runpod"
+    normalized_model_slug = re.sub(r"[^a-z0-9_-]+", "-", model.lower()).strip("-")
+    if not normalized_model_slug:
+        normalized_model_slug = "default"
+    profile_name = f"runpod-{normalized_model_slug}"
     config_text = "\n".join(
         [
+            f"profile = {_toml_quote(profile_name)}",
             f"model = {_toml_quote(model)}",
             f"model_provider = {_toml_quote(provider_id)}",
             "oss_provider = \"lmstudio\"",
@@ -685,6 +757,10 @@ def _ensure_codex_config(
             f"stream_max_retries = {stream_max_retries}",
             f"stream_idle_timeout_ms = {stream_idle_timeout_ms}",
             'env_http_headers = { "x-api-key" = "RUNPOD_API_KEY" }',
+            "",
+            f"[profiles.{profile_name}]",
+            f"model = {_toml_quote(model)}",
+            f"model_provider = {_toml_quote(provider_id)}",
             "",
         ]
     )
@@ -1009,6 +1085,17 @@ def _is_stream_disconnect_message(text: str) -> bool:
     )
 
 
+def _is_empty_last_message_warning(text: str) -> bool:
+    normalized = str(text or "").lower()
+    return (
+        "warning: no last agent message" in normalized
+        and "output-last-message" in normalized
+    ) or (
+        "warning: no last agent message" in normalized
+        and "last_message" in normalized
+    )
+
+
 def _is_transport_failure_message(text: str) -> bool:
     normalized = str(text or "").lower()
     transport_markers = (
@@ -1094,7 +1181,8 @@ async def _run_engine_tool_fallback(prompt: str) -> tuple[str, list[str], str]:
     deltas: list[str] = []
     assistant_text = ""
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        # Internal engine is always loopback; bypass OS proxy env to avoid corporate proxy redirects.
+        async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
             async with client.stream("POST", url, data=payload) as res:
                 if res.status_code >= 400:
                     preview = (await res.aread()).decode("utf-8", errors="replace")[:800]
@@ -1179,6 +1267,101 @@ def _extract_responses_id(payload: dict) -> str:
     return ""
 
 
+def _build_responses_tools_payload() -> list[dict]:
+    if not RUNPOD_RESPONSES_TOOLS_ENABLED:
+        return []
+    rows: list[dict] = []
+    seen: set[str] = set()
+
+    def add_tool(tool_payload: dict) -> None:
+        if not isinstance(tool_payload, dict):
+            return
+        tool_type = str(tool_payload.get("type", "") or "").strip()
+        if not tool_type:
+            return
+        key = json.dumps(tool_payload, ensure_ascii=False, sort_keys=True)
+        if key in seen:
+            return
+        seen.add(key)
+        rows.append(tool_payload)
+
+    normalized_rows = RUNPOD_RESPONSES_TOOL_TYPES_RAW.replace(";", ",").replace("\n", ",")
+    for item in normalized_rows.split(","):
+        tool_type = str(item or "").strip()
+        if not tool_type:
+            continue
+        add_tool({"type": tool_type})
+
+    def parse_tools_json(raw_json: str, env_name: str, expected_type: str) -> None:
+        text = str(raw_json or "").strip()
+        if not text:
+            return
+        try:
+            parsed = json.loads(text)
+        except Exception as exc:
+            raise RuntimeError(f"{env_name} is not valid JSON: {exc}") from exc
+        if not isinstance(parsed, list):
+            raise RuntimeError(f"{env_name} must be a JSON array.")
+        for index, item in enumerate(parsed, start=1):
+            if not isinstance(item, dict):
+                raise RuntimeError(f"{env_name}[{index}] must be an object.")
+            tool_type = str(item.get("type", "") or "").strip()
+            if tool_type != expected_type:
+                raise RuntimeError(
+                    f"{env_name}[{index}] type must be '{expected_type}' (actual='{tool_type}')."
+                )
+            add_tool(item)
+
+    parse_tools_json(
+        RUNPOD_RESPONSES_FUNCTION_TOOLS_JSON,
+        "RUNPOD_RESPONSES_FUNCTION_TOOLS_JSON",
+        "function",
+    )
+    parse_tools_json(
+        RUNPOD_RESPONSES_MCP_TOOLS_JSON,
+        "RUNPOD_RESPONSES_MCP_TOOLS_JSON",
+        "mcp",
+    )
+    return rows
+
+
+def _responses_payload_has_tool_evidence(payload: dict) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    direct_tool_calls = payload.get("tool_calls")
+    if isinstance(direct_tool_calls, list) and len(direct_tool_calls) > 0:
+        return True
+
+    output_items = payload.get("output")
+    if not isinstance(output_items, list):
+        return False
+
+    for item in output_items:
+        if not isinstance(item, dict):
+            continue
+        item_type = str(item.get("type", "") or "").strip().lower()
+        if "tool" in item_type or "web_search" in item_type:
+            return True
+
+        content = item.get("content")
+        if isinstance(content, list):
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                block_type = str(block.get("type", "") or "").strip().lower()
+                if "tool" in block_type or "web_search" in block_type:
+                    return True
+                annotations = block.get("annotations")
+                if isinstance(annotations, list):
+                    for annotation in annotations:
+                        if not isinstance(annotation, dict):
+                            continue
+                        anno_type = str(annotation.get("type", "") or "").strip().lower()
+                        if "url" in anno_type or "citation" in anno_type or "web" in anno_type:
+                            return True
+    return False
+
+
 async def _run_runpod_responses_fallback(prompt: str, *, base_url: str = "") -> str:
     default_base_url = _normalize_base_url(RUNPOD_BASE_URL)
     if (not default_base_url) and RUNPOD_BASE_URL_CANDIDATES:
@@ -1200,6 +1383,15 @@ async def _run_runpod_responses_fallback(prompt: str, *, base_url: str = "") -> 
             }
         ],
     }
+    live_web_query = _prompt_likely_requires_live_web(prompt)
+    require_tool_for_prompt = RUNPOD_RESPONSES_REQUIRE_TOOL_FOR_LIVE_WEB and live_web_query
+    tool_choice = RUNPOD_RESPONSES_TOOL_CHOICE
+    if live_web_query and RUNPOD_RESPONSES_LIVE_WEB_TOOL_CHOICE != "inherit":
+        tool_choice = RUNPOD_RESPONSES_LIVE_WEB_TOOL_CHOICE
+    responses_tools = _build_responses_tools_payload()
+    if responses_tools and tool_choice != "none":
+        payload_base["tools"] = responses_tools
+        payload_base["tool_choice"] = tool_choice
     poll_timeout_ms = max(CODEX_STREAM_RECOVERY_TIMEOUT_MS, RUNPOD_RESPONSES_POLL_TIMEOUT_MS)
     poll_interval_sec = max(0.2, RUNPOD_RESPONSES_POLL_INTERVAL_MS / 1000.0)
     timeout = httpx.Timeout(
@@ -1208,60 +1400,99 @@ async def _run_runpod_responses_fallback(prompt: str, *, base_url: str = "") -> 
         write=20.0,
         pool=20.0,
     )
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        background_error = ""
-        if RUNPOD_RESPONSES_BACKGROUND_ENABLED:
-            background_payload = dict(payload_base)
-            background_payload["background"] = True
-            bg_res = await client.post(url, headers=headers, json=background_payload)
-            if bg_res.status_code < 400:
-                bg_data = bg_res.json() if bg_res.content else {}
-                bg_payload = bg_data if isinstance(bg_data, dict) else {}
-                bg_text = _extract_responses_output_text(bg_payload)
-                bg_status = _extract_responses_status(bg_payload)
-                response_id = _extract_responses_id(bg_payload)
-                if bg_text:
-                    return bg_text
-                if response_id:
-                    poll_url = f"{url}/{response_id}"
-                    deadline = time.monotonic() + max(5.0, poll_timeout_ms / 1000.0)
-                    while time.monotonic() < deadline:
-                        await asyncio.sleep(poll_interval_sec)
-                        poll_res = await client.get(poll_url, headers={"x-api-key": RUNPOD_API_KEY})
-                        if poll_res.status_code >= 400:
-                            preview = poll_res.text[:600] if poll_res.text else ""
+    async def _run_once(verify_setting: bool | str) -> str:
+        async with httpx.AsyncClient(timeout=timeout, verify=verify_setting) as client:
+            async def _run_once_with_payload(payload: dict) -> str:
+                background_error = ""
+                if RUNPOD_RESPONSES_BACKGROUND_ENABLED:
+                    background_payload = dict(payload)
+                    background_payload["background"] = True
+                    bg_res = await client.post(url, headers=headers, json=background_payload)
+                    if bg_res.status_code < 400:
+                        bg_data = bg_res.json() if bg_res.content else {}
+                        bg_payload = bg_data if isinstance(bg_data, dict) else {}
+                        bg_text = _extract_responses_output_text(bg_payload)
+                        bg_status = _extract_responses_status(bg_payload)
+                        bg_has_tool = _responses_payload_has_tool_evidence(bg_payload)
+                        response_id = _extract_responses_id(bg_payload)
+                        if bg_text and not require_tool_for_prompt:
+                            return bg_text
+                        if bg_text and bg_has_tool and bg_status in {"completed", "in_progress", "running", "queued", "processing", ""}:
+                            return bg_text
+                        if bg_status == "completed" and require_tool_for_prompt and (not bg_has_tool):
                             raise RuntimeError(
-                                f"responses background poll failed: HTTP {poll_res.status_code}. {preview}"
+                                "responses tools were not executed for live-web prompt (completed without tool evidence)."
                             )
-                        poll_data = poll_res.json() if poll_res.content else {}
-                        poll_payload = poll_data if isinstance(poll_data, dict) else {}
-                        poll_text = _extract_responses_output_text(poll_payload)
-                        poll_status = _extract_responses_status(poll_payload)
-                        if poll_text and poll_status in {"completed", "in_progress", "running", "queued", "processing", ""}:
-                            return poll_text
-                        if poll_status == "completed":
-                            break
-                        if poll_status in {"failed", "incomplete", "cancelled", "expired"}:
-                            raise RuntimeError(f"responses background ended with status={poll_status}")
-                    raise RuntimeError(
-                        "responses background poll timed out before completion."
-                    )
-                if bg_status in {"failed", "incomplete", "cancelled", "expired"}:
-                    raise RuntimeError(f"responses background ended with status={bg_status}")
-            else:
-                preview = bg_res.text[:400] if bg_res.text else ""
-                background_error = f"background HTTP {bg_res.status_code}: {preview}"
+                        if response_id:
+                            poll_url = f"{url}/{response_id}"
+                            deadline = time.monotonic() + max(5.0, poll_timeout_ms / 1000.0)
+                            while time.monotonic() < deadline:
+                                await asyncio.sleep(poll_interval_sec)
+                                poll_res = await client.get(poll_url, headers={"x-api-key": RUNPOD_API_KEY})
+                                if poll_res.status_code >= 400:
+                                    preview = poll_res.text[:600] if poll_res.text else ""
+                                    raise RuntimeError(
+                                        f"responses background poll failed: HTTP {poll_res.status_code}. {preview}"
+                                    )
+                                poll_data = poll_res.json() if poll_res.content else {}
+                                poll_payload = poll_data if isinstance(poll_data, dict) else {}
+                                poll_text = _extract_responses_output_text(poll_payload)
+                                poll_status = _extract_responses_status(poll_payload)
+                                poll_has_tool = _responses_payload_has_tool_evidence(poll_payload)
+                                if poll_text and not require_tool_for_prompt and poll_status in {"completed", "in_progress", "running", "queued", "processing", ""}:
+                                    return poll_text
+                                if poll_text and require_tool_for_prompt and poll_has_tool and poll_status in {"completed", "in_progress", "running", "queued", "processing", ""}:
+                                    return poll_text
+                                if poll_status == "completed":
+                                    if require_tool_for_prompt and (not poll_has_tool):
+                                        raise RuntimeError(
+                                            "responses tools were not executed for live-web prompt (poll completed without tool evidence)."
+                                        )
+                                    break
+                                if poll_status in {"failed", "incomplete", "cancelled", "expired"}:
+                                    raise RuntimeError(f"responses background ended with status={poll_status}")
+                            raise RuntimeError(
+                                "responses background poll timed out before completion."
+                            )
+                        if bg_status in {"failed", "incomplete", "cancelled", "expired"}:
+                            raise RuntimeError(f"responses background ended with status={bg_status}")
+                    else:
+                        preview = bg_res.text[:400] if bg_res.text else ""
+                        background_error = f"background HTTP {bg_res.status_code}: {preview}"
 
-        res = await client.post(url, headers=headers, json=payload_base)
-        if res.status_code >= 400:
-            preview = res.text[:600] if res.text else ""
-            detail = f" {background_error}" if background_error else ""
-            raise RuntimeError(f"responses fallback failed: HTTP {res.status_code}. {preview}{detail}")
-        data = res.json() if res.content else {}
-        text = _extract_responses_output_text(data if isinstance(data, dict) else {})
-        if not text:
-            raise RuntimeError("responses fallback returned no assistant text.")
-        return text
+                res = await client.post(url, headers=headers, json=payload)
+                if res.status_code >= 400:
+                    preview = res.text[:600] if res.text else ""
+                    detail = f" {background_error}" if background_error else ""
+                    raise RuntimeError(f"responses fallback failed: HTTP {res.status_code}. {preview}{detail}")
+                data = res.json() if res.content else {}
+                payload_data = data if isinstance(data, dict) else {}
+                text = _extract_responses_output_text(payload_data)
+                if not text:
+                    raise RuntimeError("responses fallback returned no assistant text.")
+                if require_tool_for_prompt and not _responses_payload_has_tool_evidence(payload_data):
+                    raise RuntimeError(
+                        "responses tools were not executed for live-web prompt (final response without tool evidence)."
+                    )
+                return text
+
+            return await _run_once_with_payload(payload_base)
+
+    verify_setting = _runpod_httpx_verify_setting()
+    try:
+        return await _run_once(verify_setting)
+    except Exception as exc:
+        # Retry once without TLS verification when cert validation fails.
+        # This handles corporate TLS interception and incomplete CA chains.
+        if RUNPOD_TLS_VERIFY and _looks_like_tls_verify_failure(exc):
+            try:
+                return await _run_once(False)
+            except Exception as exc_retry:
+                raise RuntimeError(
+                    "responses fallback TLS recovery failed: "
+                    f"first={exc}; retry_no_verify={exc_retry}"
+                ) from exc_retry
+        raise
 
 
 def _to_ndjson_line(payload: dict) -> bytes:
@@ -1340,7 +1571,8 @@ def _build_codex_exec_native_profile() -> dict[str, int | str]:
         "project_doc_max_bytes": CODEX_PROJECT_DOC_MAX_BYTES,
         "request_max_retries": CODEX_PROVIDER_REQUEST_MAX_RETRIES,
         "stream_max_retries": max(0, CODEX_PROVIDER_STREAM_MAX_RETRIES),
-        "stream_idle_timeout_ms": CODEX_PROVIDER_STREAM_IDLE_TIMEOUT_MS,
+        # Native mode often sees delayed first token; keep idle timeout relaxed.
+        "stream_idle_timeout_ms": max(CODEX_PROVIDER_STREAM_IDLE_TIMEOUT_MS, 90000),
         "model_reasoning_effort": CODEX_MODEL_REASONING_EFFORT,
         "model_reasoning_summary": CODEX_MODEL_REASONING_SUMMARY,
         "model_verbosity": CODEX_MODEL_VERBOSITY,
@@ -1362,6 +1594,9 @@ async def _iter_codex_chat_events_native(prompt: str) -> AsyncIterator[dict]:
     stderr_lines: list[str] = []
     return_code = 1
     timed_out = False
+    stream_disconnect_happened = False
+    empty_last_message_happened = False
+    transport_failure_happened = False
 
     yield {"type": "status", "step": 0, "message": "Codex CLI: starting (native mode)..."}
 
@@ -1428,6 +1663,9 @@ async def _iter_codex_chat_events_native(prompt: str) -> AsyncIterator[dict]:
                     continue
                 if event_type == "error":
                     msg = str(event.get("message", "") or "").strip() or raw[:800]
+                    if _is_stream_disconnect_message(msg):
+                        stream_disconnect_happened = True
+                        continue
                     yield {"type": "error", "message": msg}
                     continue
                 if event_type not in {"item.started", "item.updated", "item.completed"}:
@@ -1471,10 +1709,18 @@ async def _iter_codex_chat_events_native(prompt: str) -> AsyncIterator[dict]:
         await stderr_task
 
     return_code = proc.returncode if proc.returncode is not None else 1
+    stderr_tail_joined = "\n".join(stderr_lines)
+    if _is_stream_disconnect_message(stderr_tail_joined):
+        stream_disconnect_happened = True
+    if _is_empty_last_message_warning(stderr_tail_joined):
+        empty_last_message_happened = True
+    if _is_transport_failure_message(stderr_tail_joined):
+        transport_failure_happened = True
+
     if return_code == 0:
         _mark_runpod_route_success(attempt_base_url)
     else:
-        _mark_runpod_route_failure(attempt_base_url, "\n".join(stderr_lines))
+        _mark_runpod_route_failure(attempt_base_url, stderr_tail_joined)
 
     if not agent_text and output_last_message_file.exists():
         try:
@@ -1494,6 +1740,25 @@ async def _iter_codex_chat_events_native(prompt: str) -> AsyncIterator[dict]:
         yield {"type": "assistant_stream_start", "model": DEFAULT_MODEL, "totalChars": len(agent_text)}
         yield {"type": "assistant_stream_delta", "delta": agent_text}
         yield {"type": "assistant_stream_done", "elapsedMs": elapsed_ms, "totalChars": len(agent_text)}
+
+    should_fallback_to_resilient = (
+        return_code != 0
+        and (not agent_text)
+        and (
+            stream_disconnect_happened
+            or empty_last_message_happened
+            or transport_failure_happened
+        )
+    )
+    if should_fallback_to_resilient:
+        yield {
+            "type": "status",
+            "step": 2,
+            "message": "Native stream was unstable. Switching to resilient mode...",
+        }
+        async for event in _iter_codex_chat_events_resilient(prompt):
+            yield event
+        return
 
     if return_code != 0:
         stderr_tail = "\n".join(stderr_lines[-20:]).strip()
@@ -1528,11 +1793,99 @@ async def _iter_codex_chat_events_native(prompt: str) -> AsyncIterator[dict]:
 
 
 async def _iter_codex_chat_events(prompt: str) -> AsyncIterator[dict]:
-    if CODEX_NATIVE_MODE:
+    if CODEX_EXEC_ROUTE_MODE == "background_poll":
+        async for event in _iter_codex_chat_events_background_poll(prompt):
+            yield event
+        return
+
+    if CODEX_EXEC_ROUTE_MODE == "native":
         async for event in _iter_codex_chat_events_native(prompt):
             yield event
         return
 
+    async for event in _iter_codex_chat_events_resilient(prompt):
+        yield event
+
+
+async def _iter_codex_chat_events_background_poll(prompt: str) -> AsyncIterator[dict]:
+    started_at = time.monotonic()
+    prepared_prompt, prompt_info = _prepare_codex_prompt(prompt)
+
+    if bool(prompt_info.get("compressed")):
+        yield {
+            "type": "status",
+            "step": 0,
+            "message": (
+                "Responses mode: prompt compacted for transport "
+                f"{int(prompt_info.get('original_len', 0))} -> {int(prompt_info.get('prepared_len', 0))} chars."
+            ),
+        }
+    if bool(prompt_info.get("truncated")):
+        yield {
+            "type": "status",
+            "step": 0,
+            "message": (
+                f"Responses mode: prompt hard-capped {int(prompt_info.get('original_len', 0))} -> "
+                f"{CODEX_PROMPT_MAX_CHARS} chars before send."
+            ),
+        }
+    yield {"type": "status", "step": 0, "message": "Responses mode: submitting background request..."}
+
+    preferred_route = await _select_runpod_base_url(attempt_index=1)
+    if not preferred_route:
+        preferred_route = _normalize_base_url(RUNPOD_BASE_URL)
+    fallback_routes = _runpod_route_fallback_order(preferred_route)
+
+    recovery_error = ""
+    recovered_text = ""
+    used_route = ""
+    for route in fallback_routes:
+        used_route = route
+        try:
+            yield {
+                "type": "status",
+                "step": 1,
+                "message": f"Responses mode: polling via {_route_status_label(route)}...",
+            }
+            recovered_text = await _run_runpod_responses_fallback(prepared_prompt, base_url=route)
+            _mark_runpod_route_success(route)
+            break
+        except Exception as exc:
+            recovery_error = str(exc)
+            _mark_runpod_route_failure(route, recovery_error)
+            continue
+
+    elapsed_ms = int((time.monotonic() - started_at) * 1000)
+    if recovered_text:
+        yield {"type": "assistant_stream_start", "model": DEFAULT_MODEL, "totalChars": len(recovered_text)}
+        yield {"type": "assistant_stream_delta", "delta": recovered_text}
+        yield {"type": "assistant_stream_done", "elapsedMs": elapsed_ms, "totalChars": len(recovered_text)}
+        yield {
+            "type": "assistant_turn",
+            "html": _render_assistant_turn(text=recovered_text, model=DEFAULT_MODEL, elapsed_ms=elapsed_ms),
+            "text": recovered_text,
+            "model": DEFAULT_MODEL,
+            "elapsedMs": elapsed_ms,
+            "streamed": True,
+        }
+        yield {"type": "done", "elapsedMs": elapsed_ms}
+        return
+
+    if recovery_error:
+        yield {"type": "error", "message": f"Responses mode failed: {recovery_error}"}
+    fallback_text = "Codex responses mode failed before producing a final answer."
+    yield {
+        "type": "assistant_turn",
+        "html": _render_assistant_turn(text=fallback_text, model=DEFAULT_MODEL, elapsed_ms=elapsed_ms),
+        "text": fallback_text,
+        "model": DEFAULT_MODEL,
+        "elapsedMs": elapsed_ms,
+        "streamed": False,
+    }
+    yield {"type": "done", "elapsedMs": elapsed_ms}
+
+
+async def _iter_codex_chat_events_resilient(prompt: str) -> AsyncIterator[dict]:
     started_at = time.monotonic()
     workspace_root = _resolve_workspace_root_for_agent()
     codex_home = _resolve_codex_home()
@@ -1906,7 +2259,8 @@ async def _iter_codex_chat_events(prompt: str) -> AsyncIterator[dict]:
 
 async def _wait_engine_ready(timeout_sec: float = 30.0) -> bool:
     started = asyncio.get_event_loop().time()
-    async with httpx.AsyncClient(timeout=2.5) as client:
+    # Loopback health probe must not honor HTTP(S)_PROXY.
+    async with httpx.AsyncClient(timeout=2.5, trust_env=False) as client:
         while True:
             try:
                 res = await client.get(ENGINE_HEALTH_URL)
@@ -2021,7 +2375,7 @@ async def index(req: Request) -> HTMLResponse:
 @app.get("/health")
 async def health() -> JSONResponse:
     engine_ok = False
-    async with httpx.AsyncClient(timeout=2.0) as client:
+    async with httpx.AsyncClient(timeout=2.0, trust_env=False) as client:
         try:
             res = await client.get(ENGINE_HEALTH_URL)
             engine_ok = res.status_code == 200
@@ -2052,6 +2406,7 @@ async def health() -> JSONResponse:
             "codex_ready": codex_ready,
             "codex_error": codex_error,
             "codex_native_mode": CODEX_NATIVE_MODE,
+            "codex_exec_route_mode": CODEX_EXEC_ROUTE_MODE,
             "runpod_route_probe_enabled": RUNPOD_ROUTE_PROBE_ENABLED,
             "runpod_routes": [_route_status_label(row) for row in RUNPOD_BASE_URL_CANDIDATES],
             "runpod_primary_route": _route_status_label(runpod_primary_route),
@@ -2063,7 +2418,7 @@ async def health() -> JSONResponse:
 async def _proxy_non_stream(req: Request, path: str) -> Response:
     upstream_url = f"{ENGINE_BASE_URL}/{path.lstrip('/')}"
     body = await req.body()
-    async with httpx.AsyncClient(timeout=180.0) as client:
+    async with httpx.AsyncClient(timeout=180.0, trust_env=False) as client:
         upstream_res = await client.request(
             req.method,
             upstream_url,
@@ -2087,7 +2442,7 @@ async def _proxy_chat_stream(req: Request) -> StreamingResponse:
 
     async def stream_bytes():
         timeout = httpx.Timeout(connect=20.0, read=None, write=60.0, pool=20.0)
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
             async with client.stream(
                 req.method,
                 upstream_url,

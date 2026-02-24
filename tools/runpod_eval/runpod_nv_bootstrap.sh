@@ -29,6 +29,9 @@ MODEL_LOAD_TIMEOUT_SEC="${MODEL_LOAD_TIMEOUT_SEC:-1800}"
 MODEL_KEY_RETRY_MAX="${MODEL_KEY_RETRY_MAX:-20}"
 MODEL_KEY_RETRY_DELAY_SEC="${MODEL_KEY_RETRY_DELAY_SEC:-3}"
 MODEL_KEY_REQUIRED="${MODEL_KEY_REQUIRED:-0}"
+ENABLE_PLAYWRIGHT_MCP="${ENABLE_PLAYWRIGHT_MCP:-1}"
+PLAYWRIGHT_MCP_PORT="${PLAYWRIGHT_MCP_PORT:-8931}"
+PLAYWRIGHT_MCP_REQUIRED="${PLAYWRIGHT_MCP_REQUIRED:-0}"
 
 AUTO_START="${AUTO_START:-1}"
 INSTALL_NODE_TOOLCHAIN="${INSTALL_NODE_TOOLCHAIN:-0}"
@@ -153,7 +156,7 @@ sync_bootstrap_script_copy() {
 }
 
 ensure_node_toolchain() {
-  if [ "${INSTALL_NODE_TOOLCHAIN}" != "1" ]; then
+  if [ "${INSTALL_NODE_TOOLCHAIN}" != "1" ] && [ "${ENABLE_PLAYWRIGHT_MCP}" != "1" ]; then
     return
   fi
   if command -v node >/dev/null 2>&1 && command -v pnpm >/dev/null 2>&1; then
@@ -258,6 +261,9 @@ MODEL_LOAD_TIMEOUT_SEC=${MODEL_LOAD_TIMEOUT_SEC}
 MODEL_KEY_RETRY_MAX=${MODEL_KEY_RETRY_MAX}
 MODEL_KEY_RETRY_DELAY_SEC=${MODEL_KEY_RETRY_DELAY_SEC}
 MODEL_KEY_REQUIRED=${MODEL_KEY_REQUIRED}
+ENABLE_PLAYWRIGHT_MCP=${ENABLE_PLAYWRIGHT_MCP}
+PLAYWRIGHT_MCP_PORT=${PLAYWRIGHT_MCP_PORT}
+PLAYWRIGHT_MCP_REQUIRED=${PLAYWRIGHT_MCP_REQUIRED}
 EOF
   chmod 600 "${RUNTIME_ENV_FILE}"
   log "wrote ${RUNTIME_ENV_FILE}"
@@ -312,6 +318,23 @@ http {
         location / {
             return 404;
         }
+
+        location ^~ /mcp/ {
+            set \$auth_ok 0;
+            if (\$http_x_api_key = "${token}") { set \$auth_ok 1; }
+            if (\$http_authorization = "Bearer ${token}") { set \$auth_ok 1; }
+            if (\$auth_ok = 0) { return 401; }
+
+            rewrite ^/mcp/(.*)$ /\$1 break;
+            proxy_pass http://127.0.0.1:${PLAYWRIGHT_MCP_PORT};
+            proxy_http_version 1.1;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+            proxy_buffering off;
+            proxy_read_timeout 3600;
+        }
     }
 }
 EOF
@@ -337,6 +360,10 @@ MODEL_LOAD_TIMEOUT_SEC="${MODEL_LOAD_TIMEOUT_SEC:-1800}"
 MODEL_KEY_RETRY_MAX="${MODEL_KEY_RETRY_MAX:-20}"
 MODEL_KEY_RETRY_DELAY_SEC="${MODEL_KEY_RETRY_DELAY_SEC:-3}"
 MODEL_KEY_REQUIRED="${MODEL_KEY_REQUIRED:-0}"
+ENABLE_PLAYWRIGHT_MCP="${ENABLE_PLAYWRIGHT_MCP:-1}"
+PLAYWRIGHT_MCP_PORT="${PLAYWRIGHT_MCP_PORT:-8931}"
+PLAYWRIGHT_MCP_REQUIRED="${PLAYWRIGHT_MCP_REQUIRED:-0}"
+PLAYWRIGHT_MCP_LOG="${PLAYWRIGHT_MCP_LOG:-/workspace/playwright-mcp.log}"
 MODEL_REPO="${MODEL_REPO:-mmnga-o/GPT-OSS-Swallow-120B-RL-v0.1-gguf}"
 MODEL_LOAD_LOG="${MODEL_LOAD_LOG:-/workspace/lmstudio-model-load.log}"
 MODEL_LOAD_STATUS_FILE="${MODEL_LOAD_STATUS_FILE:-/workspace/model-load.status}"
@@ -356,6 +383,50 @@ MODEL_KEY_RETRY_MAX="$(normalize_int "${MODEL_KEY_RETRY_MAX}" 20)"
 MODEL_KEY_RETRY_DELAY_SEC="$(normalize_int "${MODEL_KEY_RETRY_DELAY_SEC}" 3)"
 MODEL_READY_MAX_WAIT_SEC="$(normalize_int "${MODEL_READY_MAX_WAIT_SEC}" 180)"
 MODEL_READY_POLL_SEC="$(normalize_int "${MODEL_READY_POLL_SEC}" 2)"
+PLAYWRIGHT_MCP_PORT="$(normalize_int "${PLAYWRIGHT_MCP_PORT}" 8931)"
+
+start_playwright_mcp() {
+  if [ "${ENABLE_PLAYWRIGHT_MCP}" != "1" ]; then
+    return 0
+  fi
+
+  if ! command -v npx >/dev/null 2>&1; then
+    echo "[WARN] npx is not available. skip Playwright MCP startup."
+    if [ "${PLAYWRIGHT_MCP_REQUIRED}" = "1" ]; then
+      echo "ERROR: PLAYWRIGHT_MCP_REQUIRED=1 but npx is missing."
+      return 1
+    fi
+    return 0
+  fi
+
+  pkill -f '@playwright/mcp' >/dev/null 2>&1 || true
+  nohup npx -y @playwright/mcp@latest --port "${PLAYWRIGHT_MCP_PORT}" > "${PLAYWRIGHT_MCP_LOG}" 2>&1 &
+
+  local ready=0
+  for _ in $(seq 1 30); do
+    local code
+    code="$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:${PLAYWRIGHT_MCP_PORT}/" || true)"
+    if [ "${code}" != "000" ] && [ -n "${code}" ]; then
+      ready=1
+      break
+    fi
+    sleep 1
+  done
+
+  if [ "${ready}" -ne 1 ]; then
+    echo "[WARN] Playwright MCP did not become ready on port ${PLAYWRIGHT_MCP_PORT}"
+    if [ "${PLAYWRIGHT_MCP_REQUIRED}" = "1" ]; then
+      echo "ERROR: PLAYWRIGHT_MCP_REQUIRED=1 and Playwright MCP is not ready."
+      return 1
+    fi
+    return 0
+  fi
+
+  echo "[INFO] Playwright MCP started (port=${PLAYWRIGHT_MCP_PORT}, log=${PLAYWRIGHT_MCP_LOG})"
+  return 0
+}
+
+start_playwright_mcp
 
 lms daemon up >/dev/null || true
 

@@ -57,6 +57,7 @@ $requirements = @(
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.30.0",
   "httpx>=0.27.0",
+  "mcp>=1.14.1",
   "jinja2>=3.1.0",
   "python-multipart>=0.0.9",
   "pymupdf>=1.24.0",

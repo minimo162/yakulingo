@@ -57,6 +57,7 @@ const runPodHttpRetryDelayMs = parseIntEnv(process.env.RUNPOD_HTTP_RETRY_DELAY_M
 const runPodHttpRetryMaxDelayMs = parseIntEnv(process.env.RUNPOD_HTTP_RETRY_MAX_DELAY_MS, 10000, 0, 120000);
 const runPodBaseUrl = (process.env.RUNPOD_BASE_URL || "").trim().replace(/\/+$/, "");
 const runPodApiKey = (process.env.RUNPOD_API_KEY || "").trim();
+const runPodUpstreamApiKey = (process.env.RUNPOD_UPSTREAM_API_KEY || runPodApiKey).trim();
 const defaultModel = (process.env.DEFAULT_MODEL || "gpt-oss-swallow-120b-iq4xs").trim();
 const maxHistoryPairs = parseIntEnv(process.env.MAX_HISTORY_PAIRS, 16, 4, 128);
 const historyCompactionKeepRecentPairs = parseIntEnv(
@@ -397,8 +398,10 @@ const autoToolSystemPrompt = [
   "For latest news requests: do web_search, then open at least one result URL with read before final.",
   "For latest news final answers: cite concrete source URLs from gathered evidence.",
   "Current date context will be provided as current_date_jst/current_utc_iso in system messages.",
-  "Resolve relative dates (today/今日/tomorrow/明日/yesterday/昨日) strictly from the provided date context.",
+  "Resolve relative dates (today/tomorrow/yesterday) strictly from the provided date context.",
   "For weather/news questions asking about today, do not invent arbitrary calendar dates.",
+  "For weather prompts, prefer weather.yahoo.co.jp or tenki.jp.",
+  "For weather prompts, final answer must include source_url, page_date_text, requested_date.",
   "For latest/current questions without explicit historical date in prompt, avoid old 'as of YYYY-MM' phrasing.",
   "Use one tool call at a time and wait for the tool result.",
   "Prefer list_dir/read_file/search before write/apply_patch. Use shell only when needed.",
@@ -434,6 +437,7 @@ const autoToolFinalRewriteSystemPrompt = [
   "If exact publication dates are unclear from evidence, avoid inventing dates and state uncertainty plainly.",
   "Use tool evidence when available; ignore unrelated navigation, ads, and boilerplate links.",
   "If evidence is insufficient, say so plainly and avoid fabrication.",
+  "For weather prompts, include source_url, page_date_text, requested_date.",
   "Do not output JSON, markdown headings, or raw tool dumps.",
 ].join("\n");
 const autonomousPlannerSystemPrompt = [
@@ -949,8 +953,8 @@ function getTemporalContext(now = new Date()) {
 
 function promptAsksTodayWeather(rawPrompt) {
   const text = String(rawPrompt || "");
-  if (!/(今日|きょう|本日|today)/i.test(text)) return false;
-  return /(天気|weather|気温|降水|雨|晴れ|曇|雪|forecast)/i.test(text);
+  if (!/(今日|本日|today)/i.test(text)) return false;
+  return /(天気|weather|気温|降水|雨|晴れ|曇|雪|forecast|予報)/i.test(text);
 }
 
 function normalizeYmd(yearRaw, monthRaw, dayRaw) {
@@ -979,6 +983,15 @@ function parseYmdToUtcMs(rawYmd) {
   return Date.UTC(year, month - 1, day, 0, 0, 0, 0);
 }
 
+function addDaysToYmd(rawYmd, dayOffset) {
+  const baseMs = parseYmdToUtcMs(rawYmd);
+  if (!Number.isFinite(baseMs)) return "";
+  const offset = Number.parseInt(String(dayOffset || 0), 10);
+  if (!Number.isInteger(offset)) return "";
+  const shifted = new Date(baseMs + offset * 24 * 60 * 60 * 1000);
+  return formatYmdInTimeZone(shifted, "UTC");
+}
+
 function formatYmdAsJapanese(rawYmd) {
   const text = String(rawYmd || "").trim();
   const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -986,6 +999,50 @@ function formatYmdAsJapanese(rawYmd) {
   const month = Number.parseInt(match[2], 10);
   const day = Number.parseInt(match[3], 10);
   return `${match[1]}年${month}月${day}日`;
+}
+
+function resolveWeatherRequestedDate(prompt, temporalContext) {
+  const text = String(prompt || "");
+  const nowYmd = String(temporalContext?.currentDateJst || "").trim();
+  const explicit = collectExplicitDateMentions(text);
+  if (Array.isArray(explicit) && explicit.length > 0) {
+    return explicit[0].ymd;
+  }
+  if (/(明後日|あさって|day after tomorrow)/i.test(text)) {
+    return addDaysToYmd(nowYmd, 2) || nowYmd;
+  }
+  if (/(明日|あした|tomorrow)/i.test(text)) {
+    return addDaysToYmd(nowYmd, 1) || nowYmd;
+  }
+  if (/(昨日|きのう|yesterday)/i.test(text)) {
+    return addDaysToYmd(nowYmd, -1) || nowYmd;
+  }
+  return nowYmd;
+}
+
+function extractWeatherLocationFromText(rawText) {
+  const text = String(rawText || "").trim();
+  if (!text) return "";
+  const jpMatch = text.match(/([^\s、。,.!?]+)\s*の天気/i);
+  if (jpMatch && jpMatch[1]) {
+    return String(jpMatch[1]).trim();
+  }
+  const inMatch = text.match(/weather\s+in\s+([A-Za-z][A-Za-z\s-]{1,80})/i);
+  if (inMatch && inMatch[1]) {
+    return String(inMatch[1]).trim();
+  }
+  if (/広島|hiroshima/i.test(text)) return "広島";
+  return "";
+}
+
+function buildWeatherSearchQuery({ prompt, fallbackQuery = "", temporalContext }) {
+  const dateYmd = resolveWeatherRequestedDate(prompt, temporalContext);
+  const location = extractWeatherLocationFromText(prompt)
+    || extractWeatherLocationFromText(fallbackQuery)
+    || "広島";
+  return normalizeSearchQuery(
+    `${location} 天気 ${dateYmd} site:weather.yahoo.co.jp OR site:tenki.jp`,
+  );
 }
 
 function hasExplicitCalendarDateInText(rawText) {
@@ -1140,7 +1197,7 @@ function rewriteStaleAsOfDatesForLatestPrompt({ prompt, text, currentDateJst }) 
 
 function rewriteMismatchedExplicitDatesAsToday(text, todayYmd) {
   const source = String(text || "");
-  const pattern = /(\d{4})\s*[\/\-.年]\s*(\d{1,2})\s*[\/\-.月]\s*(\d{1,2})\s*日?/g;
+  const pattern = /(\d{4})\s*(?:[\/\-.]|年)\s*(\d{1,2})\s*(?:[\/\-.]|月)\s*(\d{1,2})\s*(?:日)?/g;
   let mismatchCount = 0;
   const replaced = source.replace(pattern, (full, year, month, day) => {
     const normalized = normalizeYmd(year, month, day);
@@ -1148,7 +1205,7 @@ function rewriteMismatchedExplicitDatesAsToday(text, todayYmd) {
       return full;
     }
     mismatchCount += 1;
-    return "本日";
+    return "今日";
   });
   return {
     text: replaced,
@@ -1299,7 +1356,7 @@ function extractPromptKeywords(rawPrompt) {
     "ください",
     "して",
     "について",
-    "お願い",
+    "より",
     "こと",
     "もの",
     "the",
@@ -1337,8 +1394,8 @@ function countKeywordOverlap(keywords, rawText) {
 function looksLikeLinkDump(rawText) {
   const text = String(rawText || "");
   const urlMatches = text.match(/https?:\/\/\S+/g) || [];
-  const bulletCount = text.split(/\r?\n/).filter((line) => /^\s*[-*・]\s+/.test(line)).length;
-  if (/主なリンク|提供された構造データ|抽出したリンク/i.test(text)) return true;
+  const bulletCount = text.split(/\r?\n/).filter((line) => /^\s*[-*]\s+/.test(line)).length;
+  if (/main links|structured data|extracted links/i.test(text)) return true;
   if (urlMatches.length >= 3 && bulletCount >= 3) return true;
   return false;
 }
@@ -1348,7 +1405,7 @@ function shouldRunFocusedFinalRewrite({ prompt, draftText, toolCallCount }) {
   if (isTemporalSensitivePrompt(prompt)) return true;
   const draft = String(draftText || "").trim();
   if (!draft) return true;
-  if (looksLikeLinkDump(draft) && !/リンク|url|一覧|list/i.test(String(prompt || ""))) {
+  if (looksLikeLinkDump(draft) && !/links?|url|list/i.test(String(prompt || ""))) {
     return true;
   }
   const keywords = extractPromptKeywords(prompt);
@@ -1361,10 +1418,11 @@ function shouldRunFocusedFinalRewrite({ prompt, draftText, toolCallCount }) {
 function detectPromptIntent(rawPrompt) {
   const prompt = String(rawPrompt || "").trim();
   const lower = prompt.toLowerCase();
-  const asksNews = /(news|ニュース|報道|トピック)/i.test(prompt);
-  const asksLatest = /(latest|recent|最新|直近|今日|本日|いま|現在|now|today|current)/i.test(prompt);
-  const asksList = /(まとめ|一覧|list|top|箇条書き|教えて|紹介|要約|summary)/i.test(prompt);
-  const asksSingleFact = /(とは|what is|意味|定義|who is|なに|何)/i.test(prompt);
+  const asksNews = /(news|ニュース|速報|ヘッドライン)/i.test(prompt);
+  const asksLatest = /(latest|recent|最新|直近|今日|本日|now|today|current|明日|tomorrow)/i.test(prompt);
+  const asksList = /(まとめ|一覧|list|top|ランキング|summary)/i.test(prompt);
+  const asksSingleFact = /(what is|who is|とは|何|どこ|いつ|who|what)/i.test(prompt);
+  const asksWeather = /(weather|forecast|天気|予報|気温|降水|雨|晴れ|曇|雪)/i.test(prompt);
   const requiresBreadth = (asksNews && (asksLatest || asksList)) || (asksList && !asksSingleFact);
   const expectedMinItems = requiresBreadth ? (asksNews ? 3 : 2) : 1;
   return {
@@ -1374,6 +1432,7 @@ function detectPromptIntent(rawPrompt) {
     asksLatest,
     asksList,
     asksSingleFact,
+    asksWeather,
     requiresBreadth,
     expectedMinItems,
   };
@@ -1389,7 +1448,7 @@ function countLikelyAnswerItems(rawText) {
 
   let count = 0;
   for (const line of lines) {
-    if (/^[-*•]\s+/.test(line)) {
+    if (/^[-*]\s+/.test(line)) {
       count += 1;
       continue;
     }
@@ -1401,7 +1460,7 @@ function countLikelyAnswerItems(rawText) {
       count += 1;
       continue;
     }
-    if (/^20\d{2}\s*[\/\-.年]\s*\d{1,2}/.test(line)) {
+    if (/^20\d{2}\s*[\/\-.]\s*\d{1,2}/.test(line)) {
       count += 1;
       continue;
     }
@@ -1413,7 +1472,7 @@ function countLikelyAnswerItems(rawText) {
   }
 
   if (count > 0) return count;
-  const dateLikeHits = text.match(/20\d{2}\s*[\/\-.年]\s*\d{1,2}/g) || [];
+  const dateLikeHits = text.match(/20\d{2}\s*[\/\-.]\s*\d{1,2}/g) || [];
   return dateLikeHits.length;
 }
 
@@ -1451,6 +1510,67 @@ function buildToolEvidenceCorpus(toolStats) {
     return "";
   }
   return toolStats.evidenceTextChunks.join("\n");
+}
+
+function pickWeatherSourceUrl(toolStats) {
+  if (toolStats?.evidenceUrlSet instanceof Set && toolStats.evidenceUrlSet.size > 0) {
+    return String([...toolStats.evidenceUrlSet][0] || "").trim();
+  }
+  return "";
+}
+
+function extractWeatherPageDateText(toolStats, requestedDate) {
+  const corpus = buildToolEvidenceCorpus(toolStats);
+  if (!corpus) return "";
+  const target = String(requestedDate || "").trim();
+  if (target) {
+    const [y, m, d] = target.split("-");
+    const ymd = new RegExp(`${y}[/-]${Number.parseInt(m, 10)}[/-]${Number.parseInt(d, 10)}`);
+    const jp = new RegExp(`${y}\\s*年\\s*${Number.parseInt(m, 10)}\\s*月\\s*${Number.parseInt(d, 10)}\\s*日`);
+    if (ymd.test(corpus)) return target;
+    if (jp.test(corpus)) return `${y}年${Number.parseInt(m, 10)}月${Number.parseInt(d, 10)}日`;
+  }
+  const fallback = corpus.match(/20\d{2}\s*(?:[/-]|年)\s*\d{1,2}\s*(?:[/-]|月)\s*\d{1,2}\s*(?:日)?/);
+  return fallback ? String(fallback[0] || "").replace(/\s+/g, "") : "";
+}
+
+function answerHasWeatherEvidenceKeys(answerText, requestedDate) {
+  const text = String(answerText || "");
+  if (!text.trim()) return false;
+  if (!/source_url\s*[:：]/i.test(text)) return false;
+  if (!/page_date_text\s*[:：]/i.test(text)) return false;
+  if (!/requested_date\s*[:：]/i.test(text)) return false;
+  if (requestedDate && !new RegExp(requestedDate.replace(/[-/]/g, "[-/]")).test(text)) {
+    return false;
+  }
+  return true;
+}
+
+function enforceWeatherEvidenceOutput({ prompt, finalText, promptIntent, toolStats, temporalContext }) {
+  if (!promptIntent?.asksWeather) return String(finalText || "").trim();
+  const requestedDate = resolveWeatherRequestedDate(prompt, temporalContext);
+  if (answerHasWeatherEvidenceKeys(finalText, requestedDate)) {
+    return String(finalText || "").trim();
+  }
+
+  const sourceUrl = pickWeatherSourceUrl(toolStats);
+  const pageDateText = extractWeatherPageDateText(toolStats, requestedDate);
+  if (sourceUrl && pageDateText) {
+    return [
+      String(finalText || "").trim(),
+      "",
+      `source_url: ${sourceUrl}`,
+      `page_date_text: ${pageDateText}`,
+      `requested_date: ${requestedDate}`,
+    ].join("\n").trim();
+  }
+
+  return [
+    "取得失敗: 天気ページの証跡を確認できませんでした。",
+    `source_url: ${sourceUrl || "(not found)"}`,
+    `page_date_text: ${pageDateText || "(not found)"}`,
+    `requested_date: ${requestedDate}`,
+  ].join("\n");
 }
 
 function extractUrlsFromText(rawText) {
@@ -1649,6 +1769,24 @@ function evaluateFinalAnswerCoverage({
     const citedEvidenceUrls = countCitedEvidenceUrls(answer, stats.evidenceUrlSet);
     if (citedEvidenceUrls <= 0) {
       reasons.push("latest news response should cite at least one gathered source URL");
+    }
+  }
+
+  if (intent.asksWeather) {
+    const requestedDate = resolveWeatherRequestedDate(prompt, temporalContext);
+    const sourceUrl = pickWeatherSourceUrl(stats);
+    const pageDateText = extractWeatherPageDateText(stats, requestedDate);
+    if ((stats.webSearchCalls || 0) <= 0) {
+      reasons.push("weather response requires web_search evidence");
+    }
+    if (!sourceUrl) {
+      reasons.push("weather response missing source_url evidence");
+    }
+    if (!pageDateText) {
+      reasons.push("weather response missing page_date_text evidence");
+    }
+    if (!answerHasWeatherEvidenceKeys(answer, requestedDate)) {
+      reasons.push("weather response must include source_url/page_date_text/requested_date");
     }
   }
 
@@ -2457,11 +2595,11 @@ function isLowValueSearchLink(title, urlValue, engineName) {
     "動画",
     "ニュース",
     "地図",
-    "知恵袋",
-    "条件指定",
+    "設定",
+    "詳細検索",
     "検索設定",
     "yahoo! japan",
-    "bing 検索に戻る",
+    "bing search",
     "duckduckgo home",
   ]);
   if (genericTitles.has(normalizedTitle)) return true;
@@ -2487,9 +2625,9 @@ function isLowValueSearchLink(title, urlValue, engineName) {
 function scoreSearchResult({ title = "", url = "", snippet = "" }) {
   const haystack = `${title}\n${url}\n${snippet}`.toLowerCase();
   let score = 0;
-  if (/天気|weather|forecast|予報|気象/.test(haystack)) score += 10;
+  if (/weather|forecast|meteo|climate/.test(haystack)) score += 10;
   if (/weather\.yahoo\.co\.jp|tenki\.jp|weathernews\.jp|jma\.go\.jp|nhk\.or\.jp/.test(haystack)) score += 8;
-  if (/ログイン|検索設定|知恵袋|地図/.test(haystack)) score -= 8;
+  if (/login|search settings|chiebukuro|map/.test(haystack)) score -= 8;
   return score;
 }
 
@@ -2619,7 +2757,7 @@ async function runPlaywrightWebSearch(query, requestedMaxResults) {
         };
       }
 
-      const challengeDetected = /captcha|challenge|ボット|automated queries|forbidden|429/i.test(snapshotText);
+      const challengeDetected = /captcha|challenge|bot|automated queries|forbidden|429/i.test(snapshotText);
       failures.push([
         `${target.engine}: no parseable results`,
         challengeDetected ? "challenge_detected=yes" : "challenge_detected=no",
@@ -4515,13 +4653,13 @@ function normalizeLatestNewsSearchQuery(query, {
   }
 
   let next = rawQuery
-    .replace(/\b20\d{2}\s*(?:年|\/|-|\.|)?\s*(?:\d{1,2}\s*月)?\s*(?:末|初頭|年初|時点|頃|ごろ)?/g, " ")
+    .replace(/\b20\d{2}(?:[\/\-.]\d{1,2})?(?:[\/\-.]\d{1,2})?\b/g, " ")
     .replace(/\b(?:as of|from|since)\s*20\d{2}(?:[\/\-.]\d{1,2})?/gi, " ");
   next = normalizeSearchQuery(next);
   if (!next) {
-    next = "最新 AI ニュース";
+    next = "最新 ニュース";
   }
-  if (!/(最新|直近|today|current|latest|recent)/i.test(next)) {
+  if (!/(最新|today|current|latest|recent)/i.test(next)) {
     next = normalizeSearchQuery(`${next} 最新`);
   }
   return next;
@@ -4850,10 +4988,21 @@ async function executeAutoToolCall({
           querySource = "user_prompt";
         }
       }
-      query = normalizeLatestNewsSearchQuery(query, {
-        prompt,
-        promptIntent,
-      });
+      if (promptIntent?.asksWeather) {
+        query = buildWeatherSearchQuery({
+          prompt,
+          fallbackQuery: query || fallbackWebSearchQuery,
+          temporalContext: searchTemporalContext,
+        });
+        querySource = querySource === "provided"
+          ? "weather_normalized"
+          : `${querySource}+weather_normalized`;
+      } else {
+        query = normalizeLatestNewsSearchQuery(query, {
+          prompt,
+          promptIntent,
+        });
+      }
       const maxResults = Number.parseInt(String(payload.max_results || payload.maxResults || payload.limit || ""), 10);
       if (!query) {
         throw new Error("Query is empty.");
@@ -5561,11 +5710,19 @@ async function runAutoToolChat({ session, prompt, model, temperature, onEvent = 
         detail: [
           `prompt=${truncateText(prompt, 400)}`,
           `current_date_jst=${temporalContext.currentDateJst}`,
-          "Replaced mismatched explicit dates in final answer with '本日'.",
+          "Replaced mismatched explicit dates in final answer with 'today'.",
         ].join("\n"),
       });
     }
   }
+
+  finalText = enforceWeatherEvidenceOutput({
+    prompt,
+    finalText,
+    promptIntent,
+    toolStats,
+    temporalContext,
+  });
 
   return {
     html: htmlParts.join(""),
@@ -6236,6 +6393,20 @@ async function callRunPodWithRetry(label, executor) {
   throw lastError || new Error(`RunPod request failed: ${label}`);
 }
 
+function buildRunPodHeaders({ includeContentType = false } = {}) {
+  const headers = {};
+  if (includeContentType) {
+    headers["content-type"] = "application/json";
+  }
+  if (runPodApiKey) {
+    headers["x-api-key"] = runPodApiKey;
+  }
+  if (runPodUpstreamApiKey) {
+    headers.authorization = `Bearer ${runPodUpstreamApiKey}`;
+  }
+  return headers;
+}
+
 async function callRunPodJson(endpointPath, body, options = {}) {
   const url = `${runPodBaseUrl}${endpointPath}`;
   const effectiveTimeoutMs = parseIntEnv(
@@ -6251,11 +6422,7 @@ async function callRunPodJson(endpointPath, body, options = {}) {
     try {
       const response = await fetch(url, {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: `Bearer ${runPodApiKey}`,
-          "x-api-key": runPodApiKey,
-        },
+        headers: buildRunPodHeaders({ includeContentType: true }),
         body: JSON.stringify(body),
         signal: controller.signal,
       });
@@ -6294,10 +6461,7 @@ async function callRunPodModels(options = {}) {
     try {
       const response = await fetch(url, {
         method: "GET",
-        headers: {
-          authorization: `Bearer ${runPodApiKey}`,
-          "x-api-key": runPodApiKey,
-        },
+        headers: buildRunPodHeaders(),
         signal: controller.signal,
       });
       const raw = await response.text();

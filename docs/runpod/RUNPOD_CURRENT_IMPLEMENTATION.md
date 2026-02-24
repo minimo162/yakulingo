@@ -1,123 +1,59 @@
-# RunPod 現行実装サマリ（2026-02-24 JST）
+# RunPod 現行実装（2026-02-24）
 
-## 1. このドキュメントの範囲
-本書は、`tools/runpod_eval/node_htmx_client` を中心とした RunPod 連携の「現在の実装」を運用者向けに要約したものです。  
-特に、`codex exec --json` を中核にした構成を正本として扱います。
+## 1. 目的
+`tools/runpod_eval/node_htmx_client` を使い、ローカルは薄いラッパーのまま、推論は RunPod 側で完結させる。
 
-## 2. 現在の実行アーキテクチャ
+## 2. 現行アーキテクチャ
+- 推論基盤: **Ollama on RunPod**
+- 公開経路: `https://<pod-id>-11434.proxy.runpod.net/v1`
+- 認証: Nginx 前段で `x-api-key` / `Authorization: Bearer`
+- ローカル UI: FastAPI + HTMX
+- 内部エンジン: Node (`_internal/server.mjs`)
+- live-web: Playwright 連携を **サーバー関数実行**で利用
 
-### 2.1 全体像
-- RunPod 側: LM Studio API を `https://<pod-id>-11434.proxy.runpod.net/v1` で公開
-- ローカル側: FastAPI + HTMX + Alpine.js + Tailwind UI
-- 推論経路: FastAPI から `codex exec --json` を実行し、Codex CLI が RunPod (LM Studio) へ接続
+## 3. 主要環境変数（標準）
+- `RUNPOD_INFERENCE_PROVIDER=ollama`
+- `RUNPOD_API_KEY=<gateway token>`
+- `RUNPOD_UPSTREAM_API_KEY=<optional upstream bearer>`
+- `CODEX_PROVIDER_ID=ollama-runpod`
+- `CODEX_WIRE_API=chat`
+- `LIVE_WEB_TOOL_EXEC_MODE=engine_primary`
+- `LIVE_WEB_REQUIRE_EVIDENCE=1`
+- `CODEX_EXEC_ROUTE_MODE=resilient`
 
-### 2.2 重要な前提
-- モデル選択はサーバ設定固定（UI選択なし）
-- バックエンドは `codex_cli` 固定
-- `CODEX_REQUIRE_BUNDLED=1` により同梱 codex を優先使用
+## 4. 非推奨（使用しない）
+- `RUNPOD_LMSTUDIO_CHAT_*`
+- `CODEX_LMSTUDIO_PROVIDER_ID`
+- `WEATHER_VERIFIED_FETCH_*`（Open-Meteo 検証経路）
+- `LMSTUDIO_API_TOKEN`
 
-## 3. 実行・起動フロー
+## 5. RunPod ブートストラップ
+- `tools/runpod_eval/runpod_nv_bootstrap.sh`
+  - Ollama インストール/起動
+  - Nginx `:11434 -> 127.0.0.1:11435`
+  - Playwright MCP 同居（`127.0.0.1:8931`）
+  - 起動ゲート:
+    - `/v1/models`
+    - `/v1/chat/completions`
 
-### 3.1 起動エントリ
-- `tools/runpod_eval/node_htmx_client/start.bat`
-- 実体は `_internal/start.ps1`
+## 6. live-web 品質要件（天気）
+- 最終回答に以下を必須化
+  - `source_url`
+  - `page_date_text`
+  - `requested_date`
+- 証跡不足時は再取得 1 回。未解決なら失敗を明示（捏造禁止）。
 
-### 3.2 起動時の処理
-- `.env.local` -> `.env.example` 順で設定読み込み
-- RunPod 接続テスト (`/v1/models`) をリトライ付きで実施
-- 同梱ランタイム不足時に自動準備
-  - codex (`.runtime/codex`)
-  - Node (`.runtime/node`)
-  - uv/Python (`.runtime/uv`, `.runtime/python-managed`)
-- 旧プロセスが残っている場合は PID を見て停止してから再起動
-- FastAPI 起動後にブラウザを開く
+## 7. 動作確認手順（最短）
+1. `start.bat` 実行
+2. `/health` 確認
+   - `service=fastapi-htmx-client`
+   - `inference_provider=ollama`
+3. `こんにちは` で通常応答
+4. `今日の広島の天気を調べて`
+   - 進行ログに `外部情報取得`
+   - 最終回答に `source_url`, `page_date_text`, `requested_date`
+   - `plugin権限不足` が出ない
 
-## 4. 設定と認証情報
-
-### 4.1 設定ファイル
-- 共有既定値: `tools/runpod_eval/node_htmx_client/_internal/.env.example`
-- 個人設定（非追跡）: `tools/runpod_eval/node_htmx_client/_internal/.env.local`
-
-### 4.2 APIキー
-- 優先: DPAPI 保管  
-  `%LOCALAPPDATA%\YakuLingoRunpodHtmx\runpod_api_key.dpapi`
-- 代替: 共有難読化ファイル  
-  `tools/runpod_eval/node_htmx_client/_internal/runpod_api_key.obf`
-
-### 4.3 ワークスペース状態
-- `%LOCALAPPDATA%\YakuLingoRunpodHtmx\workspace-state.json`
-- UIで選択したワークスペースは次回起動時に復元される
-
-## 5. Codex CLI と RunPod 接続設定
-
-### 5.1 主要環境変数（既定）
-- `CODEX_EXEC_MODEL=gpt-oss-swallow-120b-iq4xs`
-- `CODEX_LMSTUDIO_PROVIDER_ID=lmstudio-runpod`
-- `CODEX_NATIVE_MODE=1`
-- `CODEX_PROVIDER_REQUEST_MAX_RETRIES=1`
-- `CODEX_PROVIDER_STREAM_MAX_RETRIES=1`
-- `CODEX_PROVIDER_STREAM_IDLE_TIMEOUT_MS=45000`
-- `CODEX_MODEL_CONTEXT_WINDOW=32768`
-- `CODEX_PROMPT_MAX_CHARS=12000`
-
-### 5.2 生成される Codex 設定の要点
-FastAPI 側で `config.toml` を動的生成し、以下方針を適用します。
-- `model_provider = "lmstudio-runpod"`
-- `oss_provider = "lmstudio"`
-- ベース URL は `RUNPOD_BASE_URL`（必要に応じて候補 URL へフェイルオーバー）
-
-## 6. 安定化ロジック（現行）
-
-### 6.1 RunPod 通信安定化
-- ルート健全性プローブ  
-  `RUNPOD_ROUTE_PROBE_ENABLED=1`
-- 候補 URL フェイルオーバー  
-  `RUNPOD_BASE_URL_CANDIDATES`
-- HTTP リトライ  
-  `RUNPOD_HTTP_RETRY_MAX_ATTEMPTS=5`
-
-### 6.2 起動時接続テスト
-- 既定モード: `RUNPOD_CONNECTION_TEST_MODE=strict`
-- 既定リトライ: 4回、待機2秒、タイムアウト8秒
-
-### 6.3 ストリーム保護
-- 進捗 ping 出力  
-  `CODEX_EXEC_PROGRESS_PING_INTERVAL_MS=8000`
-- keepalive  
-  `STREAM_KEEPALIVE_INTERVAL_MS=10000`
-- Responses background poll 併用  
-  `RUNPOD_RESPONSES_BACKGROUND_ENABLED=1`
-
-## 7. ツール実行ポリシー
-
-### 7.1 ファイル操作制約
-- `read` / `read_file`: ワークスペース外も読取可、`http(s)` URL 読取可
-- `list_dir` / `write` / `apply_patch`: 選択中ワークスペース内のみ
-
-### 7.2 Office/PDF 対応
-- 読み取り: `.pdf`, `.xlsx`, `.docx`, `.pptx`
-- 書き込み: `.xlsx`, `.docx`, `.pptx`（JSON/テキスト入力を受け付け）
-
-## 8. 主要 API（FastAPI）
-- `GET /health`
-- `GET /api/models/options`
-- `POST /api/chat/form`
-- `POST /api/session/reset`
-- `GET|POST /workspace/{path}`
-
-## 9. RunPod 自動運用（GitHub Actions）
-- 朝起動: `.github/workflows/runpod-morning-resume.yml`
-- 夕方停止: `.github/workflows/runpod-window-stop.yml`
-- Pod の resume/stop と通知運用を定時化
-
-## 10. 関連ドキュメント
-- 現行サマリ: `docs/runpod/RUNPOD_CURRENT_IMPLEMENTATION.md`（本書）
-- 評価計画/結果: `docs/runpod/RUNPOD_GPTOSS_SWALLOW_IQ4XS_2WEEK_EVAL.md`
-- 当日ログ: `docs/runpod/PHASE1_DAY1_WORKLOG_2026-02-23.md`
-- 旧資料: `docs/runpod/old/`
-
-## 11. 更新ルール
-RunPod 実装変更時は、最低限以下を同一PR/同一コミット系で更新します。
-- `docs/runpod/RUNPOD_CURRENT_IMPLEMENTATION.md`
-- 必要に応じて `docs/runpod/README.md`
-- 実行手順変更がある場合 `tools/runpod_eval/node_htmx_client/README.md`
+## 8. 既知の注意点
+- Pod 再作成直後はモデル準備に時間がかかる。
+- `MODEL_PULL_ENABLED=1` で pull が失敗する場合は、`MODEL_CREATE_FROM_GGUF=1` + `MODEL_SOURCE_DIR` を利用する。

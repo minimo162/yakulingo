@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Network Volume(/workspace)前提で、Pod再作成後の復旧を自動化する。
-
 WORKSPACE_DIR="${WORKSPACE_DIR:-/workspace}"
 LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR}/logs}"
 AUTH_TOKEN_FILE="${AUTH_TOKEN_FILE:-${WORKSPACE_DIR}/.auth_token}"
@@ -14,21 +12,23 @@ YAKULINGO_DIR="${YAKULINGO_DIR:-${WORKSPACE_DIR}/yakulingo}"
 YAKULINGO_REPO_URL="${YAKULINGO_REPO_URL:-https://github.com/minimo162/yakulingo.git}"
 YAKULINGO_REF="${YAKULINGO_REF:-main}"
 
-MODEL_REPO="${MODEL_REPO:-mmnga-o/GPT-OSS-Swallow-120B-RL-v0.1-gguf}"
-MODEL_SOURCE_DIR="${MODEL_SOURCE_DIR:-${WORKSPACE_DIR}/models/swallow-120b/IQ4_XS}"
 MODEL_ID="${MODEL_ID:-gpt-oss-swallow-120b-iq4xs}"
+MODEL_PULL_NAME="${MODEL_PULL_NAME:-${MODEL_ID}}"
+MODEL_SOURCE_DIR="${MODEL_SOURCE_DIR:-${WORKSPACE_DIR}/models/swallow-120b/IQ4_XS}"
+MODEL_CREATE_FROM_GGUF="${MODEL_CREATE_FROM_GGUF:-1}"
+MODEL_PULL_ENABLED="${MODEL_PULL_ENABLED:-1}"
+MODEL_PREP_TIMEOUT_SEC="${MODEL_PREP_TIMEOUT_SEC:-5400}"
 CONTEXT_LENGTH="${CONTEXT_LENGTH:-4096}"
 GPU_PROFILE="${GPU_PROFILE:-a40x2}"
 CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1}"
-LMS_SERVER_PORT="${LMS_SERVER_PORT:-1234}"
+
+OLLAMA_HOST="${OLLAMA_HOST:-127.0.0.1:11435}"
+OLLAMA_MODELS="${OLLAMA_MODELS:-${WORKSPACE_DIR}/ollama_models}"
 SWALLOW_PROXY_PORT="${SWALLOW_PROXY_PORT:-11434}"
 MODEL_LOAD_BLOCKING="${MODEL_LOAD_BLOCKING:-0}"
-MODEL_READY_MAX_WAIT_SEC="${MODEL_READY_MAX_WAIT_SEC:-180}"
+MODEL_READY_MAX_WAIT_SEC="${MODEL_READY_MAX_WAIT_SEC:-240}"
 MODEL_READY_POLL_SEC="${MODEL_READY_POLL_SEC:-2}"
-MODEL_LOAD_TIMEOUT_SEC="${MODEL_LOAD_TIMEOUT_SEC:-1800}"
-MODEL_KEY_RETRY_MAX="${MODEL_KEY_RETRY_MAX:-20}"
-MODEL_KEY_RETRY_DELAY_SEC="${MODEL_KEY_RETRY_DELAY_SEC:-3}"
-MODEL_KEY_REQUIRED="${MODEL_KEY_REQUIRED:-0}"
+
 ENABLE_PLAYWRIGHT_MCP="${ENABLE_PLAYWRIGHT_MCP:-1}"
 PLAYWRIGHT_MCP_HOST="${PLAYWRIGHT_MCP_HOST:-127.0.0.1}"
 PLAYWRIGHT_MCP_PORT="${PLAYWRIGHT_MCP_PORT:-8931}"
@@ -48,11 +48,30 @@ log() {
   printf '[bootstrap] %s\n' "$*"
 }
 
+normalize_int() {
+  local raw="$1"
+  local fallback="$2"
+  if [[ "${raw}" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "${raw}"
+  else
+    printf '%s\n' "${fallback}"
+  fi
+}
+
+extract_port_from_host() {
+  local host="$1"
+  local port="${host##*:}"
+  if [[ "${port}" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "${port}"
+  else
+    printf '11435\n'
+  fi
+}
+
 prune_backup_dirs() {
   local base_dir="$1"
   local keep_count="$2"
   local -a sorted=()
-
   mapfile -t sorted < <(ls -1dt "${base_dir}.backup."* 2>/dev/null || true)
   if [ "${#sorted[@]}" -le "${keep_count}" ]; then
     return
@@ -75,7 +94,6 @@ cleanup_workspace_artifacts() {
     log "skip workspace cleanup (CLEANUP_WORKSPACE=${CLEANUP_WORKSPACE})"
     return
   fi
-
   mkdir -p "${LOG_DIR}"
   find "${LOG_DIR}" -maxdepth 1 -type f -name '*.log' -mtime +"${CLEANUP_LOG_RETENTION_DAYS}" -delete 2>/dev/null || true
   rm -rf "${WORKSPACE_DIR}/_yakulingo_bootstrap" "${WORKSPACE_DIR}/.tmp-lobe-chat-ref"
@@ -106,6 +124,7 @@ ensure_base_packages() {
     fi
     log "SKIP_BASE_PACKAGES=1 but missing commands: ${missing[*]} -> fallback install"
   fi
+
   log "install base packages"
   export DEBIAN_FRONTEND=noninteractive
   apt-get update
@@ -122,19 +141,20 @@ sync_yakulingo_repo() {
     log "clone yakulingo repo -> ${YAKULINGO_DIR}"
     rm -rf "${YAKULINGO_DIR}"
     git clone --depth 1 --branch "${YAKULINGO_REF}" "${YAKULINGO_REPO_URL}" "${YAKULINGO_DIR}"
-  else
-    log "update yakulingo repo (${YAKULINGO_REF})"
-    if ! git -C "${YAKULINGO_DIR}" fetch origin "${YAKULINGO_REF}" --depth 1; then
-      log "WARN: git fetch failed. keep existing checkout."
-      return
-    fi
-    if ! git -C "${YAKULINGO_DIR}" checkout "${YAKULINGO_REF}"; then
-      log "WARN: git checkout ${YAKULINGO_REF} failed. keep existing branch."
-      return
-    fi
-    if ! git -C "${YAKULINGO_DIR}" pull --ff-only origin "${YAKULINGO_REF}"; then
-      log "WARN: git pull failed (local changes?). keep existing checkout."
-    fi
+    return
+  fi
+
+  log "update yakulingo repo (${YAKULINGO_REF})"
+  if ! git -C "${YAKULINGO_DIR}" fetch origin "${YAKULINGO_REF}" --depth 1; then
+    log "WARN: git fetch failed. keep existing checkout."
+    return
+  fi
+  if ! git -C "${YAKULINGO_DIR}" checkout "${YAKULINGO_REF}"; then
+    log "WARN: git checkout ${YAKULINGO_REF} failed. keep existing branch."
+    return
+  fi
+  if ! git -C "${YAKULINGO_DIR}" pull --ff-only origin "${YAKULINGO_REF}"; then
+    log "WARN: git pull failed (local changes?). keep existing checkout."
   fi
 }
 
@@ -165,6 +185,7 @@ ensure_node_toolchain() {
     log "node/pnpm already installed"
     return
   fi
+
   log "install node + pnpm"
   install -m 0755 -d /etc/apt/keyrings
   curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
@@ -175,94 +196,39 @@ ensure_node_toolchain() {
   corepack prepare pnpm@10.20.0 --activate
 }
 
-ensure_lms() {
-  export PATH="$HOME/.lmstudio/bin:$PATH"
-  hash -r
-  if command -v lms >/dev/null 2>&1; then
-    log "lms already installed"
-  else
-    log "install lm studio cli"
-    curl -fsSL https://lmstudio.ai/install.sh -o /tmp/lmstudio-install.sh
-    bash /tmp/lmstudio-install.sh --no-modify-path
-  fi
-  if ! command -v lms >/dev/null 2>&1; then
-    log "ERROR: lms command is not available"
-    exit 1
-  fi
-}
-
-ensure_model_files() {
-  shopt -s nullglob
-  local files=("${MODEL_SOURCE_DIR}"/*.gguf)
-  shopt -u nullglob
-  if [ "${#files[@]}" -eq 0 ]; then
-    log "ERROR: model shards not found in ${MODEL_SOURCE_DIR}"
-    exit 1
-  fi
-}
-
-link_model_shards() {
-  local dst_dir="/root/.lmstudio/models/${MODEL_REPO}"
-  mkdir -p "${dst_dir}"
-
-  shopt -s nullglob
-  local files=("${MODEL_SOURCE_DIR}"/*.gguf)
-  shopt -u nullglob
-  for f in "${files[@]}"; do
-    ln -sfn "${f}" "${dst_dir}/$(basename "${f}")"
-  done
-  log "linked ${#files[@]} shard(s) to ${dst_dir}"
-}
-
-ensure_model_import() {
-  local models_json="/tmp/lms_models_bootstrap.json"
-  lms daemon up >/dev/null || true
-  lms ls --json > "${models_json}"
-
-  if jq -e --arg repo "${MODEL_REPO}" '.[] | select(.path | test($repo; "i"))' "${models_json}" >/dev/null 2>&1; then
-    log "model already imported in lms catalog"
+ensure_ollama() {
+  if command -v ollama >/dev/null 2>&1; then
+    log "ollama already installed"
     return
   fi
 
-  local first_gguf
-  local dst_dir
-  local first_name
-  local first_link
-  first_gguf="$(ls "${MODEL_SOURCE_DIR}"/*.gguf | sort | head -1)"
-  dst_dir="/root/.lmstudio/models/${MODEL_REPO}"
-  first_name="$(basename "${first_gguf}")"
-  first_link="${dst_dir}/${first_name}"
-
-  # 既存リンクがあると lms import --symbolic-link が失敗するため先に掃除する。
-  rm -f "${first_link}"
-  log "import first shard into lms catalog"
-  if ! lms import "${first_gguf}" --user-repo "${MODEL_REPO}" --symbolic-link -y; then
-    # 失敗時でもカタログ登録済みなら続行する。
-    lms ls --json > "${models_json}"
-    if jq -e --arg repo "${MODEL_REPO}" '.[] | select(.path | test($repo; "i"))' "${models_json}" >/dev/null 2>&1; then
-      log "import returned non-zero, but model exists in catalog. continue."
-    else
-      log "ERROR: lms import failed and model not found in catalog"
-      exit 1
-    fi
+  log "install ollama"
+  curl -fsSL https://ollama.com/install.sh | sh
+  if ! command -v ollama >/dev/null 2>&1; then
+    log "ERROR: ollama command is not available"
+    exit 1
   fi
 }
 
 ensure_runtime_env() {
+  local ollama_port
+  ollama_port="$(extract_port_from_host "${OLLAMA_HOST}")"
   cat > "${RUNTIME_ENV_FILE}" <<EOF
 GPU_PROFILE=${GPU_PROFILE}
 CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}
 CONTEXT_LENGTH=${CONTEXT_LENGTH}
 MODEL_ID=${MODEL_ID}
-MODEL_REPO=${MODEL_REPO}
-LMS_SERVER_PORT=${LMS_SERVER_PORT}
+MODEL_PULL_NAME=${MODEL_PULL_NAME}
+MODEL_SOURCE_DIR=${MODEL_SOURCE_DIR}
+MODEL_CREATE_FROM_GGUF=${MODEL_CREATE_FROM_GGUF}
+MODEL_PULL_ENABLED=${MODEL_PULL_ENABLED}
+MODEL_PREP_TIMEOUT_SEC=${MODEL_PREP_TIMEOUT_SEC}
 MODEL_LOAD_BLOCKING=${MODEL_LOAD_BLOCKING}
 MODEL_READY_MAX_WAIT_SEC=${MODEL_READY_MAX_WAIT_SEC}
 MODEL_READY_POLL_SEC=${MODEL_READY_POLL_SEC}
-MODEL_LOAD_TIMEOUT_SEC=${MODEL_LOAD_TIMEOUT_SEC}
-MODEL_KEY_RETRY_MAX=${MODEL_KEY_RETRY_MAX}
-MODEL_KEY_RETRY_DELAY_SEC=${MODEL_KEY_RETRY_DELAY_SEC}
-MODEL_KEY_REQUIRED=${MODEL_KEY_REQUIRED}
+OLLAMA_HOST=${OLLAMA_HOST}
+OLLAMA_PORT=${ollama_port}
+OLLAMA_MODELS=${OLLAMA_MODELS}
 ENABLE_PLAYWRIGHT_MCP=${ENABLE_PLAYWRIGHT_MCP}
 PLAYWRIGHT_MCP_HOST=${PLAYWRIGHT_MCP_HOST}
 PLAYWRIGHT_MCP_PORT=${PLAYWRIGHT_MCP_PORT}
@@ -286,6 +252,8 @@ ensure_auth_token() {
 write_nginx_conf() {
   local token
   token="$(tr -d '\n' < "${AUTH_TOKEN_FILE}")"
+  local ollama_port
+  ollama_port="$(extract_port_from_host "${OLLAMA_HOST}")"
 
   mkdir -p "${NGINX_DIR}" "${LOG_DIR}"
   cat > "${NGINX_CONF_FILE}" <<EOF
@@ -309,7 +277,7 @@ http {
             if (\$http_authorization = "Bearer ${token}") { set \$auth_ok 1; }
             if (\$auth_ok = 0) { return 401; }
 
-            proxy_pass http://127.0.0.1:${LMS_SERVER_PORT};
+            proxy_pass http://127.0.0.1:${ollama_port};
             proxy_http_version 1.1;
             proxy_set_header Host \$host;
             proxy_set_header X-Real-IP \$remote_addr;
@@ -319,8 +287,20 @@ http {
             proxy_read_timeout 3600;
         }
 
-        location / {
-            return 404;
+        location ^~ /api/ {
+            set \$auth_ok 0;
+            if (\$http_x_api_key = "${token}") { set \$auth_ok 1; }
+            if (\$http_authorization = "Bearer ${token}") { set \$auth_ok 1; }
+            if (\$auth_ok = 0) { return 401; }
+
+            proxy_pass http://127.0.0.1:${ollama_port};
+            proxy_http_version 1.1;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+            proxy_buffering off;
+            proxy_read_timeout 3600;
         }
 
         location = /mcp {
@@ -331,24 +311,7 @@ http {
 
             proxy_pass http://127.0.0.1:${PLAYWRIGHT_MCP_PORT}/mcp;
             proxy_http_version 1.1;
-            # Playwright MCP validates Host and only accepts localhost:<port>.
             proxy_set_header Host localhost:${PLAYWRIGHT_MCP_PORT};
-            proxy_set_header X-Real-IP \$remote_addr;
-            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto \$scheme;
-            proxy_buffering off;
-            proxy_read_timeout 3600;
-        }
-
-        location ^~ /api/v1/ {
-            set \$auth_ok 0;
-            if (\$http_x_api_key = "${token}") { set \$auth_ok 1; }
-            if (\$http_authorization = "Bearer ${token}") { set \$auth_ok 1; }
-            if (\$auth_ok = 0) { return 401; }
-
-            proxy_pass http://127.0.0.1:${LMS_SERVER_PORT};
-            proxy_http_version 1.1;
-            proxy_set_header Host \$host;
             proxy_set_header X-Real-IP \$remote_addr;
             proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto \$scheme;
@@ -361,15 +324,19 @@ http {
             if (\$http_x_api_key = "${token}") { set \$auth_ok 1; }
             if (\$http_authorization = "Bearer ${token}") { set \$auth_ok 1; }
             if (\$auth_ok = 0) { return 401; }
+
             proxy_pass http://127.0.0.1:${PLAYWRIGHT_MCP_PORT}/mcp;
             proxy_http_version 1.1;
-            # Playwright MCP validates Host and only accepts localhost:<port>.
             proxy_set_header Host localhost:${PLAYWRIGHT_MCP_PORT};
             proxy_set_header X-Real-IP \$remote_addr;
             proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto \$scheme;
             proxy_buffering off;
             proxy_read_timeout 3600;
+        }
+
+        location / {
+            return 404;
         }
     }
 }
@@ -382,55 +349,36 @@ write_start_script() {
 #!/usr/bin/env bash
 set -euo pipefail
 
-export PATH="$HOME/.lmstudio/bin:$PATH"
-
 set -a
 source /workspace/runtime.env
 set +a
 
-LMS_SERVER_PORT="${LMS_SERVER_PORT:-1234}"
-MODEL_LOAD_BLOCKING="${MODEL_LOAD_BLOCKING:-0}"
-MODEL_READY_MAX_WAIT_SEC="${MODEL_READY_MAX_WAIT_SEC:-180}"
-MODEL_READY_POLL_SEC="${MODEL_READY_POLL_SEC:-2}"
-MODEL_LOAD_TIMEOUT_SEC="${MODEL_LOAD_TIMEOUT_SEC:-1800}"
-MODEL_KEY_RETRY_MAX="${MODEL_KEY_RETRY_MAX:-20}"
-MODEL_KEY_RETRY_DELAY_SEC="${MODEL_KEY_RETRY_DELAY_SEC:-3}"
-MODEL_KEY_REQUIRED="${MODEL_KEY_REQUIRED:-0}"
-ENABLE_PLAYWRIGHT_MCP="${ENABLE_PLAYWRIGHT_MCP:-1}"
-PLAYWRIGHT_MCP_HOST="${PLAYWRIGHT_MCP_HOST:-127.0.0.1}"
-PLAYWRIGHT_MCP_PORT="${PLAYWRIGHT_MCP_PORT:-8931}"
-PLAYWRIGHT_MCP_ALLOWED_HOSTS="${PLAYWRIGHT_MCP_ALLOWED_HOSTS:-*}"
-PLAYWRIGHT_MCP_REQUIRED="${PLAYWRIGHT_MCP_REQUIRED:-0}"
+MODEL_READY_MAX_WAIT_SEC="$( [[ "${MODEL_READY_MAX_WAIT_SEC:-}" =~ ^[0-9]+$ ]] && echo "${MODEL_READY_MAX_WAIT_SEC}" || echo 240 )"
+MODEL_READY_POLL_SEC="$( [[ "${MODEL_READY_POLL_SEC:-}" =~ ^[0-9]+$ ]] && echo "${MODEL_READY_POLL_SEC}" || echo 2 )"
+MODEL_PREP_TIMEOUT_SEC="$( [[ "${MODEL_PREP_TIMEOUT_SEC:-}" =~ ^[0-9]+$ ]] && echo "${MODEL_PREP_TIMEOUT_SEC}" || echo 5400 )"
+PLAYWRIGHT_MCP_PORT="$( [[ "${PLAYWRIGHT_MCP_PORT:-}" =~ ^[0-9]+$ ]] && echo "${PLAYWRIGHT_MCP_PORT}" || echo 8931 )"
+OLLAMA_PORT="$( [[ "${OLLAMA_PORT:-}" =~ ^[0-9]+$ ]] && echo "${OLLAMA_PORT}" || echo 11435 )"
+OLLAMA_HOST="${OLLAMA_HOST:-127.0.0.1:${OLLAMA_PORT}}"
+OLLAMA_MODELS="${OLLAMA_MODELS:-/workspace/ollama_models}"
+MODEL_ID="${MODEL_ID:-gpt-oss-swallow-120b-iq4xs}"
+MODEL_PULL_NAME="${MODEL_PULL_NAME:-${MODEL_ID}}"
+MODEL_SOURCE_DIR="${MODEL_SOURCE_DIR:-/workspace/models/swallow-120b/IQ4_XS}"
+MODEL_CREATE_FROM_GGUF="${MODEL_CREATE_FROM_GGUF:-1}"
+MODEL_PULL_ENABLED="${MODEL_PULL_ENABLED:-1}"
 PLAYWRIGHT_MCP_LOG="${PLAYWRIGHT_MCP_LOG:-/workspace/playwright-mcp.log}"
-MODEL_REPO="${MODEL_REPO:-mmnga-o/GPT-OSS-Swallow-120B-RL-v0.1-gguf}"
-MODEL_LOAD_LOG="${MODEL_LOAD_LOG:-/workspace/lmstudio-model-load.log}"
-MODEL_LOAD_STATUS_FILE="${MODEL_LOAD_STATUS_FILE:-/workspace/model-load.status}"
+OLLAMA_SERVER_LOG="${OLLAMA_SERVER_LOG:-/workspace/ollama-server.log}"
+MODEL_PREP_LOG="${MODEL_PREP_LOG:-/workspace/ollama-model-prepare.log}"
 
-normalize_int() {
-  local raw="$1"
-  local fallback="$2"
-  if [[ "$raw" =~ ^[0-9]+$ ]]; then
-    printf '%s\n' "$raw"
-  else
-    printf '%s\n' "$fallback"
-  fi
-}
-
-MODEL_LOAD_TIMEOUT_SEC="$(normalize_int "${MODEL_LOAD_TIMEOUT_SEC}" 1800)"
-MODEL_KEY_RETRY_MAX="$(normalize_int "${MODEL_KEY_RETRY_MAX}" 20)"
-MODEL_KEY_RETRY_DELAY_SEC="$(normalize_int "${MODEL_KEY_RETRY_DELAY_SEC}" 3)"
-MODEL_READY_MAX_WAIT_SEC="$(normalize_int "${MODEL_READY_MAX_WAIT_SEC}" 180)"
-MODEL_READY_POLL_SEC="$(normalize_int "${MODEL_READY_POLL_SEC}" 2)"
-PLAYWRIGHT_MCP_PORT="$(normalize_int "${PLAYWRIGHT_MCP_PORT}" 8931)"
+export OLLAMA_HOST OLLAMA_MODELS
+mkdir -p "${OLLAMA_MODELS}"
 
 start_playwright_mcp() {
-  if [ "${ENABLE_PLAYWRIGHT_MCP}" != "1" ]; then
+  if [ "${ENABLE_PLAYWRIGHT_MCP:-1}" != "1" ]; then
     return 0
   fi
-
   if ! command -v npx >/dev/null 2>&1; then
     echo "[WARN] npx is not available. skip Playwright MCP startup."
-    if [ "${PLAYWRIGHT_MCP_REQUIRED}" = "1" ]; then
+    if [ "${PLAYWRIGHT_MCP_REQUIRED:-0}" = "1" ]; then
       echo "ERROR: PLAYWRIGHT_MCP_REQUIRED=1 but npx is missing."
       return 1
     fi
@@ -438,15 +386,16 @@ start_playwright_mcp() {
   fi
 
   pkill -f '@playwright/mcp' >/dev/null 2>&1 || true
-  nohup npx -y @playwright/mcp@latest --host "${PLAYWRIGHT_MCP_HOST}" --port "${PLAYWRIGHT_MCP_PORT}" --allowed-hosts "${PLAYWRIGHT_MCP_ALLOWED_HOSTS}" > "${PLAYWRIGHT_MCP_LOG}" 2>&1 &
+  nohup npx -y @playwright/mcp@latest \
+    --host "${PLAYWRIGHT_MCP_HOST:-127.0.0.1}" \
+    --port "${PLAYWRIGHT_MCP_PORT}" \
+    --allowed-hosts "${PLAYWRIGHT_MCP_ALLOWED_HOSTS:-*}" \
+    > "${PLAYWRIGHT_MCP_LOG}" 2>&1 &
 
   local ready=0
   for _ in $(seq 1 30); do
     local code
     code="$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:${PLAYWRIGHT_MCP_PORT}/" || true)"
-    if [ "${code}" = "000" ] || [ -z "${code}" ]; then
-      code="$(curl -sS -o /dev/null -w '%{http_code}' "http://localhost:${PLAYWRIGHT_MCP_PORT}/" || true)"
-    fi
     if [ "${code}" != "000" ] && [ -n "${code}" ]; then
       ready=1
       break
@@ -456,189 +405,149 @@ start_playwright_mcp() {
 
   if [ "${ready}" -ne 1 ]; then
     echo "[WARN] Playwright MCP did not become ready on port ${PLAYWRIGHT_MCP_PORT}"
-    if [ "${PLAYWRIGHT_MCP_REQUIRED}" = "1" ]; then
+    if [ "${PLAYWRIGHT_MCP_REQUIRED:-0}" = "1" ]; then
       echo "ERROR: PLAYWRIGHT_MCP_REQUIRED=1 and Playwright MCP is not ready."
       return 1
     fi
-    return 0
+  else
+    echo "[INFO] Playwright MCP started (host=${PLAYWRIGHT_MCP_HOST:-127.0.0.1}, port=${PLAYWRIGHT_MCP_PORT}, log=${PLAYWRIGHT_MCP_LOG})"
   fi
-
-  echo "[INFO] Playwright MCP started (host=${PLAYWRIGHT_MCP_HOST}, port=${PLAYWRIGHT_MCP_PORT}, log=${PLAYWRIGHT_MCP_LOG})"
   return 0
 }
 
-start_playwright_mcp
-
-lms daemon up >/dev/null || true
-
-if ! lms server status --json --quiet | jq -e '.running == true' >/dev/null 2>&1; then
-  nohup lms server start --port "${LMS_SERVER_PORT}" > /workspace/lmstudio-server.log 2>&1 &
-fi
-
-API_READY=0
-for _ in $(seq 1 45); do
-  if curl -fsS "http://127.0.0.1:${LMS_SERVER_PORT}/v1/models" >/tmp/lms_models_api_ready.json 2>/dev/null; then
-    API_READY=1
-    break
+start_ollama_server() {
+  if curl -fsS "http://127.0.0.1:${OLLAMA_PORT}/api/tags" >/tmp/ollama_tags_probe.json 2>/dev/null; then
+    return 0
   fi
-  sleep 1
-done
-if [ "${API_READY}" -ne 1 ]; then
-  echo "[WARN] LM Studio API is not reachable yet on :${LMS_SERVER_PORT}; continue startup."
-fi
+
+  nohup env OLLAMA_HOST="${OLLAMA_HOST}" OLLAMA_MODELS="${OLLAMA_MODELS}" ollama serve > "${OLLAMA_SERVER_LOG}" 2>&1 &
+  for _ in $(seq 1 60); do
+    if curl -fsS "http://127.0.0.1:${OLLAMA_PORT}/api/tags" >/tmp/ollama_tags_probe.json 2>/dev/null; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "ERROR: Ollama server did not become ready on :${OLLAMA_PORT}"
+  return 1
+}
+
+model_exists() {
+  ollama list 2>/dev/null | awk 'NR>1 {print $1}' | grep -Fx "${MODEL_ID}" >/dev/null 2>&1
+}
+
+prepare_model_from_gguf() {
+  if [ "${MODEL_CREATE_FROM_GGUF}" != "1" ]; then
+    return 1
+  fi
+  shopt -s nullglob
+  local ggufs=("${MODEL_SOURCE_DIR}"/*.gguf)
+  shopt -u nullglob
+  if [ "${#ggufs[@]}" -eq 0 ]; then
+    return 1
+  fi
+
+  local base_gguf="${ggufs[0]}"
+  local modelfile="/tmp/ollama-${MODEL_ID}.Modelfile"
+  cat > "${modelfile}" <<MODEL_EOF
+FROM ${base_gguf}
+PARAMETER num_ctx ${CONTEXT_LENGTH:-4096}
+MODEL_EOF
+
+  if command -v timeout >/dev/null 2>&1 && [ "${MODEL_PREP_TIMEOUT_SEC}" -gt 0 ]; then
+    timeout "${MODEL_PREP_TIMEOUT_SEC}" ollama create "${MODEL_ID}" -f "${modelfile}" >> "${MODEL_PREP_LOG}" 2>&1
+  else
+    ollama create "${MODEL_ID}" -f "${modelfile}" >> "${MODEL_PREP_LOG}" 2>&1
+  fi
+  return 0
+}
+
+ensure_model_ready() {
+  if model_exists; then
+    return 0
+  fi
+
+  : > "${MODEL_PREP_LOG}"
+  if [ "${MODEL_PULL_ENABLED}" = "1" ]; then
+    if command -v timeout >/dev/null 2>&1 && [ "${MODEL_PREP_TIMEOUT_SEC}" -gt 0 ]; then
+      timeout "${MODEL_PREP_TIMEOUT_SEC}" ollama pull "${MODEL_PULL_NAME}" >> "${MODEL_PREP_LOG}" 2>&1 || true
+    else
+      ollama pull "${MODEL_PULL_NAME}" >> "${MODEL_PREP_LOG}" 2>&1 || true
+    fi
+  fi
+
+  if ! model_exists; then
+    if ! prepare_model_from_gguf; then
+      echo "ERROR: model '${MODEL_ID}' is unavailable (pull/create failed)."
+      return 1
+    fi
+  fi
+
+  model_exists
+}
+
+start_playwright_mcp
+start_ollama_server
+ensure_model_ready
 
 nginx -c /workspace/nginx-swallow/nginx.conf -s quit 2>/dev/null || true
 rm -f /workspace/nginx-swallow/nginx.pid
 nginx -t -c /workspace/nginx-swallow/nginx.conf
 nginx -c /workspace/nginx-swallow/nginx.conf
 
-LMS_MODELS_JSON=/tmp/lms_models_list.json
-resolve_model_key() {
-  local attempts delay try key
-  attempts="${MODEL_KEY_RETRY_MAX}"
-  delay="${MODEL_KEY_RETRY_DELAY_SEC}"
-  key=""
-
-  if [ "${attempts}" -lt 1 ]; then
-    attempts=1
+models_ready=0
+for _ in $(seq 1 30); do
+  code="$(curl -sS -o /tmp/ollama_models_start.json -w '%{http_code}' "http://127.0.0.1:${OLLAMA_PORT}/v1/models" || true)"
+  if [ "${code}" = "200" ]; then
+    if jq -e --arg id "${MODEL_ID}" '.data[]? | select(.id == $id)' /tmp/ollama_models_start.json >/dev/null 2>&1; then
+      models_ready=1
+      break
+    fi
   fi
-  if [ "${delay}" -lt 1 ]; then
-    delay=1
-  fi
-
-  for try in $(seq 1 "${attempts}"); do
-    if ! lms ls --json > "${LMS_MODELS_JSON}"; then
-      echo "[WARN] lms ls failed (try ${try}/${attempts})"
-    fi
-
-    key="$(jq -r --arg repo "${MODEL_REPO}" '
-      .[]?
-      | select((.path | test($repo; "i")) and (.path | test("iq4_xs"; "i")))
-      | .modelKey
-    ' "${LMS_MODELS_JSON}" | head -1)"
-    if [ -z "${key}" ]; then
-      key="$(jq -r --arg repo "${MODEL_REPO}" '
-        .[]?
-        | select(.path | test($repo; "i"))
-        | .modelKey
-      ' "${LMS_MODELS_JSON}" | head -1)"
-    fi
-    if [ -n "${key}" ]; then
-      printf '%s\n' "${key}"
-      return 0
-    fi
-
-    if [ "${try}" -lt "${attempts}" ]; then
-      sleep "${delay}"
-    fi
-  done
-
-  return 1
-}
-
-MODEL_KEY="$(resolve_model_key || true)"
-if [ -z "${MODEL_KEY}" ]; then
-  echo "[WARN] MODEL_KEY not found in lms catalog after retries."
-  if [ "${MODEL_KEY_REQUIRED}" = "1" ] || [ "${MODEL_LOAD_BLOCKING}" = "1" ]; then
-    echo "ERROR: MODEL_KEY is required for current mode."
-    exit 1
-  fi
+  sleep 1
+done
+if [ "${models_ready}" -ne 1 ]; then
+  echo "ERROR: model '${MODEL_ID}' is not visible on /v1/models"
+  exit 1
 fi
 
-load_model_once() {
-  if [ -z "${MODEL_KEY}" ]; then
-    echo "[WARN] skip model load because MODEL_KEY is empty."
-    return 1
+chat_ready=0
+for _ in $(seq 1 20); do
+  code="$(
+    curl -sS -o /tmp/ollama_chat_probe.json -w '%{http_code}' \
+      -H 'Content-Type: application/json' \
+      -d "{\"model\":\"${MODEL_ID}\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"max_tokens\":1,\"temperature\":0}" \
+      "http://127.0.0.1:${OLLAMA_PORT}/v1/chat/completions" || true
+  )"
+  if [ "${code}" = "200" ]; then
+    chat_ready=1
+    break
   fi
-
-  local load_rc=0
-  if command -v timeout >/dev/null 2>&1 && [ "${MODEL_LOAD_TIMEOUT_SEC}" -gt 0 ]; then
-    timeout "${MODEL_LOAD_TIMEOUT_SEC}" \
-      lms load "${MODEL_KEY}" --identifier "${MODEL_ID}" --context-length "${CONTEXT_LENGTH}" --gpu max || load_rc=$?
-  else
-    lms load "${MODEL_KEY}" --identifier "${MODEL_ID}" --context-length "${CONTEXT_LENGTH}" --gpu max || load_rc=$?
-  fi
-
-  if [ "${load_rc}" -eq 0 ]; then
-    return 0
-  fi
-  if [ "${load_rc}" -eq 124 ]; then
-    echo "[WARN] lms load timed out (${MODEL_LOAD_TIMEOUT_SEC}s)."
-  fi
-
-  if lms ps --json | jq -e --arg id "$MODEL_ID" '.[] | select(.identifier == $id)' >/dev/null 2>&1; then
-    echo "[INFO] model already loaded, continue"
-    return 0
-  fi
-
-  echo "ERROR: failed to load model: $MODEL_ID"
-  return 1
-}
-
-if lms ps --json | jq -e --arg id "$MODEL_ID" '.[] | select(.identifier == $id)' >/dev/null 2>&1; then
-  echo "[INFO] model already loaded, skip load"
-else
-  if [ "${MODEL_LOAD_BLOCKING}" = "1" ]; then
-    if ! load_model_once; then
-      exit 1
-    fi
-  else
-    (
-      started_at="$(date --iso-8601=seconds 2>/dev/null || date)"
-      echo "start ${started_at}"
-      if load_model_once; then
-        finished_at="$(date --iso-8601=seconds 2>/dev/null || date)"
-        echo "ok ${finished_at}" > "${MODEL_LOAD_STATUS_FILE}"
-      else
-        finished_at="$(date --iso-8601=seconds 2>/dev/null || date)"
-        echo "failed ${finished_at}" > "${MODEL_LOAD_STATUS_FILE}"
-      fi
-    ) >> "${MODEL_LOAD_LOG}" 2>&1 &
-    echo "[INFO] model load started in background (log: ${MODEL_LOAD_LOG})"
-  fi
-fi
-
-if [ "${MODEL_LOAD_BLOCKING}" = "1" ]; then
-  READY=0
-  max_wait_loops=1
-  if [ "${MODEL_READY_POLL_SEC}" -gt 0 ]; then
-    max_wait_loops=$((MODEL_READY_MAX_WAIT_SEC / MODEL_READY_POLL_SEC))
-  fi
-  if [ "${max_wait_loops}" -lt 1 ]; then
-    max_wait_loops=1
-  fi
-  for _ in $(seq 1 "${max_wait_loops}"); do
-    if curl -fsS "http://127.0.0.1:${LMS_SERVER_PORT}/v1/models" >/tmp/lms_models_start.json 2>/dev/null; then
-      if jq -e --arg id "$MODEL_ID" '.data[]? | select(.id == $id)' /tmp/lms_models_start.json >/dev/null 2>&1; then
-        READY=1
-        break
-      fi
-    fi
-    sleep "${MODEL_READY_POLL_SEC}"
-  done
-  if [ "${READY}" -ne 1 ]; then
-    echo "ERROR: model $MODEL_ID is not ready on /v1/models"
-    exit 1
-  fi
+  sleep "${MODEL_READY_POLL_SEC}"
+done
+if [ "${chat_ready}" -ne 1 ]; then
+  echo "ERROR: /v1/chat/completions is not ready for model '${MODEL_ID}'."
+  exit 1
 fi
 
 echo "start.sh done (MODEL_LOAD_BLOCKING=${MODEL_LOAD_BLOCKING})"
 EOF
+
   chmod +x "${START_SCRIPT_FILE}"
   log "wrote ${START_SCRIPT_FILE}"
 }
 
 main() {
+  MODEL_PREP_TIMEOUT_SEC="$(normalize_int "${MODEL_PREP_TIMEOUT_SEC}" 5400)"
+  MODEL_READY_MAX_WAIT_SEC="$(normalize_int "${MODEL_READY_MAX_WAIT_SEC}" 240)"
+  MODEL_READY_POLL_SEC="$(normalize_int "${MODEL_READY_POLL_SEC}" 2)"
+
   apply_fast_start_defaults
   cleanup_workspace_artifacts
   ensure_base_packages
   sync_yakulingo_repo
   sync_bootstrap_script_copy
   ensure_node_toolchain
-  ensure_lms
-  ensure_model_files
-  ensure_model_import
-  link_model_shards
+  ensure_ollama
   ensure_runtime_env
   ensure_auth_token
   write_nginx_conf

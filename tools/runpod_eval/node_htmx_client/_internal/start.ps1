@@ -861,22 +861,16 @@ if ($localMcpEnabledNormalized) {
 
 $appTimeZone = Get-ConfigValue -Key "APP_TIME_ZONE" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($appTimeZone)) { $appTimeZone = "Asia/Tokyo" }
-$weatherVerifiedFetchEnabled = Get-ConfigValue -Key "WEATHER_VERIFIED_FETCH_ENABLED" -FilePaths $configFiles
-if ([string]::IsNullOrWhiteSpace($weatherVerifiedFetchEnabled)) { $weatherVerifiedFetchEnabled = "1" }
-$weatherVerifiedFetchMode = Get-ConfigValue -Key "WEATHER_VERIFIED_FETCH_MODE" -FilePaths $configFiles
-if ([string]::IsNullOrWhiteSpace($weatherVerifiedFetchMode)) { $weatherVerifiedFetchMode = "strict" }
 $weatherDefaultLocation = Get-ConfigValue -Key "WEATHER_DEFAULT_LOCATION" -FilePaths $configFiles
-if ([string]::IsNullOrWhiteSpace($weatherDefaultLocation)) { $weatherDefaultLocation = "広島" }
-$weatherOpenMeteoTimeoutSec = Get-ConfigValue -Key "WEATHER_OPENMETEO_TIMEOUT_SEC" -FilePaths $configFiles
-if ([string]::IsNullOrWhiteSpace($weatherOpenMeteoTimeoutSec)) { $weatherOpenMeteoTimeoutSec = "20" }
-$weatherHttpTrustEnv = Get-ConfigValue -Key "WEATHER_HTTP_TRUST_ENV" -FilePaths $configFiles
-if ([string]::IsNullOrWhiteSpace($weatherHttpTrustEnv)) { $weatherHttpTrustEnv = "1" }
-$weatherModelIntentEnabled = Get-ConfigValue -Key "WEATHER_MODEL_INTENT_ENABLED" -FilePaths $configFiles
-if ([string]::IsNullOrWhiteSpace($weatherModelIntentEnabled)) { $weatherModelIntentEnabled = "1" }
+if ([string]::IsNullOrWhiteSpace($weatherDefaultLocation)) { $weatherDefaultLocation = "Hiroshima" }
 $playwrightModelQueryEnabled = Get-ConfigValue -Key "PLAYWRIGHT_MODEL_QUERY_ENABLED" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($playwrightModelQueryEnabled)) { $playwrightModelQueryEnabled = "1" }
 $progressLogMode = Get-ConfigValue -Key "PROGRESS_LOG_MODE" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($progressLogMode)) { $progressLogMode = "concise" }
+$runPodInferenceProvider = Get-ConfigValue -Key "RUNPOD_INFERENCE_PROVIDER" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($runPodInferenceProvider)) { $runPodInferenceProvider = "ollama" }
+$runPodUpstreamApiKey = Get-ConfigValue -Key "RUNPOD_UPSTREAM_API_KEY" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($runPodUpstreamApiKey)) { $runPodUpstreamApiKey = $runPodApiKey }
 
 $timeoutMs = Get-ConfigValue -Key "RUNPOD_REQUEST_TIMEOUT_MS" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($timeoutMs)) { $timeoutMs = "120000" }
@@ -1026,7 +1020,7 @@ $codexExecTimeoutSec = Get-ConfigValue -Key "CODEX_EXEC_TIMEOUT_SEC" -FilePaths 
 if ([string]::IsNullOrWhiteSpace($codexExecTimeoutSec)) { $codexExecTimeoutSec = "900" }
 
 $codexExecRouteMode = Get-ConfigValue -Key "CODEX_EXEC_ROUTE_MODE" -FilePaths $configFiles
-if ([string]::IsNullOrWhiteSpace($codexExecRouteMode)) { $codexExecRouteMode = "background_poll" }
+if ([string]::IsNullOrWhiteSpace($codexExecRouteMode)) { $codexExecRouteMode = "resilient" }
 
 $codexNativeMode = Get-ConfigValue -Key "CODEX_NATIVE_MODE" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($codexNativeMode)) { $codexNativeMode = "0" }
@@ -1071,8 +1065,14 @@ if ([string]::IsNullOrWhiteSpace($codexModelVerbosity)) { $codexModelVerbosity =
 $codexExecModel = Get-ConfigValue -Key "CODEX_EXEC_MODEL" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($codexExecModel)) { $codexExecModel = $defaultModel }
 
-$codexLmstudioProviderId = Get-ConfigValue -Key "CODEX_LMSTUDIO_PROVIDER_ID" -FilePaths $configFiles
-if ([string]::IsNullOrWhiteSpace($codexLmstudioProviderId)) { $codexLmstudioProviderId = "lmstudio-runpod" }
+$codexProviderId = Get-ConfigValue -Key "CODEX_PROVIDER_ID" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexProviderId)) { $codexProviderId = "ollama-runpod" }
+$codexWireApi = Get-ConfigValue -Key "CODEX_WIRE_API" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($codexWireApi)) { $codexWireApi = "chat" }
+$liveWebToolExecMode = Get-ConfigValue -Key "LIVE_WEB_TOOL_EXEC_MODE" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($liveWebToolExecMode)) { $liveWebToolExecMode = "engine_primary" }
+$liveWebRequireEvidence = Get-ConfigValue -Key "LIVE_WEB_REQUIRE_EVIDENCE" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($liveWebRequireEvidence)) { $liveWebRequireEvidence = "1" }
 
 $codexProjectDocMaxBytes = Get-ConfigValue -Key "CODEX_PROJECT_DOC_MAX_BYTES" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($codexProjectDocMaxBytes)) { $codexProjectDocMaxBytes = "0" }
@@ -1120,10 +1120,10 @@ $codexWebSearchMode = Get-ConfigValue -Key "CODEX_WEB_SEARCH_MODE" -FilePaths $c
 if ([string]::IsNullOrWhiteSpace($codexWebSearchMode)) { $codexWebSearchMode = "live" }
 
 $codexToolFallbackToEngine = Get-ConfigValue -Key "CODEX_TOOL_FALLBACK_TO_ENGINE" -FilePaths $configFiles
-if ([string]::IsNullOrWhiteSpace($codexToolFallbackToEngine)) { $codexToolFallbackToEngine = "0" }
+if ([string]::IsNullOrWhiteSpace($codexToolFallbackToEngine)) { $codexToolFallbackToEngine = "1" }
 
 $codexToolFallbackForceForLiveWeb = Get-ConfigValue -Key "CODEX_TOOL_FALLBACK_FORCE_FOR_LIVE_WEB" -FilePaths $configFiles
-if ([string]::IsNullOrWhiteSpace($codexToolFallbackForceForLiveWeb)) { $codexToolFallbackForceForLiveWeb = "0" }
+if ([string]::IsNullOrWhiteSpace($codexToolFallbackForceForLiveWeb)) { $codexToolFallbackForceForLiveWeb = "1" }
 
 $runPodBaseUrlCandidates = Get-ConfigValue -Key "RUNPOD_BASE_URL_CANDIDATES" -FilePaths $configFiles
 $runPodRouteProbeEnabled = Get-ConfigValue -Key "RUNPOD_ROUTE_PROBE_ENABLED" -FilePaths $configFiles
@@ -1196,8 +1196,10 @@ if ($playwrightRemoteMcpEnabledNormalized -and -not [string]::IsNullOrWhiteSpace
   }
   if ([string]::IsNullOrWhiteSpace($playwrightRemoteMcpHeadersJson) -and (Test-IsRunPodProxyUrl -Url $playwrightRemoteMcpUrl)) {
     if (-not [string]::IsNullOrWhiteSpace($runPodApiKey)) {
+      $upstreamAuthToken = $runPodUpstreamApiKey
+      if ([string]::IsNullOrWhiteSpace($upstreamAuthToken)) { $upstreamAuthToken = $runPodApiKey }
       $autoHeaders = @{
-        Authorization = "Bearer $runPodApiKey"
+        Authorization = "Bearer $upstreamAuthToken"
         "x-api-key" = $runPodApiKey
       }
       $playwrightRemoteMcpHeadersJson = ($autoHeaders | ConvertTo-Json -Compress -Depth 4)
@@ -1243,22 +1245,6 @@ $runPodResponsesRequireToolForLiveWeb = Get-ConfigValue -Key "RUNPOD_RESPONSES_R
 if ([string]::IsNullOrWhiteSpace($runPodResponsesRequireToolForLiveWeb)) { $runPodResponsesRequireToolForLiveWeb = "1" }
 $runPodResponsesHardFailOnMissingTool = Get-ConfigValue -Key "RUNPOD_RESPONSES_HARD_FAIL_ON_MISSING_TOOL" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($runPodResponsesHardFailOnMissingTool)) { $runPodResponsesHardFailOnMissingTool = "0" }
-$runPodLmstudioChatPluginEnabled = Get-ConfigValue -Key "RUNPOD_LMSTUDIO_CHAT_PLUGIN_ENABLED" -FilePaths $configFiles
-if ([string]::IsNullOrWhiteSpace($runPodLmstudioChatPluginEnabled)) { $runPodLmstudioChatPluginEnabled = "1" }
-$runPodLmstudioChatPluginForLiveWebOnly = Get-ConfigValue -Key "RUNPOD_LMSTUDIO_CHAT_PLUGIN_FOR_LIVE_WEB_ONLY" -FilePaths $configFiles
-if ([string]::IsNullOrWhiteSpace($runPodLmstudioChatPluginForLiveWebOnly)) { $runPodLmstudioChatPluginForLiveWebOnly = "1" }
-$runPodLmstudioChatPluginId = Get-ConfigValue -Key "RUNPOD_LMSTUDIO_CHAT_PLUGIN_ID" -FilePaths $configFiles
-if ([string]::IsNullOrWhiteSpace($runPodLmstudioChatPluginId)) { $runPodLmstudioChatPluginId = "mcp/playwright" }
-$runPodLmstudioChatEphemeralMcpFallbackEnabled = Get-ConfigValue -Key "RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_FALLBACK_ENABLED" -FilePaths $configFiles
-if ([string]::IsNullOrWhiteSpace($runPodLmstudioChatEphemeralMcpFallbackEnabled)) { $runPodLmstudioChatEphemeralMcpFallbackEnabled = "1" }
-$runPodLmstudioChatEphemeralMcpPrimary = Get-ConfigValue -Key "RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_PRIMARY" -FilePaths $configFiles
-if ([string]::IsNullOrWhiteSpace($runPodLmstudioChatEphemeralMcpPrimary)) { $runPodLmstudioChatEphemeralMcpPrimary = "1" }
-$runPodLmstudioChatEphemeralMcpUrl = Get-ConfigValue -Key "RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_URL" -FilePaths $configFiles
-if ([string]::IsNullOrWhiteSpace($runPodLmstudioChatEphemeralMcpUrl)) { $runPodLmstudioChatEphemeralMcpUrl = "http://localhost:8931/mcp" }
-$runPodLmstudioChatEphemeralMcpLabel = Get-ConfigValue -Key "RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_LABEL" -FilePaths $configFiles
-if ([string]::IsNullOrWhiteSpace($runPodLmstudioChatEphemeralMcpLabel)) { $runPodLmstudioChatEphemeralMcpLabel = "playwright" }
-$runPodLmstudioChatEphemeralMcpAllowedTools = Get-ConfigValue -Key "RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_ALLOWED_TOOLS" -FilePaths $configFiles
-if ([string]::IsNullOrWhiteSpace($runPodLmstudioChatEphemeralMcpAllowedTools)) { $runPodLmstudioChatEphemeralMcpAllowedTools = "browser_navigate,browser_snapshot,browser_click,browser_type,browser_wait_for" }
 
 if ($localMcpEnabledNormalized) {
   $hasMcpModule = $false
@@ -1298,18 +1284,15 @@ $envVars = @{
   "RUNPOD_ROUTE_PROBE_TIMEOUT_MS" = $runPodRouteProbeTimeoutMs
   "RUNPOD_ROUTE_COOLDOWN_SEC" = $runPodRouteCooldownSec
   "RUNPOD_API_KEY"          = $runPodApiKey
+  "RUNPOD_UPSTREAM_API_KEY" = $runPodUpstreamApiKey
+  "RUNPOD_INFERENCE_PROVIDER" = $runPodInferenceProvider
   "DEFAULT_MODEL"           = $defaultModel
   "UV_BIN"                  = $uvExe
   "PYTHON_BIN"              = $pythonExe
   "APP_PORT"                = $appPort
   "APP_BIND"                = $appBind
   "APP_TIME_ZONE"           = $appTimeZone
-  "WEATHER_VERIFIED_FETCH_ENABLED" = $weatherVerifiedFetchEnabled
-  "WEATHER_VERIFIED_FETCH_MODE" = $weatherVerifiedFetchMode
   "WEATHER_DEFAULT_LOCATION" = $weatherDefaultLocation
-  "WEATHER_OPENMETEO_TIMEOUT_SEC" = $weatherOpenMeteoTimeoutSec
-  "WEATHER_HTTP_TRUST_ENV" = $weatherHttpTrustEnv
-  "WEATHER_MODEL_INTENT_ENABLED" = $weatherModelIntentEnabled
   "PLAYWRIGHT_MODEL_QUERY_ENABLED" = $playwrightModelQueryEnabled
   "PROGRESS_LOG_MODE" = $progressLogMode
   "RUNPOD_REQUEST_TIMEOUT_MS" = $timeoutMs
@@ -1378,7 +1361,10 @@ $envVars = @{
   "CODEX_MODEL_REASONING_SUMMARY" = $codexModelReasoningSummary
   "CODEX_MODEL_VERBOSITY" = $codexModelVerbosity
   "CODEX_EXEC_MODEL" = $codexExecModel
-  "CODEX_LMSTUDIO_PROVIDER_ID" = $codexLmstudioProviderId
+  "CODEX_PROVIDER_ID" = $codexProviderId
+  "CODEX_WIRE_API" = $codexWireApi
+  "LIVE_WEB_TOOL_EXEC_MODE" = $liveWebToolExecMode
+  "LIVE_WEB_REQUIRE_EVIDENCE" = $liveWebRequireEvidence
   "CODEX_PROJECT_DOC_MAX_BYTES" = $codexProjectDocMaxBytes
   "CODEX_PROMPT_MAX_CHARS" = $codexPromptMaxChars
   "CODEX_PROMPT_COMPRESSION_ENABLED" = $codexPromptCompressionEnabled
@@ -1407,14 +1393,6 @@ $envVars = @{
   "RUNPOD_RESPONSES_LIVE_WEB_TOOL_CHOICE" = $runPodResponsesLiveWebToolChoice
   "RUNPOD_RESPONSES_REQUIRE_TOOL_FOR_LIVE_WEB" = $runPodResponsesRequireToolForLiveWeb
   "RUNPOD_RESPONSES_HARD_FAIL_ON_MISSING_TOOL" = $runPodResponsesHardFailOnMissingTool
-  "RUNPOD_LMSTUDIO_CHAT_PLUGIN_ENABLED" = $runPodLmstudioChatPluginEnabled
-  "RUNPOD_LMSTUDIO_CHAT_PLUGIN_FOR_LIVE_WEB_ONLY" = $runPodLmstudioChatPluginForLiveWebOnly
-  "RUNPOD_LMSTUDIO_CHAT_PLUGIN_ID" = $runPodLmstudioChatPluginId
-  "RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_FALLBACK_ENABLED" = $runPodLmstudioChatEphemeralMcpFallbackEnabled
-  "RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_PRIMARY" = $runPodLmstudioChatEphemeralMcpPrimary
-  "RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_URL" = $runPodLmstudioChatEphemeralMcpUrl
-  "RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_LABEL" = $runPodLmstudioChatEphemeralMcpLabel
-  "RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_ALLOWED_TOOLS" = $runPodLmstudioChatEphemeralMcpAllowedTools
   "LOCAL_MCP_WEATHER_ENABLED" = $localMcpEnabledFlag
   "LOCAL_MCP_WEATHER_BIND" = $localMcpBind
   "LOCAL_MCP_WEATHER_PORT" = $localMcpPort

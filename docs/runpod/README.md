@@ -1,20 +1,13 @@
-# RunPod 関連ドキュメント
+# RunPod ドキュメント
 
-RunPod 関連ドキュメントは `docs/runpod/` に集約しています。
+RunPod 関連の運用資料はこのディレクトリに集約しています。
 
-## まず読む（最新版）
+## 現在参照すべき資料
 - `docs/runpod/RUNPOD_CURRENT_IMPLEMENTATION.md`  
-  現在の実装（LM Studio + Codex CLI + FastAPI UI 統合）の要約
-- `docs/runpod/RUNPOD_GPTOSS_SWALLOW_IQ4XS_2WEEK_EVAL.md`  
-  評価計画と検証詳細
-- `docs/runpod/PHASE1_DAY1_WORKLOG_2026-02-23.md`  
-  当日運用ログ
-
-## 実装側の主な場所
-- `tools/runpod_eval/node_htmx_client/`
-- `tools/runpod_eval/`
-- `.github/workflows/runpod-morning-resume.yml`
-- `.github/workflows/runpod-window-stop.yml`
+  現在の正式構成（RunPod Ollama + node_htmx_client）
+- `tools/runpod_eval/node_htmx_client/README.md`
+  ローカル起動手順と `.env` 設定
 
 ## 旧資料
-- 旧手順・旧チェックリスト・旧引き継ぎメモは `docs/runpod/old/` を参照してください。
+- `docs/runpod/old/` 配下は過去検証ログです。
+- LM Studio 前提の手順は現在の標準運用では使用しません。

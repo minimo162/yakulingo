@@ -68,21 +68,7 @@ AGENT_BACKEND = "codex_cli"
 
 APP_NAME = "LocaLingo"
 APP_TIME_ZONE = (os.getenv("APP_TIME_ZONE", "Asia/Tokyo") or "Asia/Tokyo").strip()
-WEATHER_VERIFIED_FETCH_ENABLED = _get_bool_env("WEATHER_VERIFIED_FETCH_ENABLED", True)
-WEATHER_VERIFIED_FETCH_MODE = _get_enum_env(
-    "WEATHER_VERIFIED_FETCH_MODE",
-    "strict",
-    {"off", "advisory", "strict"},
-)
-WEATHER_DEFAULT_LOCATION = (os.getenv("WEATHER_DEFAULT_LOCATION", "広島") or "広島").strip()
-WEATHER_OPENMETEO_TIMEOUT_SEC = _get_int_env(
-    "WEATHER_OPENMETEO_TIMEOUT_SEC",
-    20,
-    minimum=5,
-    maximum=120,
-)
-WEATHER_HTTP_TRUST_ENV = _get_bool_env("WEATHER_HTTP_TRUST_ENV", True)
-WEATHER_MODEL_INTENT_ENABLED = _get_bool_env("WEATHER_MODEL_INTENT_ENABLED", True)
+WEATHER_DEFAULT_LOCATION = (os.getenv("WEATHER_DEFAULT_LOCATION", "Hiroshima") or "Hiroshima").strip()
 PLAYWRIGHT_MODEL_QUERY_ENABLED = _get_bool_env("PLAYWRIGHT_MODEL_QUERY_ENABLED", True)
 PROGRESS_LOG_MODE = _get_enum_env(
     "PROGRESS_LOG_MODE",
@@ -90,11 +76,17 @@ PROGRESS_LOG_MODE = _get_enum_env(
     {"concise", "verbose", "off"},
 )
 DEFAULT_MODEL = (os.getenv("DEFAULT_MODEL", "gpt-oss-swallow-120b-iq4xs") or "gpt-oss-swallow-120b-iq4xs").strip()
-# Codex exec model defaults to the actual RunPod/LM Studio model ID.
+# Codex exec model defaults to the actual RunPod model ID.
 # (can be overridden explicitly via CODEX_EXEC_MODEL when needed)
 CODEX_EXEC_MODEL = (os.getenv("CODEX_EXEC_MODEL", DEFAULT_MODEL) or DEFAULT_MODEL).strip()
+RUNPOD_INFERENCE_PROVIDER = _get_enum_env(
+    "RUNPOD_INFERENCE_PROVIDER",
+    "ollama",
+    {"ollama"},
+)
 RUNPOD_BASE_URL = (os.getenv("RUNPOD_BASE_URL", "") or "").strip().rstrip("/")
 RUNPOD_API_KEY = (os.getenv("RUNPOD_API_KEY", "") or "").strip()
+RUNPOD_UPSTREAM_API_KEY = (os.getenv("RUNPOD_UPSTREAM_API_KEY", "") or "").strip()
 RUNPOD_BASE_URL_CANDIDATES_RAW = (os.getenv("RUNPOD_BASE_URL_CANDIDATES", "") or "").strip()
 RUNPOD_ROUTE_PROBE_ENABLED = _get_bool_env("RUNPOD_ROUTE_PROBE_ENABLED", True)
 RUNPOD_ROUTE_PROBE_TIMEOUT_MS = _get_int_env(
@@ -151,40 +143,6 @@ RUNPOD_RESPONSES_HARD_FAIL_ON_MISSING_TOOL = _get_bool_env(
     "RUNPOD_RESPONSES_HARD_FAIL_ON_MISSING_TOOL",
     False,
 )
-RUNPOD_LMSTUDIO_CHAT_PLUGIN_ENABLED = _get_bool_env(
-    "RUNPOD_LMSTUDIO_CHAT_PLUGIN_ENABLED",
-    True,
-)
-RUNPOD_LMSTUDIO_CHAT_PLUGIN_FOR_LIVE_WEB_ONLY = _get_bool_env(
-    "RUNPOD_LMSTUDIO_CHAT_PLUGIN_FOR_LIVE_WEB_ONLY",
-    True,
-)
-RUNPOD_LMSTUDIO_CHAT_PLUGIN_ID = (
-    os.getenv("RUNPOD_LMSTUDIO_CHAT_PLUGIN_ID", "mcp/playwright") or "mcp/playwright"
-).strip()
-RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_FALLBACK_ENABLED = _get_bool_env(
-    "RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_FALLBACK_ENABLED",
-    True,
-)
-RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_PRIMARY = _get_bool_env(
-    "RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_PRIMARY",
-    True,
-)
-RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_URL = (
-    os.getenv("RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_URL", "http://localhost:8931/mcp")
-    or "http://localhost:8931/mcp"
-).strip()
-RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_LABEL = (
-    os.getenv("RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_LABEL", "playwright")
-    or "playwright"
-).strip()
-RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_ALLOWED_TOOLS_RAW = (
-    os.getenv(
-        "RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_ALLOWED_TOOLS",
-        "browser_navigate,browser_snapshot,browser_click,browser_type,browser_wait_for",
-    )
-    or ""
-).strip()
 RUNPOD_TLS_VERIFY = _get_bool_env("RUNPOD_TLS_VERIFY", True)
 RUNPOD_CA_BUNDLE = (os.getenv("RUNPOD_CA_BUNDLE", "") or "").strip()
 RUNPOD_TLS_USE_SYSTEM_STORE = _get_bool_env("RUNPOD_TLS_USE_SYSTEM_STORE", True)
@@ -206,7 +164,7 @@ if CODEX_EXEC_ROUTE_MODE_RAW in _CODEX_EXEC_ROUTE_MODE_ALLOWED:
 elif CODEX_NATIVE_MODE_RAW:
     CODEX_EXEC_ROUTE_MODE = "native" if CODEX_NATIVE_MODE else "resilient"
 else:
-    CODEX_EXEC_ROUTE_MODE = "background_poll"
+    CODEX_EXEC_ROUTE_MODE = "resilient"
 CODEX_FULL_AUTO = str(os.getenv("CODEX_FULL_AUTO", "1")).strip().lower() in {"1", "true", "yes", "on"}
 CODEX_SKIP_GIT_REPO_CHECK = str(os.getenv("CODEX_SKIP_GIT_REPO_CHECK", "1")).strip().lower() in {"1", "true", "yes", "on"}
 CODEX_DANGEROUS_BYPASS = str(os.getenv("CODEX_DANGEROUS_BYPASS", "0")).strip().lower() in {"1", "true", "yes", "on"}
@@ -348,9 +306,21 @@ CODEX_STREAM_RECOVERY_TIMEOUT_MS = _get_int_env(
     minimum=5000,
     maximum=600000,
 )
-CODEX_LMSTUDIO_PROVIDER_ID = (
-    os.getenv("CODEX_LMSTUDIO_PROVIDER_ID", "lmstudio-runpod") or "lmstudio-runpod"
+CODEX_PROVIDER_ID = (
+    os.getenv("CODEX_PROVIDER_ID", "ollama-runpod")
+    or "ollama-runpod"
 ).strip()
+CODEX_WIRE_API = _get_enum_env(
+    "CODEX_WIRE_API",
+    "chat",
+    {"chat", "responses"},
+)
+LIVE_WEB_TOOL_EXEC_MODE = _get_enum_env(
+    "LIVE_WEB_TOOL_EXEC_MODE",
+    "engine_primary",
+    {"engine_primary", "codex_only"},
+)
+LIVE_WEB_REQUIRE_EVIDENCE = _get_bool_env("LIVE_WEB_REQUIRE_EVIDENCE", True)
 
 app = FastAPI(title=APP_NAME, version="2.1-fastapi-codex")
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -387,11 +357,11 @@ TOOL_USE_POLICY_BASE_TEXT = (
 
 def _friendly_trace_wait_message(elapsed_sec: int) -> str:
     steps = [
-        "依頼内容を解析し、外部参照が必要かを判断しています。",
-        "参照先サイトを選び、アクセスを開始しています。",
+        "参照先を選択しています。",
+        "外部ページへアクセスしています。",
         "ページ内容を取得しています。",
-        "取得した内容の日付・更新時刻を確認しています。",
-        "取得結果を要約して回答を組み立てています。",
+        "日付と出典を確認しています。",
+        "回答を整形しています。",
     ]
     index = min(max(0, int(elapsed_sec) // 6), len(steps) - 1)
     return steps[index]
@@ -412,6 +382,14 @@ def _progress_tool_card(meta: str, body: str, *, is_error: bool = False) -> str:
         body=str(body or "").strip(),
         is_error=is_error,
     )
+
+
+def _status_event(stage: str, message: str, *, step: int = 1) -> dict:
+    return {
+        "type": "status",
+        "step": step,
+        "message": f"{stage}: {message}",
+    }
 
 
 def _normalize_base_url(raw_url: str) -> str:
@@ -506,10 +484,12 @@ def _looks_like_tls_verify_failure(exc: Exception | str) -> bool:
 
 def _runpod_auth_headers(*, include_content_type: bool = False) -> dict[str, str]:
     headers: dict[str, str] = {}
-    token = str(RUNPOD_API_KEY or "").strip()
-    if token:
-        headers["x-api-key"] = token
-        headers["authorization"] = f"Bearer {token}"
+    gateway_token = str(RUNPOD_API_KEY or "").strip()
+    upstream_token = str(RUNPOD_UPSTREAM_API_KEY or gateway_token).strip()
+    if gateway_token:
+        headers["x-api-key"] = gateway_token
+    if upstream_token:
+        headers["authorization"] = f"Bearer {upstream_token}"
     if include_content_type:
         headers["content-type"] = "application/json"
     return headers
@@ -858,9 +838,9 @@ def _ensure_codex_config(
         model_verbosity = ""
     if web_search_mode not in {"disabled", "cached", "live"}:
         web_search_mode = CODEX_WEB_SEARCH_MODE
-    provider_id = str(CODEX_LMSTUDIO_PROVIDER_ID or "lmstudio-runpod").strip()
+    provider_id = str(CODEX_PROVIDER_ID or "ollama-runpod").strip()
     if not provider_id:
-        provider_id = "lmstudio-runpod"
+        provider_id = "ollama-runpod"
     normalized_model_slug = re.sub(r"[^a-z0-9_-]+", "-", model.lower()).strip("-")
     if not normalized_model_slug:
         normalized_model_slug = "default"
@@ -870,7 +850,7 @@ def _ensure_codex_config(
             f"profile = {_toml_quote(profile_name)}",
             f"model = {_toml_quote(model)}",
             f"model_provider = {_toml_quote(provider_id)}",
-            "oss_provider = \"lmstudio\"",
+            "oss_provider = \"openai\"",
             f"model_context_window = {model_context_window}",
             f"model_reasoning_effort = {_toml_quote(model_reasoning_effort)}",
             f"model_reasoning_summary = {_toml_quote(model_reasoning_summary)}",
@@ -881,9 +861,9 @@ def _ensure_codex_config(
             f"project_doc_max_bytes = {project_doc_max_bytes}",
             "",
             f"[model_providers.{provider_id}]",
-            "name = \"LM Studio (RunPod)\"",
+            "name = \"Ollama (RunPod)\"",
             f"base_url = {_toml_quote(resolved_base_url)}",
-            "wire_api = \"responses\"",
+            f"wire_api = {_toml_quote(CODEX_WIRE_API)}",
             "requires_openai_auth = false",
             f"request_max_retries = {request_max_retries}",
             f"stream_max_retries = {stream_max_retries}",
@@ -1079,10 +1059,11 @@ def _build_codex_env(codex_home: Path, *, base_url: str) -> dict:
     env = dict(os.environ)
     env["CODEX_HOME"] = str(codex_home)
     env["RUNPOD_API_KEY"] = RUNPOD_API_KEY
+    env["RUNPOD_UPSTREAM_API_KEY"] = RUNPOD_UPSTREAM_API_KEY or RUNPOD_API_KEY
     env["OPENAI_BASE_URL"] = resolved_base_url
     # Keep this for compatibility with providers that still look at OPENAI_API_KEY.
-    if RUNPOD_API_KEY and "OPENAI_API_KEY" not in env:
-        env["OPENAI_API_KEY"] = RUNPOD_API_KEY
+    if "OPENAI_API_KEY" not in env:
+        env["OPENAI_API_KEY"] = RUNPOD_UPSTREAM_API_KEY or RUNPOD_API_KEY
     return env
 
 
@@ -1249,30 +1230,29 @@ def _is_transport_failure_message(text: str) -> bool:
 
 
 def _prompt_likely_requires_live_web(prompt: str) -> bool:
-    text = str(prompt or "").lower()
+    text = str(prompt or "").strip().lower()
     if not text:
         return False
     markers = (
         "weather",
         "forecast",
-        "latest news",
-        "breaking",
         "today",
         "tomorrow",
+        "latest",
         "current",
-        "最新",
-        "直近",
+        "news",
         "天気",
+        "予報",
         "今日",
         "明日",
-        "本日",
+        "最新",
         "ニュース",
     )
     return any(marker in text for marker in markers)
 
 
 def _looks_like_no_network_answer(text: str) -> bool:
-    normalized = str(text or "").lower()
+    normalized = str(text or "").strip().lower()
     if not normalized:
         return False
     markers = (
@@ -1283,10 +1263,10 @@ def _looks_like_no_network_answer(text: str) -> bool:
         "can't fetch live",
         "sandbox that does not allow outbound network",
         "network communication is restricted",
-        "ネットワーク通信が制限",
-        "インターネットにアクセスでき",
-        "リアルタイム",
-        "取得できません",
+        "インターネット",
+        "ネットワーク",
+        "外部アクセス",
+        "リアルタイムデータへ直接アクセスできない",
     )
     return any(marker in normalized for marker in markers)
 
@@ -1299,10 +1279,13 @@ def _prompt_likely_weather_query(prompt: str) -> bool:
         "weather",
         "forecast",
         "天気",
-        "天候",
+        "予報",
         "気温",
         "降水",
         "雨",
+        "晴れ",
+        "曇",
+        "雪",
     )
     return any(marker in text for marker in markers)
 
@@ -1311,10 +1294,7 @@ def _extract_weather_location(prompt: str) -> str:
     text = str(prompt or "").strip()
     if not text:
         return WEATHER_DEFAULT_LOCATION
-    patterns = (
-        r"([^\s、。,.!?]+?)の天気",
-        r"([^\s、。,.!?]+?)\s*(?:weather|forecast)",
-    )
+    patterns = [r"([^\s、。,.!?]+?)の天気", r"([A-Za-z][A-Za-z\s]+?)\s+(?:weather|forecast)"]
     for pattern in patterns:
         match = re.search(pattern, text, flags=re.IGNORECASE)
         if match:
@@ -1330,78 +1310,55 @@ def _normalize_location_query(raw_location: str) -> str:
     value = str(raw_location or "").strip()
     if not value:
         return ""
-    # Remove typical temporal/context prefixes for JP prompts (e.g. "今日の広島").
     value = re.sub(
-        r"^(?:今日|本日|明日|明後日|きょう|あした|あさって|現在|今夜|今朝|今週|明日の?)の?",
+        r"^(?:今日|本日|明日|あさって|現在|いま|今夜|今朝|tomorrow|today)\s*(?:の)?",
         "",
         value,
         flags=re.IGNORECASE,
     ).strip()
-    # Remove trailing weather-related words.
-    value = re.sub(
-        r"(?:の)?(?:天気|天候|気温|予報|天気予報|週間予報|降水確率)$",
-        "",
-        value,
-        flags=re.IGNORECASE,
-    ).strip()
+    value = re.sub(r"(?:の)?(?:天気|予報|気温|weather|forecast)$", "", value, flags=re.IGNORECASE).strip()
     value = re.sub(r"[、。,.!?\s]+$", "", value).strip()
     return value
 
 
-def _build_location_candidates(raw_location: str) -> list[str]:
-    base = _normalize_location_query(raw_location)
-    rows: list[str] = []
-    seen: set[str] = set()
-
-    def add(value: str) -> None:
-        v = str(value or "").strip()
-        if not v:
-            return
-        k = v.lower()
-        if k in seen:
-            return
-        seen.add(k)
-        rows.append(v)
-
-    add(raw_location)
-    add(base)
-    if base and not re.search(r"(県|都|府|市|区)$", base):
-        add(f"{base}市")
-        add(f"{base}県")
-    if re.search(r"広島", base or raw_location):
-        add("広島")
-        add("広島市")
-        add("Hiroshima")
-        add("Hiroshima, JP")
-    add(WEATHER_DEFAULT_LOCATION)
-    return rows
+def _weather_primary_url_for_location(location: str) -> str:
+    normalized = _normalize_location_query(location).lower()
+    if re.search(r"hiroshima|広島", normalized, flags=re.IGNORECASE):
+        return "https://weather.yahoo.co.jp/weather/jp/34/6710/34101.html"
+    return ""
 
 
-def _weather_code_to_ja(code: int | None) -> str:
-    mapping = {
-        0: "快晴",
-        1: "晴れ",
-        2: "晴れ時々曇り",
-        3: "曇り",
-        45: "霧",
-        48: "霧",
-        51: "弱い霧雨",
-        53: "霧雨",
-        55: "強い霧雨",
-        61: "弱い雨",
-        63: "雨",
-        65: "強い雨",
-        71: "弱い雪",
-        73: "雪",
-        75: "強い雪",
-        80: "にわか雨",
-        81: "にわか雨",
-        82: "強いにわか雨",
-        95: "雷雨",
+def _build_weather_playwright_query(location: str, target_date: str) -> str:
+    loc = _normalize_location_query(location) or WEATHER_DEFAULT_LOCATION
+    date = target_date if re.match(r"^\d{4}-\d{2}-\d{2}$", str(target_date or "")) else _now_local_date_iso()
+    return f"{loc} 天気 {date} site:weather.yahoo.co.jp OR site:tenki.jp"
+
+
+def _build_default_playwright_query_plan(prompt: str) -> dict:
+    is_weather = _prompt_likely_weather_query(prompt)
+    if is_weather:
+        raw_location = _extract_weather_location(prompt)
+        target_date, _ = _resolve_weather_target_date_and_label(prompt)
+        location = _normalize_location_query(raw_location) or WEATHER_DEFAULT_LOCATION
+        return {
+            "search_query": _build_weather_playwright_query(location, target_date),
+            "primary_url": _weather_primary_url_for_location(location),
+            "target_date": target_date,
+            "must_check_fields": [
+                "日付",
+                "天気",
+                "最高気温",
+                "最低気温",
+                "降水確率",
+                "発表時刻",
+            ],
+        }
+    return {
+        "search_query": str(prompt or "").strip(),
+        "primary_url": "",
+        "target_date": _now_local_date_iso(),
+        "must_check_fields": [],
     }
-    if code is None:
-        return "不明"
-    return mapping.get(int(code), f"weather_code={int(code)}")
 
 
 def _as_float(value: object) -> float | None:
@@ -1411,221 +1368,6 @@ def _as_float(value: object) -> float | None:
         return float(value)
     except Exception:
         return None
-
-
-def _as_int(value: object) -> int | None:
-    try:
-        if value is None:
-            return None
-        return int(round(float(value)))
-    except Exception:
-        return None
-
-
-def _pick_daily_value(daily: dict, key: str, index: int = 0) -> object:
-    series = daily.get(key)
-    if isinstance(series, list) and len(series) > index:
-        return series[index]
-    return None
-
-
-async def _fetch_verified_weather_snapshot(
-    location: str,
-    *,
-    target_date_local: str = "",
-    target_time_local: str = "",
-    day_label: str = "今日",
-) -> dict:
-    geocode_url = "https://geocoding-api.open-meteo.com/v1/search"
-    forecast_url = "https://api.open-meteo.com/v1/forecast"
-    timeout = httpx.Timeout(
-        connect=float(WEATHER_OPENMETEO_TIMEOUT_SEC),
-        read=float(WEATHER_OPENMETEO_TIMEOUT_SEC),
-        write=max(5.0, float(WEATHER_OPENMETEO_TIMEOUT_SEC) / 2.0),
-        pool=float(WEATHER_OPENMETEO_TIMEOUT_SEC),
-    )
-    expected_date = str(target_date_local or "").strip()
-    if not re.match(r"^\d{4}-\d{2}-\d{2}$", expected_date):
-        expected_date = _now_local_date_iso()
-    headers = {"cache-control": "no-cache", "pragma": "no-cache"}
-
-    async def _fetch_once(
-        verify_setting: bool | str | ssl.SSLContext,
-    ) -> tuple[dict, dict, str, float, float]:
-        async with httpx.AsyncClient(
-            timeout=timeout,
-            verify=verify_setting,
-            trust_env=WEATHER_HTTP_TRUST_ENV,
-        ) as client:
-            last_error = ""
-            geo: dict = {}
-            lat: float | None = None
-            lon: float | None = None
-            resolved_query = ""
-            for candidate in _build_location_candidates(location):
-                query_variants = [
-                    {"name": candidate, "count": 5, "language": "ja", "format": "json", "countryCode": "JP"},
-                    {"name": candidate, "count": 5, "language": "ja", "format": "json"},
-                    {"name": candidate, "count": 5, "language": "en", "format": "json", "countryCode": "JP"},
-                    {"name": candidate, "count": 5, "language": "en", "format": "json"},
-                ]
-                for params in query_variants:
-                    geo_res = await client.get(geocode_url, params=params, headers=headers)
-                    geo_res.raise_for_status()
-                    geo_data = geo_res.json() if geo_res.content else {}
-                    geo_results = geo_data.get("results") if isinstance(geo_data, dict) else None
-                    if not isinstance(geo_results, list) or not geo_results:
-                        last_error = f"no results for '{candidate}'"
-                        continue
-                    picked = None
-                    for row in geo_results:
-                        if not isinstance(row, dict):
-                            continue
-                        cc = str(row.get("country_code") or "").upper().strip()
-                        if cc == "JP":
-                            picked = row
-                            break
-                    if picked is None and isinstance(geo_results[0], dict):
-                        picked = geo_results[0]
-                    if not isinstance(picked, dict):
-                        last_error = f"invalid geocode rows for '{candidate}'"
-                        continue
-                    maybe_lat = _as_float(picked.get("latitude"))
-                    maybe_lon = _as_float(picked.get("longitude"))
-                    if maybe_lat is None or maybe_lon is None:
-                        last_error = f"coordinates missing for '{candidate}'"
-                        continue
-                    geo = picked
-                    lat = maybe_lat
-                    lon = maybe_lon
-                    resolved_query = candidate
-                    break
-                if lat is not None and lon is not None:
-                    break
-            if lat is None or lon is None:
-                raise RuntimeError(f"location not found: {location} ({last_error})")
-
-            forecast_res = await client.get(
-                forecast_url,
-                params={
-                    "latitude": lat,
-                    "longitude": lon,
-                    "timezone": APP_TIME_ZONE,
-                    "start_date": expected_date,
-                    "end_date": expected_date,
-                    "current": "temperature_2m,precipitation,weather_code,wind_speed_10m",
-                    "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max",
-                },
-                headers=headers,
-            )
-            forecast_res.raise_for_status()
-            forecast = forecast_res.json() if forecast_res.content else {}
-            return geo, forecast, (resolved_query or location), float(lat), float(lon)
-
-    verify_setting = _runpod_httpx_verify_setting()
-    try:
-        geo, forecast, resolved_query, lat, lon = await _fetch_once(verify_setting)
-    except Exception as exc:
-        if RUNPOD_TLS_VERIFY and _looks_like_tls_verify_failure(exc):
-            if RUNPOD_TLS_RETRY_NO_VERIFY:
-                try:
-                    geo, forecast, resolved_query, lat, lon = await _fetch_once(False)
-                except Exception as exc_retry:
-                    raise RuntimeError(
-                        "open-meteo TLS recovery failed: "
-                        f"first={exc}; retry_no_verify={exc_retry}"
-                    ) from exc_retry
-            else:
-                raise RuntimeError(
-                    "open-meteo TLS verification failed. "
-                    f"{exc} "
-                    "Set RUNPOD_CA_BUNDLE to your corporate root CA PEM or keep "
-                    "RUNPOD_TLS_USE_SYSTEM_STORE=1. "
-                    "As last resort only, set RUNPOD_TLS_RETRY_NO_VERIFY=1."
-                ) from exc
-        raise
-
-    daily = forecast.get("daily") if isinstance(forecast, dict) else {}
-    current = forecast.get("current") if isinstance(forecast, dict) else {}
-    if not isinstance(daily, dict):
-        daily = {}
-    if not isinstance(current, dict):
-        current = {}
-
-    date_local = ""
-    daily_dates = daily.get("time")
-    target_index = 0
-    if isinstance(daily_dates, list):
-        for idx, row in enumerate(daily_dates):
-            if str(row or "").strip() == expected_date:
-                target_index = idx
-                break
-        if daily_dates:
-            date_local = str(daily_dates[target_index] or "").strip()
-    if date_local != expected_date:
-        raise RuntimeError(
-            f"verified weather date mismatch: expected={expected_date} actual={date_local or '(none)'}"
-        )
-
-    weather_code_today = _as_int(_pick_daily_value(daily, "weather_code", target_index))
-    summary = {
-        "provider": "open-meteo",
-        "source_url": "https://api.open-meteo.com/v1/forecast",
-        "retrieved_at": datetime.utcnow().isoformat() + "Z",
-        "date_local": date_local,
-        "target_date": expected_date,
-        "target_time": str(target_time_local or "").strip(),
-        "day_label": str(day_label or "今日"),
-        "timezone": str(forecast.get("timezone") or APP_TIME_ZONE),
-        "location": {
-            "query": location,
-            "resolved_query": resolved_query,
-            "name": str(geo.get("name") or location),
-            "country": str(geo.get("country") or ""),
-            "admin1": str(geo.get("admin1") or ""),
-            "latitude": lat,
-            "longitude": lon,
-        },
-        "today": {
-            "condition": _weather_code_to_ja(weather_code_today),
-            "temperature_max_c": _as_float(_pick_daily_value(daily, "temperature_2m_max", target_index)),
-            "temperature_min_c": _as_float(_pick_daily_value(daily, "temperature_2m_min", target_index)),
-            "precipitation_probability_max": _as_int(
-                _pick_daily_value(daily, "precipitation_probability_max", target_index)
-            ),
-            "wind_speed_10m": _as_float(current.get("wind_speed_10m")),
-            "current_temperature_c": _as_float(current.get("temperature_2m")),
-            "current_precipitation": _as_float(current.get("precipitation")),
-            "current_observed_at": str(current.get("time") or "").strip(),
-        },
-    }
-    return summary
-
-
-def _render_verified_weather_answer(snapshot: dict) -> str:
-    location = snapshot.get("location") if isinstance(snapshot.get("location"), dict) else {}
-    today = snapshot.get("today") if isinstance(snapshot.get("today"), dict) else {}
-    date_local = str(snapshot.get("date_local") or _now_local_date_iso())
-    day_label = str(snapshot.get("day_label") or "今日")
-    name = str(location.get("name") or WEATHER_DEFAULT_LOCATION)
-    condition = str(today.get("condition") or "不明")
-    tmax = today.get("temperature_max_c")
-    tmin = today.get("temperature_min_c")
-    pop = today.get("precipitation_probability_max")
-    wind = today.get("wind_speed_10m")
-    observed = str(today.get("current_observed_at") or "").strip()
-    source = str(snapshot.get("source_url") or "https://api.open-meteo.com/v1/forecast")
-    tz = str(snapshot.get("timezone") or APP_TIME_ZONE)
-    return (
-        f"**{day_label}（{date_local}）の{name}の天気（検証済み）**\n\n"
-        f"- **概況**: {condition}\n"
-        f"- **最高気温**: {tmax if tmax is not None else '不明'} ℃\n"
-        f"- **最低気温**: {tmin if tmin is not None else '不明'} ℃\n"
-        f"- **降水確率（最大）**: {pop if pop is not None else '不明'}%\n"
-        f"- **風速（10m）**: {wind if wind is not None else '不明'} m/s\n\n"
-        f"出典: Open-Meteo (`{source}`)\n"
-        f"観測/予報時刻: {observed or 'N/A'} ({tz})"
-    )
 
 
 def _extract_turn_text_from_html(raw_html: str) -> str:
@@ -1814,7 +1556,7 @@ def _extract_responses_id(payload: dict) -> str:
     return ""
 
 
-def _extract_lmstudio_chat_text(payload: dict) -> str:
+def _extract_chat_text(payload: dict) -> str:
     if not isinstance(payload, dict):
         return ""
     direct = str(payload.get("content", "") or "").strip()
@@ -1876,7 +1618,7 @@ def _extract_lmstudio_chat_text(payload: dict) -> str:
     return "\n".join(chunks).strip()
 
 
-def _build_lmstudio_chat_url(base_url: str) -> str:
+def _build_runpod_chat_url(base_url: str) -> str:
     normalized = _normalize_base_url(base_url)
     if not normalized:
         return ""
@@ -1968,109 +1710,6 @@ def _resolve_weather_target_date_and_label(prompt: str) -> tuple[str, str]:
     return _local_date_iso_with_offset(day_offset), day_label
 
 
-async def _infer_weather_request_with_model(prompt: str, *, base_url: str) -> dict:
-    resolved_base_url = _normalize_base_url(base_url) or _normalize_base_url(RUNPOD_BASE_URL)
-    if not resolved_base_url:
-        raise RuntimeError("runpod base url is empty")
-    url = f"{resolved_base_url}/responses"
-    headers = _runpod_auth_headers(include_content_type=True)
-    schema = {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {
-            "location": {"type": "string"},
-            "target_date": {"type": "string", "pattern": r"^\d{4}-\d{2}-\d{2}$"},
-            "target_time": {"type": "string", "pattern": r"^\d{2}:\d{2}$"},
-            "timezone": {"type": "string"},
-            "reason": {"type": "string"},
-        },
-        "required": ["location", "target_date"],
-    }
-    current_date = _now_local_date_iso()
-    payload = {
-        "model": DEFAULT_MODEL,
-        "input": [
-            {
-                "role": "system",
-                "content": [
-                    {
-                        "type": "input_text",
-                        "text": (
-                            "Extract weather request arguments for API use.\n"
-                            "Return strict JSON only.\n"
-                            "- location: city/region name\n"
-                            "- target_date: local date in YYYY-MM-DD\n"
-                            "- target_time: optional local time in HH:MM\n"
-                            "- timezone: IANA timezone name when inferable\n"
-                            f"Current local date reference: {current_date} ({APP_TIME_ZONE}).\n"
-                            "If location is omitted, use default location."
-                        ),
-                    }
-                ],
-            },
-            {"role": "user", "content": [{"type": "input_text", "text": str(prompt or "")}]},
-        ],
-        "text": {
-            "format": {
-                "type": "json_schema",
-                "name": "weather_request",
-                "schema": schema,
-                "strict": True,
-            }
-        },
-    }
-    timeout = httpx.Timeout(connect=15.0, read=45.0, write=15.0, pool=15.0)
-    async def _call_once(verify_setting: bool | str | ssl.SSLContext) -> httpx.Response:
-        async with httpx.AsyncClient(timeout=timeout, verify=verify_setting, trust_env=False) as client:
-            return await client.post(url, headers=headers, json=payload)
-
-    verify_setting = _runpod_httpx_verify_setting()
-    try:
-        response = await _call_once(verify_setting)
-    except Exception as exc:
-        if RUNPOD_TLS_VERIFY and _looks_like_tls_verify_failure(exc) and RUNPOD_TLS_RETRY_NO_VERIFY:
-            response = await _call_once(False)
-        else:
-            raise
-    if response.status_code >= 400:
-        preview = response.text[:400] if response.text else ""
-        raise RuntimeError(f"intent extraction failed: HTTP {response.status_code} {preview}")
-    data = response.json() if response.content else {}
-    text = _extract_responses_output_text(data if isinstance(data, dict) else {})
-    if not text:
-        raise RuntimeError("intent extraction returned empty output")
-    try:
-        parsed = json.loads(text)
-    except Exception as exc:
-        raise RuntimeError(f"intent extraction returned non-json: {exc}") from exc
-    if not isinstance(parsed, dict):
-        raise RuntimeError("intent extraction returned non-object")
-    location = str(parsed.get("location", "") or "").strip()
-    target_date = str(parsed.get("target_date", "") or "").strip()
-    if not re.match(r"^\d{4}-\d{2}-\d{2}$", target_date):
-        raise RuntimeError("intent extraction target_date is invalid")
-    target_time = str(parsed.get("target_time", "") or "").strip()
-    if target_time and (not re.match(r"^\d{2}:\d{2}$", target_time)):
-        target_time = ""
-    timezone = str(parsed.get("timezone", "") or "").strip() or APP_TIME_ZONE
-    if not location:
-        location = WEATHER_DEFAULT_LOCATION
-    day_label = target_date
-    if target_date == _local_date_iso_with_offset(0):
-        day_label = "今日"
-    elif target_date == _local_date_iso_with_offset(1):
-        day_label = "明日"
-    elif target_date == _local_date_iso_with_offset(2):
-        day_label = "明後日"
-    return {
-        "location": location,
-        "target_date": target_date,
-        "target_time": target_time,
-        "timezone": timezone,
-        "day_label": day_label,
-    }
-
-
 async def _infer_playwright_query_with_model(prompt: str, *, base_url: str) -> dict:
     resolved_base_url = _normalize_base_url(base_url) or _normalize_base_url(RUNPOD_BASE_URL)
     if not resolved_base_url:
@@ -2089,6 +1728,7 @@ async def _infer_playwright_query_with_model(prompt: str, *, base_url: str) -> d
         "required": ["search_query", "target_date", "must_check_fields"],
     }
     current_date = _now_local_date_iso()
+    fallback_plan = _build_default_playwright_query_plan(prompt)
     payload = {
         "model": DEFAULT_MODEL,
         "input": [
@@ -2104,7 +1744,10 @@ async def _infer_playwright_query_with_model(prompt: str, *, base_url: str) -> d
                             "- primary_url: preferred first URL (optional)\n"
                             "- target_date: YYYY-MM-DD date expected in fetched content\n"
                             "- must_check_fields: key facts to verify on page\n"
-                            f"Current local date reference: {current_date} ({APP_TIME_ZONE})."
+                            f"Current local date reference: {current_date} ({APP_TIME_ZONE}).\n"
+                            "For weather/news requests, include an absolute date (YYYY-MM-DD) in search_query.\n"
+                            "For Japan weather, prefer authoritative pages and constrained queries "
+                            "(e.g. site:weather.yahoo.co.jp or site:tenki.jp)."
                         ),
                     }
                 ],
@@ -2142,9 +1785,20 @@ async def _infer_playwright_query_with_model(prompt: str, *, base_url: str) -> d
         must_check_fields = []
     checks = [str(row).strip() for row in must_check_fields if str(row).strip()]
     if not search_query:
-        raise RuntimeError("playwright plan missing search_query")
+        search_query = str(fallback_plan.get("search_query") or "").strip()
     if not re.match(r"^\d{4}-\d{2}-\d{2}$", target_date):
-        target_date = _now_local_date_iso()
+        target_date = str(fallback_plan.get("target_date") or _now_local_date_iso())
+    if _prompt_likely_weather_query(prompt):
+        fallback_query = str(fallback_plan.get("search_query") or "").strip()
+        required_location = _normalize_location_query(_extract_weather_location(prompt)) or WEATHER_DEFAULT_LOCATION
+        if (target_date not in search_query) or (required_location not in search_query):
+            search_query = fallback_query
+        if "site:" not in search_query.lower():
+            search_query = fallback_query
+        if not primary_url:
+            primary_url = str(fallback_plan.get("primary_url") or "").strip()
+        if not checks:
+            checks = list(fallback_plan.get("must_check_fields") or [])
     return {
         "search_query": search_query,
         "primary_url": primary_url,
@@ -2223,10 +1877,10 @@ def _strip_tool_transcript_blocks(text: str) -> str:
 
 def _find_first_non_process_answer_start(lines: list[str], process_idx: int) -> int:
     final_markers = (
-        r"^\s*#{1,6}\s*(今日|本日|結論|回答|summary|final answer)\b",
-        r"^\s*(今日|本日|結論|回答|summary|final answer)\b",
+        r"^\s*#{1,6}\s*(summary|final answer|結果|最終回答)\b",
+        r"^\s*(summary|final answer|結果|最終回答)\b",
         r"^\s*\|.+\|",  # markdown table row
-        r"^\s*[-*]\s*(今日|本日|結論|回答)\b",
+        r"^\s*[-*]\s*(summary|final answer|結果|最終回答)\b",
     )
     compiled = [re.compile(p, flags=re.IGNORECASE) for p in final_markers]
     for idx in range(process_idx + 1, len(lines)):
@@ -2248,7 +1902,7 @@ def _sanitize_user_facing_answer(text: str) -> str:
         re.compile(r"^\s*[-*#\s]*step\s*\d+\b", flags=re.IGNORECASE),
         re.compile(r"^\s*[-*#\s]*observation\b", flags=re.IGNORECASE),
         re.compile(r"^\s*[-*#\s]*(tool|tools)\s*(execution|run|call)\b", flags=re.IGNORECASE),
-        re.compile(r"^\s*[-*#\s]*(進行ログ|ツール実行|観測結果)\b", flags=re.IGNORECASE),
+        re.compile(r"^\s*[-*#\s]*(進行ログ|ツール実行|tool trace)\b", flags=re.IGNORECASE),
     ]
     process_idx = -1
     for idx, line in enumerate(lines[:80]):
@@ -2273,50 +1927,6 @@ def _sanitize_user_facing_answer(text: str) -> str:
     return value
 
 
-def _extract_metric_value(text: str, patterns: list[str]) -> float | None:
-    body = str(text or "")
-    for pattern in patterns:
-        match = re.search(pattern, body, flags=re.IGNORECASE)
-        if not match:
-            continue
-        try:
-            return float(str(match.group(1)))
-        except Exception:
-            continue
-    return None
-
-
-def _weather_answer_likely_inconsistent(answer_text: str, snapshot: dict) -> list[str]:
-    issues: list[str] = []
-    today = snapshot.get("today") if isinstance(snapshot.get("today"), dict) else {}
-    if not isinstance(today, dict):
-        return issues
-    answer = str(answer_text or "")
-    if not answer.strip():
-        return ["empty_answer"]
-
-    answer_tmax = _extract_metric_value(answer, [r"最高[^0-9\-]*([0-9]+(?:\.[0-9]+)?)"])
-    answer_tmin = _extract_metric_value(answer, [r"最低[^0-9\-]*([0-9]+(?:\.[0-9]+)?)"])
-    answer_pop = _extract_metric_value(answer, [r"降水[^0-9\-]*([0-9]+(?:\.[0-9]+)?)\s*%"])
-
-    snap_tmax = _as_float(today.get("temperature_max_c"))
-    snap_tmin = _as_float(today.get("temperature_min_c"))
-    snap_pop = _as_float(today.get("precipitation_probability_max"))
-
-    if answer_tmax is not None and snap_tmax is not None and abs(answer_tmax - snap_tmax) > 1.5:
-        issues.append(f"max_temp_mismatch:{answer_tmax}->{snap_tmax}")
-    if answer_tmin is not None and snap_tmin is not None and abs(answer_tmin - snap_tmin) > 1.5:
-        issues.append(f"min_temp_mismatch:{answer_tmin}->{snap_tmin}")
-    if answer_pop is not None and snap_pop is not None and abs(answer_pop - snap_pop) > 20:
-        issues.append(f"precip_mismatch:{answer_pop}->{snap_pop}")
-
-    expected_date = str(snapshot.get("date_local") or "").strip()
-    if expected_date and _contains_date_mismatch(answer, expected_date):
-        issues.append("date_mismatch")
-
-    return issues
-
-
 def _safe_preview_json(value: object, max_chars: int = 1200) -> str:
     try:
         text = json.dumps(value, ensure_ascii=False)
@@ -2335,7 +1945,7 @@ def _tool_result_status_label(status: str, *, is_error: bool) -> str:
     if any(token in normalized for token in ("complete", "done", "success", "ok")):
         return "完了"
     if any(token in normalized for token in ("run", "progress", "queue", "processing")):
-        return "進行中"
+        return "実行中"
     return "実行"
 
 
@@ -2350,20 +1960,20 @@ def _humanize_tool_item_message(item_type: str, item: dict, *, source: str) -> t
     status_label = _tool_result_status_label(status, is_error=is_error)
 
     if "web_search" in item_type:
-        target = query or "（検索語なし）"
-        return "進行ログ", f"{status_label}: Web検索を実行しました\n検索語: {target}"
+        target = query or "(クエリ未指定)"
+        return "進行", f"{status_label}: web_search を実行しました\n検索クエリ: {target}"
     if "mcp" in item_type:
         action_name = tool or action or "MCP操作"
-        target = url or query or "（対象情報なし）"
+        target = url or query or "(対象未指定)"
         scope = f"サーバー: {server}\n" if server else ""
-        return "進行ログ", f"{status_label}: {action_name} を実行しました\n{scope}対象: {target}"
+        return "進行", f"{status_label}: {action_name} を実行しました\n{scope}対象: {target}"
     if "function" in item_type or "tool" in item_type:
-        action_name = tool or action or "ツール呼び出し"
+        action_name = tool or action or "関数ツール"
         target = url or query
         if target:
-            return "進行ログ", f"{status_label}: {action_name} を実行しました\n対象: {target}"
-        return "進行ログ", f"{status_label}: {action_name} を実行しました"
-    return "進行ログ", f"{status_label}: {source} で外部処理を実行しました"
+            return "進行", f"{status_label}: {action_name} を実行しました\n対象: {target}"
+        return "進行", f"{status_label}: {action_name} を実行しました"
+    return "進行", f"{status_label}: {source} でツール処理を実行しました"
 
 
 def _collect_tool_trace_entries(payload: dict, *, source: str) -> list[dict[str, str | bool]]:
@@ -2452,221 +2062,101 @@ def _render_tool_trace_cards(payload: dict, *, source: str) -> list[str]:
     return cards
 
 
-async def _run_runpod_lmstudio_chat_plugin(
-    prompt: str,
+def _payload_has_tool_evidence(payload: dict) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    if _collect_tool_trace_entries(payload, source="RunPod"):
+        return True
+    direct_tool_calls = payload.get("tool_calls")
+    if isinstance(direct_tool_calls, list) and len(direct_tool_calls) > 0:
+        return True
+    output_items = payload.get("output")
+    if isinstance(output_items, list):
+        for item in output_items:
+            if not isinstance(item, dict):
+                continue
+            item_type = str(item.get("type", "") or "").strip().lower()
+            if any(token in item_type for token in ("tool", "web_search", "mcp", "function")):
+                return True
+            item_tool_calls = item.get("tool_calls")
+            if isinstance(item_tool_calls, list) and len(item_tool_calls) > 0:
+                return True
+            provider_info = item.get("provider_info")
+            if isinstance(provider_info, dict):
+                provider_type = str(provider_info.get("type", "") or "").strip().lower()
+                if any(token in provider_type for token in ("mcp", "plugin")):
+                    return True
+            content = item.get("content")
+            if isinstance(content, list):
+                for block in content:
+                    if not isinstance(block, dict):
+                        continue
+                    block_type = str(block.get("type", "") or "").strip().lower()
+                    if any(token in block_type for token in ("tool", "web_search", "mcp", "function")):
+                        return True
+                    block_tool_calls = block.get("tool_calls")
+                    if isinstance(block_tool_calls, list) and len(block_tool_calls) > 0:
+                        return True
+    return False
+
+
+def _build_weather_answer_contract(
     *,
-    base_url: str,
-    live_web_query: bool,
-) -> tuple[str, list[str]]:
-    chat_url = _build_lmstudio_chat_url(base_url)
-    if not chat_url:
-        return "", []
-    if RUNPOD_LMSTUDIO_CHAT_PLUGIN_FOR_LIVE_WEB_ONLY and (not live_web_query):
-        return "", []
-    plugin_id = str(RUNPOD_LMSTUDIO_CHAT_PLUGIN_ID or "").strip()
-    if not plugin_id:
-        return "", []
-    trace_cards: list[str] = []
-
-    weather_query = _prompt_likely_weather_query(prompt)
-    weather_location = _extract_weather_location(prompt) if weather_query else ""
-    weather_target_date, weather_day_label = _resolve_weather_target_date_and_label(prompt) if weather_query else ("", "今日")
-    weather_target_time = ""
-    if weather_query and WEATHER_MODEL_INTENT_ENABLED:
-        try:
-            intent = await _infer_weather_request_with_model(prompt, base_url=base_url)
-            weather_location = str(intent.get("location") or weather_location).strip() or weather_location
-            weather_target_date = str(intent.get("target_date") or weather_target_date).strip() or weather_target_date
-            weather_target_time = str(intent.get("target_time") or "").strip()
-            weather_day_label = str(intent.get("day_label") or weather_day_label)
-            if _progress_log_allowed():
-                trace_cards.append(
-                    _progress_tool_card(
-                        "要求解析",
-                        f"モデル抽出: 地名={weather_location}, 対象日={weather_day_label}（{weather_target_date}）",
-                    )
-                )
-        except Exception:
-            if _progress_log_verbose() and _progress_log_allowed():
-                trace_cards.append(
-                    _progress_tool_card(
-                        "要求解析",
-                        "モデル抽出に失敗したため、ローカル解析で継続します。",
-                    )
-                )
-
-    effective_prompt = _build_live_web_guarded_prompt(prompt) if live_web_query else prompt
-    effective_prompt = _inject_tool_policy_into_prompt(
-        effective_prompt,
-        live_web_query=live_web_query,
+    location: str,
+    target_date: str,
+) -> str:
+    normalized_location = _normalize_location_query(location) or WEATHER_DEFAULT_LOCATION
+    normalized_date = target_date if re.match(r"^\d{4}-\d{2}-\d{2}$", str(target_date or "")) else _now_local_date_iso()
+    return (
+        "[Weather MCP Execution Contract]\n"
+        "- Use Playwright MCP tools for data retrieval.\n"
+        "- Minimum sequence: browser_navigate -> browser_snapshot.\n"
+        f"- Verify location='{normalized_location}' and date='{normalized_date}' from page text.\n"
+        "- If the first page is stale/missing date, navigate to another source and retry.\n"
+        "- Final answer must include:\n"
+        "  - source_url: exact URL you actually opened\n"
+        "  - page_date_text: exact date string as shown on the page\n"
+        f"  - requested_date: {normalized_date}\n"
+        "- Do not output weather numbers unless page_date_text is present."
     )
-    payload = {
-        "model": DEFAULT_MODEL,
-        "input": effective_prompt,
-        "stream": False,
-        "integrations": [plugin_id],
-    }
-    allowed_tools = _parse_csv(RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_ALLOWED_TOOLS_RAW)
-    ephemeral_payload = {
-        "model": DEFAULT_MODEL,
-        "input": effective_prompt,
-        "stream": False,
-        "integrations": [
-            {
-                "type": "ephemeral_mcp",
-                "server_label": RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_LABEL,
-                "server_url": RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_URL,
-                "allowed_tools": allowed_tools,
-            }
-        ],
-    }
-    headers = _runpod_auth_headers(include_content_type=True)
-    timeout = httpx.Timeout(connect=20.0, read=120.0, write=30.0, pool=20.0)
-    verify_setting = _runpod_httpx_verify_setting()
-    if _progress_log_allowed():
-        trace_cards.append(
-            _progress_tool_card(
-                "外部情報取得",
-                (
-                    "最新データ確認のため、"
-                    f"{'MCPブラウザ連携' if RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_PRIMARY else 'plugin連携'}を実行します。"
-                ),
-            )
-        )
-    async with httpx.AsyncClient(timeout=timeout, verify=verify_setting, trust_env=False) as client:
-        if RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_PRIMARY:
-            response = await client.post(chat_url, headers=headers, json=ephemeral_payload)
-            if response.status_code >= 400:
-                if _progress_log_allowed():
-                    trace_cards.append(
-                        _progress_tool_card(
-                            f"切替 (HTTP {response.status_code})",
-                            "最初の取得経路で失敗したため、別経路で再試行します。",
-                            is_error=True,
-                        )
-                    )
-                response = await client.post(chat_url, headers=headers, json=payload)
-        else:
-            response = await client.post(chat_url, headers=headers, json=payload)
-            if (
-                RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_FALLBACK_ENABLED
-                and response.status_code in {400, 401, 403}
-            ):
-                preview = response.text[:1200] if response.text else ""
-                if "permission denied to use plugin" in preview.lower():
-                    if _progress_log_allowed():
-                        trace_cards.append(
-                            _progress_tool_card(
-                                "切替 (権限不足)",
-                                "plugin権限不足のため、ephemeral_mcp連携へ切り替えます。",
-                                is_error=True,
-                            )
-                        )
-                    response = await client.post(chat_url, headers=headers, json=ephemeral_payload)
-    if response.status_code >= 400:
-        preview = response.text[:800] if response.text else ""
-        raise RuntimeError(f"lmstudio chat plugin failed: HTTP {response.status_code}. {preview}")
-    data = response.json() if response.content else {}
-    payload_data = data if isinstance(data, dict) else {}
-    if _progress_log_verbose():
-        trace_cards.extend(_render_tool_trace_cards(payload_data, source="LMStudio"))
-    text = _extract_lmstudio_chat_text(payload_data)
-    expected_live_date = weather_target_date if weather_query else _now_local_date_iso()
-    if live_web_query and text and _contains_date_mismatch(text, expected_live_date):
-        retry_payload = dict(ephemeral_payload if RUNPOD_LMSTUDIO_CHAT_EPHEMERAL_MCP_PRIMARY else payload)
-        retry_payload["input"] = (
-            f"{effective_prompt}\n"
-            f"- The prior answer contained a date mismatch. Use date={expected_live_date} only.\n"
-        )
-        async with httpx.AsyncClient(timeout=timeout, verify=verify_setting, trust_env=False) as client:
-            retry = await client.post(chat_url, headers=headers, json=retry_payload)
-        if retry.status_code < 400:
-            retry_data = retry.json() if retry.content else {}
-            retry_payload_dict = retry_data if isinstance(retry_data, dict) else {}
-            if _progress_log_allowed():
-                trace_cards.append(
-                    _progress_tool_card(
-                        "日付再確認",
-                        "日付不一致を検知したため、当日日付条件で再取得しました。",
-                    )
-                )
-            if _progress_log_verbose():
-                trace_cards.extend(_render_tool_trace_cards(retry_payload_dict, source="LMStudio retry"))
-            retry_text = _extract_lmstudio_chat_text(retry_payload_dict)
-            if retry_text:
-                text = retry_text
 
-    if (
-        weather_query
-        and WEATHER_VERIFIED_FETCH_ENABLED
-        and WEATHER_VERIFIED_FETCH_MODE in {"strict", "advisory"}
-    ):
-        try:
-            snapshot = await _fetch_verified_weather_snapshot(
-                weather_location,
-                target_date_local=weather_target_date,
-                target_time_local=weather_target_time,
-                day_label=weather_day_label,
-            )
-            if _progress_log_allowed():
-                trace_cards.append(
-                    _progress_tool_card(
-                        "検証済みデータ",
-                        (
-                            f"Open-Meteoで {snapshot.get('day_label', weather_day_label)}（{snapshot.get('date_local')}）の"
-                            f"{(snapshot.get('location') or {}).get('name', weather_location)} を確認しました。"
-                        ),
-                    )
-                )
 
-            mismatch_issues = _weather_answer_likely_inconsistent(text, snapshot)
-            rewrite_required = WEATHER_VERIFIED_FETCH_MODE == "strict" or bool(mismatch_issues)
-            if rewrite_required:
-                if _progress_log_allowed() and mismatch_issues:
-                    trace_cards.append(
-                        _progress_tool_card(
-                            "検証結果",
-                            "ドラフト回答と検証データに差分があるため、検証値で整合させます。",
-                        )
-                    )
-                rewrite_prompt = (
-                    "次のドラフト回答を、検証済みJSONを唯一の正として数値/日付のみ修正してください。"
-                    "語調と構成はできるだけ維持し、手順説明やツールログは出力しないこと。\n\n"
-                    "[ドラフト回答]\n"
-                    f"{text}\n\n"
-                    "[検証済みJSON]\n"
-                    f"{json.dumps(snapshot, ensure_ascii=False)}\n"
-                )
-                rewrite_payload = {
-                    "model": DEFAULT_MODEL,
-                    "input": rewrite_prompt,
-                    "stream": False,
-                }
-                async with httpx.AsyncClient(timeout=timeout, verify=verify_setting, trust_env=False) as client:
-                    rewrite_res = await client.post(chat_url, headers=headers, json=rewrite_payload)
-                if rewrite_res.status_code < 400:
-                    rewrite_data = rewrite_res.json() if rewrite_res.content else {}
-                    rewrite_text = _extract_lmstudio_chat_text(
-                        rewrite_data if isinstance(rewrite_data, dict) else {}
-                    )
-                    rewrite_text = _sanitize_user_facing_answer(rewrite_text)
-                    if rewrite_text:
-                        text = rewrite_text
-                elif WEATHER_VERIFIED_FETCH_MODE == "strict":
-                    text = _render_verified_weather_answer(snapshot)
-        except Exception as exc:
-            if _progress_log_allowed():
-                trace_cards.append(
-                    _progress_tool_card(
-                        "検証済みデータ",
-                        f"Open-Meteo検証に失敗しました: {exc}",
-                        is_error=True,
-                    )
-                )
-    text = _sanitize_user_facing_answer(text)
-    if not text:
-        raise RuntimeError("lmstudio chat plugin returned no assistant text.")
-    return text, trace_cards
+def _weather_answer_has_required_evidence(text: str, target_date: str) -> bool:
+    body = str(text or "")
+    if not body.strip():
+        return False
+    if not re.search(r"https?://", body, flags=re.IGNORECASE):
+        return False
+    has_source_label = re.search(r"source[_ ]?url|出典|参照", body, flags=re.IGNORECASE) is not None
+    has_date_label = re.search(r"page[_ ]?date[_ ]?text|日付|掲載日時", body, flags=re.IGNORECASE) is not None
+    if not (has_source_label and has_date_label):
+        return False
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", str(target_date or "")):
+        y, m, d = target_date.split("-")
+        date_patterns = (
+            re.escape(target_date),
+            rf"{y}[/-]{int(m):02d}[/-]{int(d):02d}",
+            rf"{y}年\s*{int(m)}月\s*{int(d)}日",
+        )
+        if not any(re.search(pat, body) for pat in date_patterns):
+            return False
+    return True
+
+
+def _build_weather_evidence_retry_prompt(prompt: str, target_date: str, location: str) -> str:
+    safe_date = str(target_date or _now_local_date_iso()).strip()
+    safe_location = str(location or WEATHER_DEFAULT_LOCATION).strip() or WEATHER_DEFAULT_LOCATION
+    contract = (
+        "[Weather Evidence Contract]\n"
+        f"- requested_date must be {safe_date}\n"
+        f"- location must be {safe_location}\n"
+        "- Final answer must include exactly these evidence keys:\n"
+        "  - source_url: <actual URL opened>\n"
+        "  - page_date_text: <date string visible on the page>\n"
+        f"  - requested_date: {safe_date}\n"
+        "- If evidence cannot be verified, output only retrieval failure reason.\n"
+    )
+    return f"{str(prompt or '').strip()}\n\n{contract}"
 
 
 def _build_responses_tools_payload() -> list[dict]:
@@ -2788,15 +2278,7 @@ async def _run_runpod_responses_fallback(prompt: str, *, base_url: str = "") -> 
             }
         ],
     }
-    if RUNPOD_LMSTUDIO_CHAT_PLUGIN_ENABLED and (
-        (not RUNPOD_LMSTUDIO_CHAT_PLUGIN_FOR_LIVE_WEB_ONLY) or live_web_query
-    ):
-        return await _run_runpod_lmstudio_chat_plugin(
-            prompt,
-            base_url=resolved_base_url,
-            live_web_query=live_web_query,
-        )
-    require_tool_for_prompt = RUNPOD_RESPONSES_REQUIRE_TOOL_FOR_LIVE_WEB and live_web_query
+    require_tool_for_prompt = LIVE_WEB_REQUIRE_EVIDENCE and live_web_query
     enforce_tool_evidence = require_tool_for_prompt and RUNPOD_RESPONSES_HARD_FAIL_ON_MISSING_TOOL
     tool_choice = RUNPOD_RESPONSES_TOOL_CHOICE
     if live_web_query and RUNPOD_RESPONSES_LIVE_WEB_TOOL_CHOICE != "inherit":
@@ -3232,6 +2714,12 @@ async def _iter_codex_chat_events_native(prompt: str) -> AsyncIterator[dict]:
 
 
 async def _iter_codex_chat_events(prompt: str) -> AsyncIterator[dict]:
+    live_web_query = _prompt_likely_requires_live_web(prompt)
+    if live_web_query and LIVE_WEB_TOOL_EXEC_MODE == "engine_primary":
+        async for event in _iter_codex_chat_events_engine_primary(prompt):
+            yield event
+        return
+
     if CODEX_EXEC_ROUTE_MODE == "background_poll":
         async for event in _iter_codex_chat_events_background_poll(prompt):
             yield event
@@ -3244,6 +2732,85 @@ async def _iter_codex_chat_events(prompt: str) -> AsyncIterator[dict]:
 
     async for event in _iter_codex_chat_events_resilient(prompt):
         yield event
+
+
+async def _iter_codex_chat_events_engine_primary(prompt: str) -> AsyncIterator[dict]:
+    started_at = time.monotonic()
+    yield _status_event("要求解析", "問い合わせ内容を解析しました。", step=0)
+    yield _status_event("外部情報取得", "サーバー関数ツールで情報取得を開始します。", step=1)
+
+    weather_query = _prompt_likely_weather_query(prompt)
+    weather_target_date = _now_local_date_iso()
+    weather_location = WEATHER_DEFAULT_LOCATION
+    if weather_query:
+        weather_location = _extract_weather_location(prompt) or WEATHER_DEFAULT_LOCATION
+        weather_target_date, _ = _resolve_weather_target_date_and_label(prompt)
+        yield _status_event(
+            "要求解析",
+            f"検索対象: {weather_location} / 対象日: {weather_target_date}",
+            step=1,
+        )
+
+    yield _status_event("処理中", "参照先ページを開いて情報を抽出しています。", step=1)
+    effective_prompt = str(prompt or "")
+    if weather_query:
+        effective_prompt = (
+            f"{effective_prompt}\n\n"
+            f"{_build_weather_answer_contract(location=weather_location, target_date=weather_target_date)}"
+        )
+    fallback_text, fallback_tool_cards, fallback_error = await _run_engine_tool_fallback(effective_prompt)
+    if fallback_tool_cards:
+        for html_card in fallback_tool_cards:
+            yield {"type": "tool_card", "html": html_card}
+
+    final_text = str(fallback_text or "").strip()
+    if not final_text and fallback_error:
+        yield {"type": "error", "message": f"Engine tool execution failed: {fallback_error}"}
+
+    if LIVE_WEB_REQUIRE_EVIDENCE and weather_query:
+        has_evidence = _weather_answer_has_required_evidence(final_text, weather_target_date)
+        if not has_evidence:
+            yield _status_event(
+                "再取得(証跡不足時)",
+                "証跡(source_url/page_date_text)不足のため再取得します。",
+                step=2,
+            )
+            retry_prompt = _build_weather_evidence_retry_prompt(
+                prompt,
+                target_date=weather_target_date,
+                location=weather_location,
+            )
+            retry_text, retry_cards, retry_error = await _run_engine_tool_fallback(retry_prompt)
+            if retry_cards:
+                for html_card in retry_cards:
+                    yield {"type": "tool_card", "html": html_card}
+            retry_text = str(retry_text or "").strip()
+            if retry_text and _weather_answer_has_required_evidence(retry_text, weather_target_date):
+                final_text = retry_text
+            else:
+                detail = retry_error or "required evidence was not found in tool output."
+                final_text = (
+                    "取得失敗: 証跡付きデータを確認できませんでした。"
+                    f"\nrequested_date: {weather_target_date}"
+                    f"\nreason: {detail}"
+                )
+
+    if not final_text:
+        final_text = "外部情報の取得に失敗しました。時間をおいて再実行してください。"
+
+    elapsed_ms = int((time.monotonic() - started_at) * 1000)
+    yield {"type": "assistant_stream_start", "model": DEFAULT_MODEL, "totalChars": len(final_text)}
+    yield {"type": "assistant_stream_delta", "delta": final_text}
+    yield {"type": "assistant_stream_done", "elapsedMs": elapsed_ms, "totalChars": len(final_text)}
+    yield {
+        "type": "assistant_turn",
+        "html": _render_assistant_turn(text=final_text, model=DEFAULT_MODEL, elapsed_ms=elapsed_ms),
+        "text": final_text,
+        "model": DEFAULT_MODEL,
+        "elapsedMs": elapsed_ms,
+        "streamed": True,
+    }
+    yield {"type": "done", "elapsedMs": elapsed_ms}
 
 
 async def _iter_codex_chat_events_background_poll(prompt: str) -> AsyncIterator[dict]:
@@ -3308,12 +2875,33 @@ async def _iter_codex_chat_events_background_poll(prompt: str) -> AsyncIterator[
                     "Validate extracted facts against target_date and must_check_fields."
                 )
             except Exception as exc:
+                playwright_plan = _build_default_playwright_query_plan(prepared_prompt)
+                if _progress_log_allowed():
+                    yield {
+                        "type": "tool_card",
+                        "html": _progress_tool_card(
+                            "要求解析",
+                            (
+                                f"検索クエリ: {playwright_plan.get('search_query', '')}\n"
+                                f"対象日: {playwright_plan.get('target_date', '')}"
+                            ),
+                        ),
+                    }
+                plan_json = json.dumps(playwright_plan, ensure_ascii=False)
+                prepared_prompt = (
+                    f"{prepared_prompt}\n\n"
+                    "[Playwright Query Plan JSON]\n"
+                    f"{plan_json}\n"
+                    "Use this plan for browser navigation/search order. "
+                    "Prefer primary_url when provided. "
+                    "Validate extracted facts against target_date and must_check_fields."
+                )
                 if _progress_log_verbose() and _progress_log_allowed():
                     yield {
                         "type": "tool_card",
                         "html": _progress_tool_card(
                             "要求解析",
-                            f"Playwright検索計画の抽出に失敗したため通常実行します: {exc}",
+                            f"Playwrightクエリのモデル推定に失敗したため、既定クエリを使用します: {exc}",
                         ),
                     }
 
@@ -3334,14 +2922,6 @@ async def _iter_codex_chat_events_background_poll(prompt: str) -> AsyncIterator[
                 "step": 1,
                 "message": f"Responses mode: polling via {_route_status_label(route)}...",
             }
-            if _progress_log_allowed():
-                yield {
-                    "type": "tool_card",
-                    "html": _progress_tool_card(
-                        "開始",
-                        "回答生成を開始しました。",
-                    ),
-                }
             fallback_task = asyncio.create_task(
                 _run_runpod_responses_fallback(prepared_prompt, base_url=route)
             )
@@ -3916,6 +3496,7 @@ async def health() -> JSONResponse:
         {
             "ok": ok,
             "service": "fastapi-htmx-client",
+            "inference_provider": RUNPOD_INFERENCE_PROVIDER,
             "engine_url": ENGINE_BASE_URL,
             "agent_backend": AGENT_BACKEND,
             "requested_agent_backend": REQUESTED_AGENT_BACKEND,
@@ -3924,6 +3505,8 @@ async def health() -> JSONResponse:
             "codex_error": codex_error,
             "codex_native_mode": CODEX_NATIVE_MODE,
             "codex_exec_route_mode": CODEX_EXEC_ROUTE_MODE,
+            "live_web_tool_exec_mode": LIVE_WEB_TOOL_EXEC_MODE,
+            "live_web_require_evidence": LIVE_WEB_REQUIRE_EVIDENCE,
             "runpod_route_probe_enabled": RUNPOD_ROUTE_PROBE_ENABLED,
             "runpod_routes": [_route_status_label(row) for row in RUNPOD_BASE_URL_CANDIDATES],
             "runpod_primary_route": _route_status_label(runpod_primary_route),

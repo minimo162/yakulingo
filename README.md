@@ -5,7 +5,14 @@
 
 日本語と英語の双方向翻訳アプリケーション。翻訳エンジンは **ローカルAI（llama.cpp `llama-server`）** のみを使用し、テキスト/ファイルをワンクリック翻訳します（サーバは `127.0.0.1` 固定・外部公開しません）。
 
+## RunPod運用の移行
+RunPod Serverless / Flex（A40x2）運用、`node_htmx_client`、評価スクリプト、デプロイworkflowは `yakulingo` から分離済みです。  
+RunPod 関連の実体は `localingo` リポジトリを参照してください。
+
+- `https://github.com/minimo162/localingo`
+
 ## 目次
+- [RunPod運用の移行](#runpod運用の移行)
 - [特徴](#特徴)
 - [対応ファイル形式](#対応ファイル形式)
 - [必要環境](#必要環境)

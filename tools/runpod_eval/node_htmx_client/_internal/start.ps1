@@ -364,6 +364,15 @@ function Get-LocaLingoPortOccupierProcessIds {
   return @($targets | Sort-Object -Unique)
 }
 
+function Get-AnyPortOccupierProcessIds {
+  param([int[]]$Ports)
+  $targets = @()
+  foreach ($port in @($Ports | Where-Object { $_ -gt 0 } | Sort-Object -Unique)) {
+    $targets += Get-ListeningProcessIdsByPort -Port $port
+  }
+  return @($targets | Where-Object { $_ -gt 0 -and $_ -ne $PID } | Sort-Object -Unique)
+}
+
 function Stop-ProcessByIdSafe {
   param([int]$ProcessId)
   if ($ProcessId -le 0) { return $false }
@@ -401,6 +410,47 @@ function Stop-ProcessByIdSafe {
     return $false
   }
   return $stopSucceeded
+}
+
+function Wait-ProcessesExit {
+  param(
+    [int[]]$ProcessIds,
+    [int]$TimeoutMs = 4000
+  )
+  $targets = @($ProcessIds | Where-Object { $_ -gt 0 -and $_ -ne $PID } | Sort-Object -Unique)
+  if ($targets.Count -eq 0) { return @() }
+  $remaining = @($targets)
+  $loops = [Math]::Max(1, [Math]::Ceiling($TimeoutMs / 200.0))
+  for ($i = 0; $i -lt $loops; $i++) {
+    $remaining = @($remaining | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue })
+    if ($remaining.Count -eq 0) { break }
+    Start-Sleep -Milliseconds 200
+  }
+  return @($remaining | Sort-Object -Unique)
+}
+
+function Stop-ProcessesRobust {
+  param(
+    [int[]]$ProcessIds,
+    [string]$Label = "process"
+  )
+  $targets = @($ProcessIds | Where-Object { $_ -gt 0 -and $_ -ne $PID } | Sort-Object -Unique)
+  if ($targets.Count -eq 0) { return @() }
+
+  foreach ($id in $targets) {
+    Write-Host "Stopping $Label PID=$id ..."
+    [void](Stop-ProcessByIdSafe -ProcessId $id)
+  }
+  $remaining = Wait-ProcessesExit -ProcessIds $targets -TimeoutMs 5000
+  if ($remaining.Count -eq 0) { return @() }
+
+  # Last-resort second pass in case child processes were re-parented.
+  foreach ($id in $remaining) {
+    try { & cmd /c "taskkill /PID $id /T /F" | Out-Null } catch {}
+    try { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue } catch {}
+  }
+  $remaining = Wait-ProcessesExit -ProcessIds $remaining -TimeoutMs 3000
+  return @($remaining | Sort-Object -Unique)
 }
 
 $userSlug = Get-UserSlug
@@ -618,14 +668,11 @@ $restartTargets = @($restartTargets | Where-Object { $_ -gt 0 -and $_ -ne $PID }
 
 if ($restartTargets.Count -gt 0) {
   Write-Host "Restarting LocaLingo. Stopping previous process(es): $($restartTargets -join ', ')"
-  foreach ($procId in $restartTargets) {
-    Write-Host "Stopping PID=$procId ..."
-    [void](Stop-ProcessByIdSafe -ProcessId $procId)
-  }
-  for ($i = 0; $i -lt 20; $i++) {
-    $alive = @($restartTargets | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue })
-    if ($alive.Count -eq 0) { break }
-    Start-Sleep -Milliseconds 200
+  $restartRemaining = Stop-ProcessesRobust -ProcessIds $restartTargets -Label "previous"
+  if ($restartRemaining.Count -gt 0) {
+    Write-Host "Failed to stop previous process(es): $($restartRemaining -join ', ')"
+    Write-Host "Aborting startup to avoid duplicate/port-conflict state."
+    exit 1
   }
 }
 
@@ -693,6 +740,10 @@ $playwrightRemoteMcpAllowedTools = Get-ConfigValue -Key "PLAYWRIGHT_REMOTE_MCP_A
 if ([string]::IsNullOrWhiteSpace($playwrightRemoteMcpAllowedTools)) {
   $playwrightRemoteMcpAllowedTools = "browser_navigate,browser_snapshot"
 }
+$playwrightRemoteMcpHeadersJson = Get-ConfigValue -Key "PLAYWRIGHT_REMOTE_MCP_HEADERS_JSON" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($playwrightRemoteMcpHeadersJson)) {
+  $playwrightRemoteMcpHeadersJson = ""
+}
 if ($playwrightRemoteMcpEnabledNormalized -and (Test-PlaceholderValue -Value $playwrightRemoteMcpUrl) -and $playwrightRemoteMcpAutoFromRunPodNormalized) {
   $derivedMcpUrl = Convert-RunPodBaseUrlToMcpUrl -BaseUrl $baseUrl
   if (-not [string]::IsNullOrWhiteSpace($derivedMcpUrl)) {
@@ -707,14 +758,22 @@ $portConflictTargets = Get-LocaLingoPortOccupierProcessIds -Ports @([int]$appPor
 $portConflictTargets = @($portConflictTargets | Where-Object { $_ -gt 0 -and $_ -ne $PID } | Sort-Object -Unique)
 if ($portConflictTargets.Count -gt 0) {
   Write-Host "Detected stale LocaLingo process(es) on target port(s): $($portConflictTargets -join ', ')"
-  foreach ($procId in $portConflictTargets) {
-    Write-Host "Stopping port-conflict PID=$procId ..."
-    [void](Stop-ProcessByIdSafe -ProcessId $procId)
+  $portConflictRemaining = Stop-ProcessesRobust -ProcessIds $portConflictTargets -Label "port-conflict"
+  if ($portConflictRemaining.Count -gt 0) {
+    Write-Host "Failed to clear port-conflict process(es): $($portConflictRemaining -join ', ')"
+    Write-Host "Aborting startup to avoid starting on stale ports."
+    exit 1
   }
-  for ($i = 0; $i -lt 20; $i++) {
-    $alive = @($portConflictTargets | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue })
-    if ($alive.Count -eq 0) { break }
-    Start-Sleep -Milliseconds 200
+}
+
+$anyPortOwners = Get-AnyPortOccupierProcessIds -Ports @([int]$appPort, [int]$enginePort)
+if ($anyPortOwners.Count -gt 0) {
+  Write-Host "Detected process(es) still listening on target port(s): $($anyPortOwners -join ', ')"
+  $remainingAnyOwners = Stop-ProcessesRobust -ProcessIds $anyPortOwners -Label "port-owner"
+  if ($remainingAnyOwners.Count -gt 0) {
+    Write-Host "Failed to release target port(s). Remaining PID(s): $($remainingAnyOwners -join ', ')"
+    Write-Host "Aborting startup because APP/ENGINE port is still occupied."
+    exit 1
   }
 }
 
@@ -727,14 +786,21 @@ if ($localMcpEnabledNormalized) {
   $mcpPortConflictTargets = @($mcpPortConflictTargets | Where-Object { $_ -gt 0 -and $_ -ne $PID } | Sort-Object -Unique)
   if ($mcpPortConflictTargets.Count -gt 0) {
     Write-Host "Detected stale local MCP process(es) on target port: $($mcpPortConflictTargets -join ', ')"
-    foreach ($procId in $mcpPortConflictTargets) {
-      Write-Host "Stopping MCP port-conflict PID=$procId ..."
-      [void](Stop-ProcessByIdSafe -ProcessId $procId)
+    $mcpConflictRemaining = Stop-ProcessesRobust -ProcessIds $mcpPortConflictTargets -Label "mcp-port-conflict"
+    if ($mcpConflictRemaining.Count -gt 0) {
+      Write-Host "Failed to clear local MCP port-conflict process(es): $($mcpConflictRemaining -join ', ')"
+      Write-Host "Aborting startup to avoid stale MCP process collision."
+      exit 1
     }
-    for ($i = 0; $i -lt 20; $i++) {
-      $alive = @($mcpPortConflictTargets | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue })
-      if ($alive.Count -eq 0) { break }
-      Start-Sleep -Milliseconds 200
+  }
+  $anyMcpOwners = Get-AnyPortOccupierProcessIds -Ports @([int]$localMcpPort)
+  if ($anyMcpOwners.Count -gt 0) {
+    Write-Host "Detected process(es) still listening on MCP port: $($anyMcpOwners -join ', ')"
+    $remainingMcpOwners = Stop-ProcessesRobust -ProcessIds $anyMcpOwners -Label "mcp-port-owner"
+    if ($remainingMcpOwners.Count -gt 0) {
+      Write-Host "Failed to release MCP port. Remaining PID(s): $($remainingMcpOwners -join ', ')"
+      Write-Host "Aborting startup because MCP port is still occupied."
+      exit 1
     }
   }
 }
@@ -767,6 +833,10 @@ $runPodHealthcheckTtlMs = Get-ConfigValue -Key "RUNPOD_HEALTHCHECK_TTL_MS" -File
 if ([string]::IsNullOrWhiteSpace($runPodHealthcheckTtlMs)) { $runPodHealthcheckTtlMs = "20000" }
 $runPodTlsVerify = Get-ConfigValue -Key "RUNPOD_TLS_VERIFY" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($runPodTlsVerify)) { $runPodTlsVerify = "1" }
+$runPodTlsUseSystemStore = Get-ConfigValue -Key "RUNPOD_TLS_USE_SYSTEM_STORE" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($runPodTlsUseSystemStore)) { $runPodTlsUseSystemStore = "1" }
+$runPodTlsRetryNoVerify = Get-ConfigValue -Key "RUNPOD_TLS_RETRY_NO_VERIFY" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($runPodTlsRetryNoVerify)) { $runPodTlsRetryNoVerify = "0" }
 $runPodCaBundle = Get-ConfigValue -Key "RUNPOD_CA_BUNDLE" -FilePaths $configFiles
 
 $workspaceRoot = Join-Path $BaseDir "workspace"
@@ -996,13 +1066,13 @@ $runPodRouteCooldownSec = Get-ConfigValue -Key "RUNPOD_ROUTE_COOLDOWN_SEC" -File
 if ([string]::IsNullOrWhiteSpace($runPodRouteCooldownSec)) { $runPodRouteCooldownSec = "90" }
 
 $runPodResponsesBackgroundEnabled = Get-ConfigValue -Key "RUNPOD_RESPONSES_BACKGROUND_ENABLED" -FilePaths $configFiles
-if ([string]::IsNullOrWhiteSpace($runPodResponsesBackgroundEnabled)) { $runPodResponsesBackgroundEnabled = "1" }
+if ([string]::IsNullOrWhiteSpace($runPodResponsesBackgroundEnabled)) { $runPodResponsesBackgroundEnabled = "0" }
 
 $runPodResponsesPollIntervalMs = Get-ConfigValue -Key "RUNPOD_RESPONSES_POLL_INTERVAL_MS" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($runPodResponsesPollIntervalMs)) { $runPodResponsesPollIntervalMs = "1500" }
 
 $runPodResponsesPollTimeoutMs = Get-ConfigValue -Key "RUNPOD_RESPONSES_POLL_TIMEOUT_MS" -FilePaths $configFiles
-if ([string]::IsNullOrWhiteSpace($runPodResponsesPollTimeoutMs)) { $runPodResponsesPollTimeoutMs = "90000" }
+if ([string]::IsNullOrWhiteSpace($runPodResponsesPollTimeoutMs)) { $runPodResponsesPollTimeoutMs = "180000" }
 
 $runPodResponsesToolsEnabled = Get-ConfigValue -Key "RUNPOD_RESPONSES_TOOLS_ENABLED" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($runPodResponsesToolsEnabled)) { $runPodResponsesToolsEnabled = "1" }
@@ -1054,6 +1124,16 @@ if ($playwrightRemoteMcpEnabledNormalized -and -not [string]::IsNullOrWhiteSpace
     server_url = $playwrightRemoteMcpUrl
     allowed_tools = $pwAllowedTools
   }
+  if (-not [string]::IsNullOrWhiteSpace($playwrightRemoteMcpHeadersJson)) {
+    try {
+      $pwHeaders = $playwrightRemoteMcpHeadersJson | ConvertFrom-Json -ErrorAction Stop
+      if ($pwHeaders -is [System.Collections.IDictionary] -or $pwHeaders.PSObject.Properties.Count -gt 0) {
+        $playwrightMcpTool["headers"] = $pwHeaders
+      }
+    } catch {
+      Write-Warning "PLAYWRIGHT_REMOTE_MCP_HEADERS_JSON is not valid JSON object. headers were skipped."
+    }
+  }
   if ([string]::IsNullOrWhiteSpace($runPodResponsesMcpToolsJson)) {
     $runPodResponsesMcpToolsJson = "[" + (($playwrightMcpTool | ConvertTo-Json -Compress -Depth 6).Trim()) + "]"
   } else {
@@ -1077,10 +1157,12 @@ $runPodResponsesToolChoice = Get-ConfigValue -Key "RUNPOD_RESPONSES_TOOL_CHOICE"
 if ([string]::IsNullOrWhiteSpace($runPodResponsesToolChoice)) { $runPodResponsesToolChoice = "auto" }
 
 $runPodResponsesLiveWebToolChoice = Get-ConfigValue -Key "RUNPOD_RESPONSES_LIVE_WEB_TOOL_CHOICE" -FilePaths $configFiles
-if ([string]::IsNullOrWhiteSpace($runPodResponsesLiveWebToolChoice)) { $runPodResponsesLiveWebToolChoice = "required" }
+if ([string]::IsNullOrWhiteSpace($runPodResponsesLiveWebToolChoice)) { $runPodResponsesLiveWebToolChoice = "auto" }
 
 $runPodResponsesRequireToolForLiveWeb = Get-ConfigValue -Key "RUNPOD_RESPONSES_REQUIRE_TOOL_FOR_LIVE_WEB" -FilePaths $configFiles
 if ([string]::IsNullOrWhiteSpace($runPodResponsesRequireToolForLiveWeb)) { $runPodResponsesRequireToolForLiveWeb = "1" }
+$runPodResponsesHardFailOnMissingTool = Get-ConfigValue -Key "RUNPOD_RESPONSES_HARD_FAIL_ON_MISSING_TOOL" -FilePaths $configFiles
+if ([string]::IsNullOrWhiteSpace($runPodResponsesHardFailOnMissingTool)) { $runPodResponsesHardFailOnMissingTool = "0" }
 
 if ($localMcpEnabledNormalized) {
   $hasMcpModule = $false
@@ -1135,6 +1217,8 @@ $envVars = @{
   "RUNPOD_HEALTHCHECK_ON_CHAT" = $runPodHealthcheckOnChat
   "RUNPOD_HEALTHCHECK_TTL_MS" = $runPodHealthcheckTtlMs
   "RUNPOD_TLS_VERIFY" = $runPodTlsVerify
+  "RUNPOD_TLS_USE_SYSTEM_STORE" = $runPodTlsUseSystemStore
+  "RUNPOD_TLS_RETRY_NO_VERIFY" = $runPodTlsRetryNoVerify
   "RUNPOD_CA_BUNDLE" = $runPodCaBundle
   "WORKSPACE_ROOT"          = $workspaceRoot
   "WORKSPACE_STATE_FILE"    = $workspaceStateFile
@@ -1218,6 +1302,7 @@ $envVars = @{
   "RUNPOD_RESPONSES_TOOL_CHOICE" = $runPodResponsesToolChoice
   "RUNPOD_RESPONSES_LIVE_WEB_TOOL_CHOICE" = $runPodResponsesLiveWebToolChoice
   "RUNPOD_RESPONSES_REQUIRE_TOOL_FOR_LIVE_WEB" = $runPodResponsesRequireToolForLiveWeb
+  "RUNPOD_RESPONSES_HARD_FAIL_ON_MISSING_TOOL" = $runPodResponsesHardFailOnMissingTool
   "LOCAL_MCP_WEATHER_ENABLED" = $localMcpEnabledFlag
   "LOCAL_MCP_WEATHER_BIND" = $localMcpBind
   "LOCAL_MCP_WEATHER_PORT" = $localMcpPort

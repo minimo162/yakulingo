@@ -5,6 +5,7 @@ import os
 import re
 import shlex
 import shutil
+import ssl
 import subprocess
 import tempfile
 import time
@@ -115,15 +116,21 @@ RUNPOD_RESPONSES_TOOL_CHOICE = _get_enum_env(
 )
 RUNPOD_RESPONSES_LIVE_WEB_TOOL_CHOICE = _get_enum_env(
     "RUNPOD_RESPONSES_LIVE_WEB_TOOL_CHOICE",
-    "required",
+    "auto",
     {"inherit", "none", "auto", "required"},
 )
 RUNPOD_RESPONSES_REQUIRE_TOOL_FOR_LIVE_WEB = _get_bool_env(
     "RUNPOD_RESPONSES_REQUIRE_TOOL_FOR_LIVE_WEB",
     True,
 )
+RUNPOD_RESPONSES_HARD_FAIL_ON_MISSING_TOOL = _get_bool_env(
+    "RUNPOD_RESPONSES_HARD_FAIL_ON_MISSING_TOOL",
+    False,
+)
 RUNPOD_TLS_VERIFY = _get_bool_env("RUNPOD_TLS_VERIFY", True)
 RUNPOD_CA_BUNDLE = (os.getenv("RUNPOD_CA_BUNDLE", "") or "").strip()
+RUNPOD_TLS_USE_SYSTEM_STORE = _get_bool_env("RUNPOD_TLS_USE_SYSTEM_STORE", True)
+RUNPOD_TLS_RETRY_NO_VERIFY = _get_bool_env("RUNPOD_TLS_RETRY_NO_VERIFY", False)
 WORKSPACE_ROOT_ENV = (os.getenv("WORKSPACE_ROOT", "") or "").strip()
 WORKSPACE_STATE_FILE = (os.getenv("WORKSPACE_STATE_FILE", "") or "").strip()
 CODEX_BIN = (os.getenv("CODEX_BIN", "") or "").strip()
@@ -349,13 +356,24 @@ def _route_status_label(base_url: str) -> str:
         return base_url
 
 
-def _runpod_httpx_verify_setting() -> bool | str:
+def _runpod_httpx_verify_setting() -> bool | str | ssl.SSLContext:
     if not RUNPOD_TLS_VERIFY:
         return False
     if RUNPOD_CA_BUNDLE:
         path = Path(RUNPOD_CA_BUNDLE).expanduser()
         if path.exists():
-            return str(path)
+            try:
+                return ssl.create_default_context(cafile=str(path))
+            except Exception:
+                return str(path)
+    if RUNPOD_TLS_USE_SYSTEM_STORE:
+        try:
+            import truststore  # type: ignore
+
+            return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        except Exception:
+            # Fallback to stdlib system default certificates.
+            return ssl.create_default_context()
     return True
 
 
@@ -382,6 +400,17 @@ def _looks_like_tls_verify_failure(exc: Exception | str) -> bool:
     return any(marker in text for marker in markers)
 
 
+def _runpod_auth_headers(*, include_content_type: bool = False) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    token = str(RUNPOD_API_KEY or "").strip()
+    if token:
+        headers["x-api-key"] = token
+        headers["authorization"] = f"Bearer {token}"
+    if include_content_type:
+        headers["content-type"] = "application/json"
+    return headers
+
+
 def _mark_runpod_route_success(base_url: str) -> None:
     if not base_url:
         return
@@ -406,14 +435,13 @@ async def _probe_runpod_base_url(base_url: str) -> tuple[bool, str]:
     if not normalized:
         return False, "invalid base url"
     probe_url = f"{normalized}/models"
-    headers: dict[str, str] = {}
-    if RUNPOD_API_KEY:
-        headers["x-api-key"] = RUNPOD_API_KEY
+    headers = _runpod_auth_headers()
     timeout_sec = max(1.0, RUNPOD_ROUTE_PROBE_TIMEOUT_MS / 1000.0)
     timeout = httpx.Timeout(connect=timeout_sec, read=timeout_sec, write=timeout_sec, pool=timeout_sec)
     verify_setting = _runpod_httpx_verify_setting()
     try:
-        async with httpx.AsyncClient(timeout=timeout, verify=verify_setting) as client:
+        # Bypass OS proxy env for RunPod direct calls; proxy interception often breaks auth/TLS.
+        async with httpx.AsyncClient(timeout=timeout, verify=verify_setting, trust_env=False) as client:
             response = await client.get(probe_url, headers=headers)
         if 200 <= response.status_code < 500:
             return True, ""
@@ -1227,20 +1255,98 @@ def _compute_retry_delay_ms(attempt_index: int) -> int:
 
 
 def _extract_responses_output_text(payload: dict) -> str:
+    if not isinstance(payload, dict):
+        return ""
+
+    # Some providers wrap the actual response payload.
+    nested = payload.get("response")
+    if isinstance(nested, dict):
+        nested_text = _extract_responses_output_text(nested)
+        if nested_text:
+            return nested_text
+
     output_text = str(payload.get("output_text", "") or "").strip()
     if output_text:
         return output_text
     output_items = payload.get("output")
     if not isinstance(output_items, list):
+        # ChatCompletions-compatible fallback (provider compatibility path).
+        choices = payload.get("choices")
+        if isinstance(choices, list):
+            chunks: list[str] = []
+            for choice in choices:
+                if not isinstance(choice, dict):
+                    continue
+                message = choice.get("message")
+                if not isinstance(message, dict):
+                    continue
+                content = message.get("content")
+                if isinstance(content, str) and content.strip():
+                    chunks.append(content.strip())
+                    continue
+                if isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, str) and block.strip():
+                            chunks.append(block.strip())
+                        elif isinstance(block, dict):
+                            text = str(block.get("text", "") or "").strip()
+                            if text:
+                                chunks.append(text)
+            if chunks:
+                return "\n".join(chunks).strip()
         return ""
+
+    # 1) Prefer assistant message blocks (most compatible with OpenAI-like responses).
+    message_chunks: list[str] = []
+    for item in output_items:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("type", "") or "").strip().lower() != "message":
+            continue
+        content = item.get("content")
+        if isinstance(content, str):
+            text = content.strip()
+            if text:
+                message_chunks.append(text)
+            continue
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if isinstance(block, str):
+                text = block.strip()
+                if text:
+                    message_chunks.append(text)
+                continue
+            if not isinstance(block, dict):
+                continue
+            block_type = str(block.get("type", "") or "").strip().lower()
+            if block_type in {"input_text", "reasoning_text"}:
+                continue
+            text = str(block.get("text", "") or "").strip()
+            if text:
+                message_chunks.append(text)
+    if message_chunks:
+        return "\n".join(message_chunks).strip()
+
+    # 2) Fallback: generic text-like blocks.
     chunks: list[str] = []
     for item in output_items:
         if not isinstance(item, dict):
             continue
         content = item.get("content")
+        if isinstance(content, str):
+            text = content.strip()
+            if text:
+                chunks.append(text)
+            continue
         if not isinstance(content, list):
             continue
         for block in content:
+            if isinstance(block, str):
+                text = block.strip()
+                if text:
+                    chunks.append(text)
+                continue
             if not isinstance(block, dict):
                 continue
             block_type = str(block.get("type", "") or "").strip().lower()
@@ -1370,10 +1476,7 @@ async def _run_runpod_responses_fallback(prompt: str, *, base_url: str = "") -> 
     if not resolved_base_url:
         return ""
     url = f"{resolved_base_url}/responses"
-    headers = {
-        "x-api-key": RUNPOD_API_KEY,
-        "content-type": "application/json",
-    }
+    headers = _runpod_auth_headers(include_content_type=True)
     payload_base = {
         "model": DEFAULT_MODEL,
         "input": [
@@ -1385,6 +1488,7 @@ async def _run_runpod_responses_fallback(prompt: str, *, base_url: str = "") -> 
     }
     live_web_query = _prompt_likely_requires_live_web(prompt)
     require_tool_for_prompt = RUNPOD_RESPONSES_REQUIRE_TOOL_FOR_LIVE_WEB and live_web_query
+    enforce_tool_evidence = require_tool_for_prompt and RUNPOD_RESPONSES_HARD_FAIL_ON_MISSING_TOOL
     tool_choice = RUNPOD_RESPONSES_TOOL_CHOICE
     if live_web_query and RUNPOD_RESPONSES_LIVE_WEB_TOOL_CHOICE != "inherit":
         tool_choice = RUNPOD_RESPONSES_LIVE_WEB_TOOL_CHOICE
@@ -1401,7 +1505,8 @@ async def _run_runpod_responses_fallback(prompt: str, *, base_url: str = "") -> 
         pool=20.0,
     )
     async def _run_once(verify_setting: bool | str) -> str:
-        async with httpx.AsyncClient(timeout=timeout, verify=verify_setting) as client:
+        # Bypass OS proxy env for RunPod direct calls; proxy interception often breaks auth/TLS.
+        async with httpx.AsyncClient(timeout=timeout, verify=verify_setting, trust_env=False) as client:
             async def _run_once_with_payload(payload: dict) -> str:
                 background_error = ""
                 if RUNPOD_RESPONSES_BACKGROUND_ENABLED:
@@ -1415,47 +1520,58 @@ async def _run_runpod_responses_fallback(prompt: str, *, base_url: str = "") -> 
                         bg_status = _extract_responses_status(bg_payload)
                         bg_has_tool = _responses_payload_has_tool_evidence(bg_payload)
                         response_id = _extract_responses_id(bg_payload)
-                        if bg_text and not require_tool_for_prompt:
+                        if bg_text and (
+                            (not require_tool_for_prompt)
+                            or bg_has_tool
+                            or (not enforce_tool_evidence)
+                        ):
                             return bg_text
-                        if bg_text and bg_has_tool and bg_status in {"completed", "in_progress", "running", "queued", "processing", ""}:
-                            return bg_text
-                        if bg_status == "completed" and require_tool_for_prompt and (not bg_has_tool):
+                        if bg_status == "completed" and enforce_tool_evidence and (not bg_has_tool):
                             raise RuntimeError(
                                 "responses tools were not executed for live-web prompt (completed without tool evidence)."
                             )
                         if response_id:
                             poll_url = f"{url}/{response_id}"
                             deadline = time.monotonic() + max(5.0, poll_timeout_ms / 1000.0)
+                            poll_timed_out = True
                             while time.monotonic() < deadline:
                                 await asyncio.sleep(poll_interval_sec)
-                                poll_res = await client.get(poll_url, headers={"x-api-key": RUNPOD_API_KEY})
+                                poll_res = await client.get(poll_url, headers=_runpod_auth_headers())
                                 if poll_res.status_code >= 400:
                                     preview = poll_res.text[:600] if poll_res.text else ""
-                                    raise RuntimeError(
-                                        f"responses background poll failed: HTTP {poll_res.status_code}. {preview}"
+                                    background_error = (
+                                        f"background poll HTTP {poll_res.status_code}: {preview}"
                                     )
+                                    poll_timed_out = False
+                                    break
                                 poll_data = poll_res.json() if poll_res.content else {}
                                 poll_payload = poll_data if isinstance(poll_data, dict) else {}
                                 poll_text = _extract_responses_output_text(poll_payload)
                                 poll_status = _extract_responses_status(poll_payload)
                                 poll_has_tool = _responses_payload_has_tool_evidence(poll_payload)
-                                if poll_text and not require_tool_for_prompt and poll_status in {"completed", "in_progress", "running", "queued", "processing", ""}:
-                                    return poll_text
-                                if poll_text and require_tool_for_prompt and poll_has_tool and poll_status in {"completed", "in_progress", "running", "queued", "processing", ""}:
+                                if poll_text and poll_status in {"completed", "in_progress", "running", "queued", "processing", ""} and (
+                                    (not require_tool_for_prompt)
+                                    or poll_has_tool
+                                    or (not enforce_tool_evidence)
+                                ):
                                     return poll_text
                                 if poll_status == "completed":
-                                    if require_tool_for_prompt and (not poll_has_tool):
+                                    if enforce_tool_evidence and (not poll_has_tool):
                                         raise RuntimeError(
                                             "responses tools were not executed for live-web prompt (poll completed without tool evidence)."
                                         )
+                                    poll_timed_out = False
                                     break
                                 if poll_status in {"failed", "incomplete", "cancelled", "expired"}:
-                                    raise RuntimeError(f"responses background ended with status={poll_status}")
-                            raise RuntimeError(
-                                "responses background poll timed out before completion."
-                            )
+                                    background_error = f"background ended with status={poll_status}"
+                                    poll_timed_out = False
+                                    break
+                            if poll_timed_out:
+                                background_error = "background poll timed out before completion"
+                            # Continue with non-background /responses call below.
+                            # This keeps responses-mode alive even when background polling stalls.
                         if bg_status in {"failed", "incomplete", "cancelled", "expired"}:
-                            raise RuntimeError(f"responses background ended with status={bg_status}")
+                            background_error = f"background ended with status={bg_status}"
                     else:
                         preview = bg_res.text[:400] if bg_res.text else ""
                         background_error = f"background HTTP {bg_res.status_code}: {preview}"
@@ -1470,7 +1586,7 @@ async def _run_runpod_responses_fallback(prompt: str, *, base_url: str = "") -> 
                 text = _extract_responses_output_text(payload_data)
                 if not text:
                     raise RuntimeError("responses fallback returned no assistant text.")
-                if require_tool_for_prompt and not _responses_payload_has_tool_evidence(payload_data):
+                if enforce_tool_evidence and not _responses_payload_has_tool_evidence(payload_data):
                     raise RuntimeError(
                         "responses tools were not executed for live-web prompt (final response without tool evidence)."
                     )
@@ -1482,16 +1598,22 @@ async def _run_runpod_responses_fallback(prompt: str, *, base_url: str = "") -> 
     try:
         return await _run_once(verify_setting)
     except Exception as exc:
-        # Retry once without TLS verification when cert validation fails.
-        # This handles corporate TLS interception and incomplete CA chains.
+        # Optional insecure retry path. Disabled by default.
         if RUNPOD_TLS_VERIFY and _looks_like_tls_verify_failure(exc):
-            try:
-                return await _run_once(False)
-            except Exception as exc_retry:
-                raise RuntimeError(
-                    "responses fallback TLS recovery failed: "
-                    f"first={exc}; retry_no_verify={exc_retry}"
-                ) from exc_retry
+            if RUNPOD_TLS_RETRY_NO_VERIFY:
+                try:
+                    return await _run_once(False)
+                except Exception as exc_retry:
+                    raise RuntimeError(
+                        "responses fallback TLS recovery failed: "
+                        f"first={exc}; retry_no_verify={exc_retry}"
+                    ) from exc_retry
+            raise RuntimeError(
+                "responses TLS verification failed. "
+                f"{exc} "
+                "Set RUNPOD_CA_BUNDLE to a trusted PEM or enable RUNPOD_TLS_USE_SYSTEM_STORE=1. "
+                "As a last resort only, set RUNPOD_TLS_RETRY_NO_VERIFY=1."
+            ) from exc
         raise
 
 
@@ -1829,7 +1951,12 @@ async def _iter_codex_chat_events_background_poll(prompt: str) -> AsyncIterator[
                 f"{CODEX_PROMPT_MAX_CHARS} chars before send."
             ),
         }
-    yield {"type": "status", "step": 0, "message": "Responses mode: submitting background request..."}
+    start_status_message = (
+        "Responses mode: submitting background request..."
+        if RUNPOD_RESPONSES_BACKGROUND_ENABLED
+        else "Responses mode: submitting request..."
+    )
+    yield {"type": "status", "step": 0, "message": start_status_message}
 
     preferred_route = await _select_runpod_base_url(attempt_index=1)
     if not preferred_route:

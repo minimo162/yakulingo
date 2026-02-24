@@ -4,9 +4,19 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{{ app_name }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
   <script src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js" defer></script>
   <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      font-family: "Zen Kaku Gothic New", sans-serif;
+      font-size: 18px;
+      line-height: 1.7;
+    }
+  </style>
 </head>
 <body class="bg-slate-100 text-slate-900 min-h-screen">
   <main
@@ -16,34 +26,8 @@
   >
     <header class="mb-5">
       <h1 class="text-2xl font-bold tracking-tight">{{ app_name }}</h1>
-      <p class="text-sm text-slate-600 mt-1">FastAPI + HTMX + Alpine.js + Tailwind</p>
+      <p class="text-base text-slate-600 mt-1">FastAPI + HTMX + Alpine.js + Tailwind</p>
     </header>
-
-    <section class="bg-white rounded-xl border border-slate-200 p-4 mb-4">
-      <div class="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          class="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-sm hover:bg-slate-800"
-          @click="selectWorkspace()"
-          :disabled="workspaceBusy"
-        >
-          Select Workspace
-        </button>
-        <button
-          type="button"
-          class="px-3 py-1.5 rounded-lg bg-slate-700 text-white text-sm hover:bg-slate-600"
-          @click="refreshWorkspace()"
-          :disabled="workspaceBusy"
-        >
-          Refresh
-        </button>
-        <span class="text-xs text-slate-500" x-text="workspaceBusy ? 'workspace: updating...' : 'workspace: ready'"></span>
-      </div>
-      <div class="mt-3 text-sm">
-        <div class="text-slate-500">Workspace Root</div>
-        <div class="font-mono text-xs break-all bg-slate-50 border border-slate-200 rounded p-2 mt-1" x-text="workspaceRoot || '(unknown)'"></div>
-      </div>
-    </section>
 
     <section class="bg-white rounded-xl border border-slate-200 p-4 mb-4">
       <form
@@ -51,11 +35,11 @@
         @submit.prevent="submitChat()"
         class="space-y-3"
       >
-        <label for="prompt" class="block text-sm font-medium">Describe the task you want to run</label>
+        <label for="prompt" class="block text-base font-medium">Describe the task you want to run</label>
         <textarea
           id="prompt"
           name="prompt"
-          class="w-full min-h-[120px] rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+          class="w-full min-h-[120px] rounded-lg border border-slate-300 px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-slate-400"
           placeholder="例: 今日の広島の天気を調べて"
           :disabled="running"
           required
@@ -65,39 +49,36 @@
           <button
             id="run-btn"
             type="submit"
-            class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-500"
+            class="px-4 py-2 rounded-lg bg-blue-600 text-white text-base hover:bg-blue-500"
             :disabled="running"
           >Run</button>
           <button
             type="button"
-            class="px-4 py-2 rounded-lg bg-slate-200 text-slate-900 text-sm hover:bg-slate-300"
+            class="px-4 py-2 rounded-lg bg-slate-200 text-slate-900 text-base hover:bg-slate-300"
             @click="clearChat()"
           >Clear</button>
-          <span id="run-indicator" class="htmx-indicator text-xs text-slate-500">Running...</span>
-          <span class="text-xs text-slate-500" x-text="statusText"></span>
+          <span id="run-indicator" class="htmx-indicator text-sm text-slate-500">Running...</span>
+          <span class="text-sm text-slate-500" x-text="statusText"></span>
         </div>
       </form>
     </section>
 
-    <section class="bg-white rounded-xl border border-slate-200 p-4">
-      <div class="text-sm font-medium mb-2">Result</div>
-      <div id="chat-log" class="space-y-3 text-sm"></div>
+    <section id="result-section" class="bg-white rounded-xl border border-slate-200 p-4">
+      <div class="text-base font-medium mb-2">Result</div>
+      <div id="chat-log" class="space-y-3 text-base"></div>
     </section>
   </main>
 
   <script>
     function appState() {
       return {
-        workspaceRoot: "",
-        workspaceBusy: false,
         running: false,
         statusText: "Idle",
         activeAssistantStream: null,
         streamConnectTimeoutMs: 20000,
+        streamReadTimeoutMs: 95000,
         fallbackTimeoutMs: 60000,
-        async init() {
-          await this.refreshWorkspace();
-        },
+        async init() {},
         chatLogEl() {
           return document.getElementById("chat-log");
         },
@@ -108,6 +89,12 @@
           const log = this.chatLogEl();
           if (!log) return;
           log.scrollTop = log.scrollHeight;
+          const target = document.getElementById("result-section");
+          if (target) {
+            target.scrollIntoView({ behavior: "smooth", block: "end" });
+          } else {
+            window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+          }
         },
         appendHtml(html) {
           const log = this.chatLogEl();
@@ -127,7 +114,7 @@
           const html = [
             '<article class="turn turn-error border border-rose-200 rounded-lg p-3 bg-rose-50">',
             '<header class="turn-header font-semibold text-rose-700 mb-1">Error</header>',
-            `<pre class="turn-body text-xs whitespace-pre-wrap break-words">${this.escapeHtml(String(message || "Request failed.").slice(0, 2400))}</pre>`,
+            `<pre class="turn-body text-sm whitespace-pre-wrap break-words">${this.escapeHtml(String(message || "Request failed.").slice(0, 2400))}</pre>`,
             '</article>',
           ].join("");
           this.appendHtml(html);
@@ -150,11 +137,11 @@
           header.textContent = `LocaLingo (${String(modelName || "").trim() || "model"})`;
 
           const body = document.createElement("pre");
-          body.className = "turn-body text-xs whitespace-pre-wrap break-words";
+          body.className = "turn-body text-sm whitespace-pre-wrap break-words";
           body.textContent = "";
 
           const footer = document.createElement("footer");
-          footer.className = "turn-footer text-[11px] text-slate-500 mt-2";
+          footer.className = "turn-footer text-xs text-slate-500 mt-2";
           footer.textContent = "streaming...";
 
           article.appendChild(header);
@@ -301,12 +288,15 @@
           this.resetAssistantStreamState();
           let gotDoneEvent = false;
           let gotAssistantEvent = false;
+          let streamConnectTimer = null;
+          let streamReadTimer = null;
+          let abortReason = "";
 
           try {
             const streamController = typeof AbortController !== "undefined" ? new AbortController() : null;
-            let streamTimer = null;
             if (streamController) {
-              streamTimer = setTimeout(() => {
+              streamConnectTimer = setTimeout(() => {
+                abortReason = `Stream connection timed out (${this.streamConnectTimeoutMs} ms).`;
                 try {
                   streamController.abort();
                 } catch {
@@ -323,7 +313,20 @@
               body: body.toString(),
               signal: streamController ? streamController.signal : undefined,
             });
-            if (streamTimer) clearTimeout(streamTimer);
+            if (streamConnectTimer) {
+              clearTimeout(streamConnectTimer);
+              streamConnectTimer = null;
+            }
+            if (streamController) {
+              streamReadTimer = setTimeout(() => {
+                abortReason = `Stream read timed out (${this.streamReadTimeoutMs} ms).`;
+                try {
+                  streamController.abort();
+                } catch {
+                  // ignore
+                }
+              }, this.streamReadTimeoutMs);
+            }
 
             if (!res.ok || !res.body) {
               const text = await res.text();
@@ -379,7 +382,7 @@
             }
           } catch (err) {
             const normalizedErr = err?.name === "AbortError"
-              ? new Error(`Stream connection timed out (${this.streamConnectTimeoutMs} ms).`)
+              ? new Error(abortReason || `Stream timed out (${this.streamReadTimeoutMs} ms).`)
               : err;
             const streamError = normalizedErr?.message || String(normalizedErr);
             if (!gotDoneEvent && !gotAssistantEvent) {
@@ -396,37 +399,14 @@
               this.appendError(streamError);
             }
           } finally {
+            if (streamConnectTimer) clearTimeout(streamConnectTimer);
+            if (streamReadTimer) clearTimeout(streamReadTimer);
             this.running = false;
             this.statusText = "Idle";
             if (promptEl) {
               promptEl.value = "";
               promptEl.focus();
             }
-          }
-        },
-        async refreshWorkspace() {
-          this.workspaceBusy = true;
-          try {
-            const res = await fetch("/api/workspace/state", { method: "GET" });
-            if (!res.ok) throw new Error("workspace state fetch failed");
-            const data = await res.json();
-            this.workspaceRoot = data?.workspaceRoot || "";
-          } catch (err) {
-            this.statusText = "Workspace error";
-          } finally {
-            this.workspaceBusy = false;
-          }
-        },
-        async selectWorkspace() {
-          this.workspaceBusy = true;
-          try {
-            const res = await fetch("/api/workspace/select", { method: "POST" });
-            if (!res.ok) throw new Error("workspace select failed");
-            await this.refreshWorkspace();
-          } catch (err) {
-            this.statusText = "Workspace select failed";
-          } finally {
-            this.workspaceBusy = false;
           }
         },
         async clearChat() {

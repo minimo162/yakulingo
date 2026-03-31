@@ -3281,10 +3281,13 @@ class CopilotHandler:
         Sets the cancel event. The warmup's _get_response will be interrupted
         naturally when start_new_chat() navigates away, but this provides a
         clean signal for early exit.
+
+        Only resets _warmup_chat_ready if warmup is still in progress.
+        If warmup already completed, the chat is ready and should stay ready.
         """
-        self._warmup_chat_ready = False
         if self._warmup_in_progress:
             logger.debug("Cancelling background warmup")
+            self._warmup_chat_ready = False
             self._cancel_warmup.set()
 
     def _warmup_impl(self) -> bool:

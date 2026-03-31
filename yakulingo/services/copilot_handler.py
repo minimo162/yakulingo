@@ -1120,7 +1120,7 @@ class CopilotHandler:
 
     # Warmup settings
     WARMUP_MESSAGE = "あなたは翻訳のスペシャリストです。これから私の翻訳指示に従ってください。"  # Translation-priming warmup message
-    WARMUP_RESPONSE_TIMEOUT = 60          # Seconds to wait for warmup response
+    WARMUP_RESPONSE_TIMEOUT = 30          # Seconds to wait for warmup response
 
     # =========================================================================
     # Edge Window Settings - Minimum size when bringing window to foreground
@@ -7915,6 +7915,10 @@ class CopilotHandler:
             )
             wait_for_playwright_init(timeout=self.PLAYWRIGHT_INIT_WAIT_SECONDS)
         executor_timeout = timeout + self.EXECUTOR_TIMEOUT_BUFFER_SECONDS
+        # Cancel background warmup BEFORE entering the executor queue.
+        # If warmup is running in the Playwright thread, _translate_sync_impl
+        # would be blocked in the queue and its internal cancel call would never fire.
+        self._cancel_background_warmup()
         return _playwright_executor.execute(
             self._translate_sync_impl, texts, prompt, reference_files, skip_clear_wait, timeout,
             include_item_ids,
@@ -8176,6 +8180,10 @@ class CopilotHandler:
             )
             wait_for_playwright_init(timeout=self.PLAYWRIGHT_INIT_WAIT_SECONDS)
         executor_timeout = timeout + self.EXECUTOR_TIMEOUT_BUFFER_SECONDS
+        # Cancel background warmup BEFORE entering the executor queue.
+        # If warmup is running in the Playwright thread, _translate_single_impl
+        # would be blocked in the queue and its internal cancel call would never fire.
+        self._cancel_background_warmup()
         return _playwright_executor.execute(
             self._translate_single_impl, text, prompt, reference_files, on_chunk, timeout,
             timeout=executor_timeout,

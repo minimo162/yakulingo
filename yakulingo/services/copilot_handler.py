@@ -19,6 +19,7 @@ import asyncio
 import threading
 import queue as thread_queue
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Callable, Iterator
 from contextlib import contextmanager
@@ -272,6 +273,41 @@ def _is_copilot_error_response(response: str) -> bool:
             logger.debug("Detected Copilot error pattern: %s", pattern)
             return True
     return False
+
+
+@dataclass(frozen=True)
+class CopilotResponseAnalysis:
+    """Diagnostic summary for a raw Copilot response."""
+
+    length: int
+    preview: str
+    is_empty: bool
+    is_error: bool
+    matched_pattern: Optional[str] = None
+
+
+def _preview_response_text(response: Optional[str], limit: int = 120) -> str:
+    """Return a single-line preview for logs."""
+    if not response:
+        return ""
+    preview = re.sub(r"\s+", " ", response).strip()
+    if len(preview) > limit:
+        return f"{preview[:limit]}..."
+    return preview
+
+
+def _analyze_copilot_response(response: Optional[str]) -> CopilotResponseAnalysis:
+    """Classify a raw Copilot response for logging and retry decisions."""
+    text = response or ""
+    stripped = text.strip()
+    matched_pattern = next((pattern for pattern in COPILOT_ERROR_PATTERNS if pattern in text), None)
+    return CopilotResponseAnalysis(
+        length=len(text),
+        preview=_preview_response_text(text),
+        is_empty=not bool(stripped),
+        is_error=matched_pattern is not None,
+        matched_pattern=matched_pattern,
+    )
 
 
 _CITATION_TRAILING_PUNCTUATION = ".,;:!?。！？、)]}）】』」\"'”’"
@@ -8018,20 +8054,29 @@ class CopilotHandler:
             )
 
             # Check for error conditions: Copilot error response patterns OR empty response
-            is_error_response = result and _is_copilot_error_response(result)
-            is_empty_response = len(texts) > 0 and (not result or not result.strip())
+            analysis = _analyze_copilot_response(result)
+            is_error_response = analysis.is_error
+            is_empty_response = len(texts) > 0 and analysis.is_empty
+            logger.debug(
+                "translate_sync response diagnostics: len=%d, empty=%s, error=%s, pattern=%s, preview=%r",
+                analysis.length,
+                analysis.is_empty,
+                analysis.is_error,
+                analysis.matched_pattern,
+                analysis.preview,
+            )
 
             if is_error_response or is_empty_response:
                 if is_error_response:
                     logger.warning(
-                        "Copilot returned error response (attempt %d/%d): %s",
-                        attempt + 1, max_retries + 1, result[:100]
+                        "Copilot returned error response (attempt %d/%d, pattern=%s): %s",
+                        attempt + 1, max_retries + 1, analysis.matched_pattern, analysis.preview
                     )
                 else:
                     logger.warning(
-                        "Copilot returned empty response (attempt %d/%d). "
+                        "Copilot returned empty response (attempt %d/%d, len=%d). "
                         "This may indicate a timeout or temporary Copilot issue.",
-                        attempt + 1, max_retries + 1
+                        attempt + 1, max_retries + 1, analysis.length
                     )
 
                 page_invalid = self._page and not self._is_page_valid()
@@ -8087,7 +8132,7 @@ class CopilotHandler:
                     else:
                         raise RuntimeError(
                             "Copilotがエラーを返しました。Edgeブラウザでログイン状態を確認してください。\n"
-                            f"エラー内容: {result[:100]}"
+                            f"エラー内容: {analysis.preview}"
                         )
 
             # Minimize browser after a successful translation to avoid stealing focus
@@ -8276,25 +8321,31 @@ class CopilotHandler:
             )
             logger.info("[TIMING] _get_response: %.2fs", time.monotonic() - response_start)
 
+            analysis = _analyze_copilot_response(result)
             logger.debug(
-                "translate_single received response (length=%d)", len(result) if result else 0
+                "translate_single response diagnostics: len=%d, empty=%s, error=%s, pattern=%s, preview=%r",
+                analysis.length,
+                analysis.is_empty,
+                analysis.is_error,
+                analysis.matched_pattern,
+                analysis.preview,
             )
 
             # Check for error conditions: Copilot error response patterns OR empty response
-            is_error_response = result and _is_copilot_error_response(result)
-            is_empty_response = not result or not result.strip()
+            is_error_response = analysis.is_error
+            is_empty_response = analysis.is_empty
 
             if is_error_response or is_empty_response:
                 if is_error_response:
                     logger.warning(
-                        "Copilot returned error response (attempt %d/%d): %s",
-                        attempt + 1, max_retries + 1, result[:100]
+                        "Copilot returned error response (attempt %d/%d, pattern=%s): %s",
+                        attempt + 1, max_retries + 1, analysis.matched_pattern, analysis.preview
                     )
                 else:
                     logger.warning(
-                        "Copilot returned empty response (attempt %d/%d). "
+                        "Copilot returned empty response (attempt %d/%d, len=%d). "
                         "This may indicate a timeout or temporary Copilot issue.",
-                        attempt + 1, max_retries + 1
+                        attempt + 1, max_retries + 1, analysis.length
                     )
 
                 page_invalid = self._page and not self._is_page_valid()
@@ -8350,7 +8401,7 @@ class CopilotHandler:
                     else:
                         raise RuntimeError(
                             "Copilotがエラーを返しました。Edgeブラウザでログイン状態を確認してください。\n"
-                            f"エラー内容: {result[:100]}"
+                            f"エラー内容: {analysis.preview}"
                         )
 
             # Minimize browser after a successful translation to keep it in background
@@ -10275,8 +10326,16 @@ class CopilotHandler:
                 time.sleep(poll_interval)
 
             # Log detailed info on timeout for debugging
-            logger.warning("[POLLING] Timeout reached after %d iterations, returning last_text (len=%d)",
-                          poll_iteration, len(last_text))
+            timeout_analysis = _analyze_copilot_response(last_text)
+            logger.warning(
+                "[POLLING] Timeout reached after %d iterations, returning last_text "
+                "(len=%d, empty=%s, error=%s, preview=%r)",
+                poll_iteration,
+                timeout_analysis.length,
+                timeout_analysis.is_empty,
+                timeout_analysis.is_error,
+                timeout_analysis.preview,
+            )
             if not has_content:
                 logger.error("[POLLING] No content received - possible selector issues. "
                             "Response selectors: %s, Stop button selectors: %s",

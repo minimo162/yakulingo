@@ -1447,6 +1447,7 @@ class CopilotHandler:
         self._background_warmup_thread: threading.Thread | None = None
         # Phase C: Track whether warmup chat is ready for reuse
         self._warmup_chat_ready = False
+        self._warmup_baseline_text = ""  # Warmup response text to filter in _get_response
 
     @property
     def is_connected(self) -> bool:
@@ -3333,25 +3334,26 @@ class CopilotHandler:
                 self._warmup_chat_ready = False
                 return False
 
-            # Wait for response (discard it)
-            self._get_response(timeout=self.WARMUP_RESPONSE_TIMEOUT)
+            # Wait for response and record it as baseline.
+            # The baseline text tells _get_response() to ignore the warmup
+            # response when polling for the translation response, preventing
+            # the warmup text from leaking into the UI via on_chunk.
+            warmup_response = self._get_response(timeout=self.WARMUP_RESPONSE_TIMEOUT)
+            self._warmup_baseline_text = warmup_response.strip() if warmup_response else ""
 
-            # Check cancellation before opening clean chat
+            # Check cancellation
             if self._cancel_warmup.is_set():
-                logger.debug("Warmup cancelled after response, before clean chat")
+                logger.debug("Warmup cancelled after response")
                 self._warmup_chat_ready = False
+                self._warmup_baseline_text = ""
                 return False
-
-            # Start a fresh chat to clear warmup response from DOM.
-            # The Copilot backend session stays warm (same browser session),
-            # so the next translation can send its prompt directly without
-            # the DOM containing stale warmup response elements.
-            self.start_new_chat(click_only=True)
-            self._send_to_background_impl(self._page)
 
             self._warmup_chat_ready = True
             elapsed = time.monotonic() - warmup_start
-            logger.info("[TIMING] Copilot warmup completed: %.2fs (clean chat ready for reuse)", elapsed)
+            logger.info(
+                "[TIMING] Copilot warmup completed: %.2fs (same chat ready for reuse, baseline=%d chars)",
+                elapsed, len(self._warmup_baseline_text),
+            )
             return True
 
         except Exception as e:
@@ -7981,9 +7983,12 @@ class CopilotHandler:
                 raise TranslationCancelledError("Translation cancelled by user")
 
             # Phase C: Reuse warmed-up chat on first attempt if available
+            response_baseline = ""
             if attempt == 0 and self._warmup_chat_ready:
                 logger.info("Reusing warmed-up chat session for batch translation (skipping start_new_chat)")
+                response_baseline = self._warmup_baseline_text
                 self._warmup_chat_ready = False
+                self._warmup_baseline_text = ""
                 if self._warmup_in_progress:
                     self._cancel_warmup.set()
             else:
@@ -8049,8 +8054,11 @@ class CopilotHandler:
             # Get response
             result = self._get_response(
                 timeout=timeout,
-                stop_button_seen_during_send=stop_button_seen
+                stop_button_seen_during_send=stop_button_seen,
+                baseline_text=response_baseline,
             )
+            # Clear baseline after first use (only first attempt in warmed chat)
+            response_baseline = ""
 
             # Check for error conditions: Copilot error response patterns OR empty response
             analysis = _analyze_copilot_response(result)
@@ -8258,9 +8266,12 @@ class CopilotHandler:
                 raise TranslationCancelledError("Translation cancelled by user")
 
             # Phase C: Reuse warmed-up chat if available, otherwise start new chat
+            response_baseline = ""
             if self._warmup_chat_ready:
                 logger.info("Reusing warmed-up chat session (skipping start_new_chat)")
+                response_baseline = self._warmup_baseline_text
                 self._warmup_chat_ready = False
+                self._warmup_baseline_text = ""
                 # Cancel warmup tracking state without resetting chat_ready (already False)
                 if self._warmup_in_progress:
                     self._cancel_warmup.set()
@@ -8333,7 +8344,8 @@ class CopilotHandler:
             result = self._get_response(
                 timeout=response_timeout,
                 on_chunk=on_chunk,
-                stop_button_seen_during_send=stop_button_seen
+                stop_button_seen_during_send=stop_button_seen,
+                baseline_text=response_baseline,
             )
             logger.info("[TIMING] _get_response: %.2fs", time.monotonic() - response_start)
 
@@ -10053,6 +10065,7 @@ class CopilotHandler:
         timeout: int = 120,
         on_chunk: "Callable[[str], None] | None" = None,
         stop_button_seen_during_send: bool = False,
+        baseline_text: str = "",
     ) -> str:
         """Get response from Copilot (sync)
 
@@ -10067,6 +10080,9 @@ class CopilotHandler:
             stop_button_seen_during_send: Whether stop button was detected during send verification.
                 If True, we won't warn about missing stop button during polling (it may have
                 disappeared quickly for short translations).
+            baseline_text: Text already in the DOM to ignore (e.g. warmup response).
+                When set, this text is used as the initial last_text so it won't
+                trigger on_chunk or be treated as new content.
         """
         error_types = _get_playwright_errors()
         PlaywrightError = error_types['Error']
@@ -10082,7 +10098,7 @@ class CopilotHandler:
             # during the initial waiting period (stop button appears before response element)
             polling_start_time = time.monotonic()
             timeout_float = float(timeout)
-            last_text = ""
+            last_text = baseline_text
             last_text_change_time = response_start_time
             stable_count = 0
             has_content = False  # Track if we've seen any content

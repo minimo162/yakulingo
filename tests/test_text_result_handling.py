@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from yakulingo.config.settings import AppSettings
-from yakulingo.models.types import TextTranslationResult
+from yakulingo.models.types import TextTranslationResult, TranslationOption
 from yakulingo.services.translation_service import TranslationService
 from yakulingo.ui.app import YakuLingoApp
 from yakulingo.ui.state import AppState, TextViewState
@@ -49,6 +49,49 @@ def test_apply_text_translation_result_fills_generic_error_when_result_is_empty(
     assert result.error_message == "翻訳結果が取得できませんでした"
     assert app.state.text_result is result
     assert app.state.text_view_state == TextViewState.RESULT
+
+
+def test_apply_text_translation_result_stores_multi_style_success() -> None:
+    history_calls: list[tuple[TextTranslationResult, str]] = []
+    app = YakuLingoApp.__new__(YakuLingoApp)
+    app.state = AppState(source_text="これはテストです")
+    app._add_to_history = lambda result, source: history_calls.append((result, source))
+
+    result = TextTranslationResult(
+        source_text="これはテストです",
+        source_char_count=8,
+        output_language="en",
+        options=[
+            TranslationOption(text="This is a test.", explanation="- 標準", style="standard"),
+            TranslationOption(text="Test.", explanation="- 簡潔", style="concise"),
+            TranslationOption(text="Test", explanation="- 最簡潔", style="minimal"),
+        ],
+    )
+
+    error_message = app._apply_text_translation_result(result, "これはテストです")
+
+    assert error_message == ""
+    assert app.state.text_result is result
+    assert app.state.text_view_state == TextViewState.RESULT
+    assert app.state.source_text == ""
+    assert history_calls == [(result, "これはテストです")]
+
+
+def test_apply_text_translation_result_marks_split_translation_metadata() -> None:
+    app = YakuLingoApp.__new__(YakuLingoApp)
+    app.state = AppState(source_text="long text")
+    app._add_to_history = lambda *_args, **_kwargs: None
+
+    result = TextTranslationResult(
+        source_text="long text",
+        source_char_count=9,
+        output_language="jp",
+        options=[TranslationOption(text="長い文章", explanation="- 単一結果")],
+    )
+
+    app._apply_text_translation_result(result, "long text", split_translation=True)
+
+    assert result.metadata == {"split_translation": True}
 
 
 def test_parse_style_comparison_result_accepts_markdown_wrapped_headers() -> None:

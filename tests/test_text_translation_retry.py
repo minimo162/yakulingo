@@ -5,6 +5,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from yakulingo.config.settings import AppSettings
+from yakulingo.services.copilot_handler import TranslationCancelledError
 from yakulingo.services.translation_service import TranslationService
 
 
@@ -46,6 +47,17 @@ class SequencedCopilotHandler:
         if on_chunk is not None:
             on_chunk(response)
         return response
+
+
+class CancelledCopilotHandler(SequencedCopilotHandler):
+    def translate_single(
+        self,
+        text: str,
+        prompt: str,
+        reference_files: list[Path] | None = None,
+        on_chunk: Callable[[str], None] | None = None,
+    ) -> str:
+        raise TranslationCancelledError("cancelled")
 
 
 def test_translate_text_with_style_comparison_retries_when_standard_is_japanese() -> None:
@@ -150,3 +162,29 @@ Explanation:
     assert result.options[0].style == "standard"
     assert not _RE_JP_CHARS.search(result.options[0].text)
 
+
+def test_translate_text_with_options_returns_error_message_on_empty_response() -> None:
+    copilot = SequencedCopilotHandler(["   "])
+    service = TranslationService(copilot=copilot, config=AppSettings())
+
+    result = service.translate_text_with_options(
+        "This is a test.",
+        pre_detected_language="英語",
+    )
+
+    assert result.options == []
+    assert result.output_language == "jp"
+    assert result.error_message == "Copilotから応答がありませんでした。Edgeブラウザを確認してください。"
+
+
+def test_translate_text_with_style_comparison_returns_cancel_message() -> None:
+    copilot = CancelledCopilotHandler(["unused"])
+    service = TranslationService(copilot=copilot, config=AppSettings())
+
+    result = service.translate_text_with_style_comparison(
+        "これはテストです。",
+        pre_detected_language="日本語",
+    )
+
+    assert result.options == []
+    assert result.error_message == "翻訳がキャンセルされました"

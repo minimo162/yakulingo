@@ -24,12 +24,21 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_TEXT_STYLE = "concise"
 TEXT_STYLE_ORDER: tuple[str, str, str] = ('standard', 'concise', 'minimal')
+_STYLE_LABEL_TO_KEY = {
+    'standard': 'standard',
+    'concise': 'concise',
+    'minimal': 'minimal',
+    '標準': 'standard',
+    '簡潔': 'concise',
+    '最簡潔': 'minimal',
+}
+_STYLE_LABEL_PATTERN = '|'.join(re.escape(label) for label in _STYLE_LABEL_TO_KEY)
 
 # Pre-compiled regex patterns for performance
 # Support both half-width (:) and full-width (：) colons, and markdown bold (**訳文:**)
 _RE_MULTI_OPTION = re.compile(r'\[(\d+)\]\s*\**訳文\**[:：]\s*(.+?)\s*\**解説\**[:：]\s*(.+?)(?=\[\d+\]|$)', re.DOTALL)
 _RE_STYLE_SECTION = re.compile(
-    r'^\s*(?:[#>*-]+\s*)?(?:\*\*)?\[\s*(standard|concise|minimal)\s*\](?:\*\*)?\s*:?\s*$',
+    rf'^\s*(?:[#>*-]+\s*)?(?:\*\*)?(?:\[\s*)?({_STYLE_LABEL_PATTERN})(?:\s*\])?(?:\*\*)?\s*:?\s*$',
     re.IGNORECASE | re.MULTILINE,
 )
 
@@ -90,6 +99,12 @@ _RE_TRAILING_ATTACHMENT_LABEL = re.compile(
     re.IGNORECASE,
 )
 _RE_ITEM_ID_MARKER = re.compile(r'^\s*\[\[ID:\d+\]\]\s*')
+_RE_TRANSLATION_HEADING_LINE = re.compile(
+    r'(?im)^\s*(?:[#>*-]+\s*)?(?:\*\*)?(?:\[\s*)?(?:訳文|翻訳|Translation|Translated)(?:\s*\])?(?:\*\*)?\s*[:：]?\s*$'
+)
+_RE_EXPLANATION_HEADING_LINE = re.compile(
+    r'(?im)^\s*(?:[#>*-]+\s*)?(?:\*\*)?(?:\[\s*)?(?:解説|説明|Explanation|Notes?|Commentary)(?:\s*\])?(?:\*\*)?\s*[:：]?\s*$'
+)
 
 _RE_JP_KANA = re.compile(r'[\u3040-\u309F\u30A0-\u30FF\uFF65-\uFF9F]')
 _RE_CJK_IDEOGRAPH = re.compile(r'[\u3400-\u4DBF\u4E00-\u9FFF]')
@@ -169,6 +184,35 @@ def _strip_trailing_attachment_links(text: str) -> str:
         cleaned = updated.strip()
     cleaned = _RE_TRAILING_ATTACHMENT_LABEL.sub('', cleaned).strip()
     return cleaned
+
+
+def _normalize_style_label(raw_label: str) -> Optional[str]:
+    """Map style labels from Copilot output to internal style keys."""
+    if not raw_label:
+        return None
+    return _STYLE_LABEL_TO_KEY.get(raw_label.strip().lower(), _STYLE_LABEL_TO_KEY.get(raw_label.strip()))
+
+
+def _extract_labeled_translation_parts(raw_result: str) -> tuple[str, str]:
+    """Extract translation/explanation blocks when labels appear on standalone lines."""
+    translation_matches = list(_RE_TRANSLATION_HEADING_LINE.finditer(raw_result))
+    explanation_matches = list(_RE_EXPLANATION_HEADING_LINE.finditer(raw_result))
+    if not translation_matches:
+        return "", ""
+
+    text = ""
+    explanation = ""
+
+    translation_match = translation_matches[0]
+    translation_start = translation_match.end()
+    explanation_match = next((m for m in explanation_matches if m.start() >= translation_start), None)
+    translation_end = explanation_match.start() if explanation_match else len(raw_result)
+    text = raw_result[translation_start:translation_end].strip()
+
+    if explanation_match:
+        explanation = raw_result[explanation_match.end():].strip()
+
+    return text, explanation
 
 
 # =============================================================================
@@ -2413,23 +2457,40 @@ class TranslationService:
         options: list[TranslationOption] = []
         matches = list(_RE_STYLE_SECTION.finditer(raw_result))
         if not matches:
+            logger.debug(
+                "Style comparison parser found no section headers. Preview=%r",
+                raw_result[:200] if raw_result else "",
+            )
             return options
 
+        logger.debug("Style comparison parser found %d section header(s)", len(matches))
+
         for index, match in enumerate(matches):
-            style = match.group(1).lower()
+            style = _normalize_style_label(match.group(1))
+            if not style:
+                logger.debug("Skipping unknown style label: %r", match.group(1))
+                continue
             start = match.end()
             end = matches[index + 1].start() if index + 1 < len(matches) else len(raw_result)
             section = raw_result[start:end].strip()
             if not section:
+                logger.debug("Style section %s was empty", style)
                 continue
 
             parsed = self._parse_single_translation_result(section)
             if not parsed:
+                logger.debug(
+                    "Style section %s failed to parse. Preview=%r",
+                    style,
+                    section[:200],
+                )
                 continue
 
             option = parsed[0]
             option.style = style
             options.append(option)
+
+        logger.debug("Style comparison parser produced %d option(s)", len(options))
 
         return options
 
@@ -2459,6 +2520,17 @@ class TranslationService:
 
         if explanation_match:
             explanation = explanation_match.group(1).strip()
+
+        if not text:
+            labeled_text, labeled_explanation = _extract_labeled_translation_parts(raw_result)
+            if labeled_text:
+                text = labeled_text
+                explanation = labeled_explanation or explanation
+                logger.debug(
+                    "Standalone heading parser extracted text/explanation (text_len=%d, explanation_len=%d)",
+                    len(text),
+                    len(explanation),
+                )
 
         # Fallback: split by explanation markers if regex didn't capture explanation
         # Supports Japanese (解説, 説明) and English (Explanation, Notes)

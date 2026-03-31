@@ -78,3 +78,48 @@ Explanation:
     assert options[0].text == "Meanwhile, the starting salary is 220k yen."
     assert options[1].text == "Starting salary: 220k yen."
     assert options[2].text == "220k-yen starting salary"
+
+
+def test_parse_style_comparison_result_accepts_unbracketed_and_japanese_headers() -> None:
+    service = TranslationService(copilot=DummyCopilotHandler(), config=AppSettings())
+    raw_result = """### Standard
+Translation:
+Revenue rose 12% year over year.
+Explanation:
+- 標準
+
+## 簡潔
+Translation:
+Revenue up 12% YoY.
+Explanation:
+- 簡潔
+
+### 最簡潔
+Translation:
+Revenue +12% YoY
+Explanation:
+- 最簡潔
+"""
+
+    options = service._parse_style_comparison_result(raw_result)
+
+    assert [option.style for option in options] == ["standard", "concise", "minimal"]
+    assert options[0].text == "Revenue rose 12% year over year."
+    assert options[1].text == "Revenue up 12% YoY."
+    assert options[2].text == "Revenue +12% YoY"
+
+
+def test_parse_single_translation_result_accepts_heading_only_labels() -> None:
+    service = TranslationService(copilot=DummyCopilotHandler(), config=AppSettings())
+    raw_result = """### Translation
+Revenue rose 12% year over year.
+
+### Explanation
+- 売上高の前年比増加として自然な表現です。
+"""
+
+    options = service._parse_single_translation_result(raw_result)
+
+    assert len(options) == 1
+    assert options[0].text == "Revenue rose 12% year over year."
+    assert options[0].explanation == "- 売上高の前年比増加として自然な表現です。"

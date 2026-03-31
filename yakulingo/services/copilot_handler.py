@@ -3330,9 +3330,22 @@ class CopilotHandler:
             # Wait for response (discard it)
             self._get_response(timeout=self.WARMUP_RESPONSE_TIMEOUT)
 
+            # Check cancellation before opening clean chat
+            if self._cancel_warmup.is_set():
+                logger.debug("Warmup cancelled after response, before clean chat")
+                self._warmup_chat_ready = False
+                return False
+
+            # Start a fresh chat to clear warmup response from DOM.
+            # The Copilot backend session stays warm (same browser session),
+            # so the next translation can send its prompt directly without
+            # the DOM containing stale warmup response elements.
+            self.start_new_chat(click_only=True)
+            self._send_to_background_impl(self._page)
+
             self._warmup_chat_ready = True
             elapsed = time.monotonic() - warmup_start
-            logger.info("[TIMING] Copilot warmup completed: %.2fs (chat ready for reuse)", elapsed)
+            logger.info("[TIMING] Copilot warmup completed: %.2fs (clean chat ready for reuse)", elapsed)
             return True
 
         except Exception as e:

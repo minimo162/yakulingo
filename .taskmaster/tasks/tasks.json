@@ -538,12 +538,46 @@
           "status": "done"
         }
       ]
+    },
+    {
+      "id": 28,
+      "title": "ウォームアップ応答のUI漏れ修正",
+      "description": "Phase Cでウォームアップ済みチャットを再利用する際、ウォームアップ応答がDOMに残っているため、翻訳の_get_response()がそれを拾ってUIにストリーミング表示してしまう。ウォームアップ完了後に新チャットを開いてDOMをクリーンにし、翻訳はそのクリーンなチャットに直接送信する。",
+      "status": "done",
+      "priority": "critical",
+      "dependencies": [27],
+      "subtasks": [
+        {
+          "id": 1,
+          "title": "_warmup_impl()の応答取得後にstart_new_chat(click_only=True)を追加",
+          "description": "warmup応答をDOMからクリア。_warmup_chat_readyはこの新チャット開始後にTrueにセット。Copilotバックエンドは同一セッション内なので温まったまま。",
+          "status": "done"
+        },
+        {
+          "id": 2,
+          "title": "_warmup_chat_readyの意味を「DOMクリーン＆即送信可能」に再定義",
+          "description": "フラグがTrueの時、DOMにはウォームアップ応答が存在せず、翻訳プロンプトを直接送信できる状態であることを保証する。",
+          "status": "done"
+        },
+        {
+          "id": 3,
+          "title": "翻訳時の_get_response()がウォームアップ応答を拾わないことを確認",
+          "description": "新チャット後のDOMには応答要素がないため、_get_latest_streaming_text()は翻訳応答のみを返す。",
+          "status": "done"
+        },
+        {
+          "id": 4,
+          "title": "on_chunkコールバックにウォームアップ応答が流れないことを確認",
+          "description": "UIストリーミングプレビューに翻訳結果のみが表示されることを検証。",
+          "status": "done"
+        }
+      ]
     }
   ],
   "metadata": {
     "projectName": "YakuLingo M365 Copilot Translation Fix",
-    "totalTasks": 27,
+    "totalTasks": 28,
     "createdAt": "2026-03-31",
-    "version": "1.9"
+    "version": "2.1"
   }
 }

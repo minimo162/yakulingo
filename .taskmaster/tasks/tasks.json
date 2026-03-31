@@ -582,33 +582,67 @@
     {
       "id": 29,
       "title": "baseline_textプレフィックス除去によるストリーミング漏れ・パース失敗修正",
-      "description": "baseline_text方式はlast_textの初期値設定のみで、翻訳テキスト追加後のDOM全テキスト（warmup+translation）がon_chunkに流れる問題と、_get_response()の返却値にウォームアップ応答が含まれパーサーが失敗する問題がある。_get_response()内でbaseline_textプレフィックスをcurrent_textおよび最終返却値から除去する。",
-      "status": "pending",
+      "description": "_get_response()内に_strip_baseline()ヘルパーを追加し、DOMテキストからウォームアップ応答プレフィックスを除去。パース失敗は解消したがストリーミング中の一瞬表示は残存（Issue 9で対応）。",
+      "status": "done",
       "priority": "critical",
       "dependencies": [28],
       "subtasks": [
         {
           "id": 1,
-          "title": "_get_response()のポーリングループでbaseline_textプレフィックス除去",
-          "description": "current_textがbaseline_textで始まる場合、プレフィックスを除去してからon_chunkに渡す。last_textの比較も除去後のテキストで行う。",
+          "title": "_strip_baseline()ヘルパー関数を_get_response()内に追加",
+          "description": "startswithマッチ、空白対応、CoTプレフィックス対応(text.find)の3段階で除去。",
+          "status": "done"
+        },
+        {
+          "id": 2,
+          "title": "全テキスト取得箇所に_strip_baseline()を適用",
+          "description": "ストリーミング、stale check、early termination、メインポーリングの4箇所。last_textを空文字で初期化。",
+          "status": "done"
+        },
+        {
+          "id": 3,
+          "title": "実環境検証",
+          "description": "パース失敗は解消。ただしウォームアップ応答が一瞬ストリーミングプレビューに表示される問題が残存。テキストマッチの限界。",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "title": "ウォームアップ応答の一瞬表示修正 + UI/UX改善",
+      "description": "Task 29の_strip_baseline()はテキスト完全一致に依存するため、CopilotのDOM再レンダリングやCoTテキスト付加で一致が崩れウォームアップ応答が一瞬表示される。二重防御として: (A) _strip_baselineの堅牢化、(B) on_chunkの初期呼び出しガード、(C) スケルトンUIによる視覚的隠蔽。",
+      "status": "pending",
+      "priority": "critical",
+      "dependencies": [29],
+      "subtasks": [
+        {
+          "id": 1,
+          "title": "_strip_baselineを部分一致方式に堅牢化",
+          "description": "baseline_textの先頭20文字を含むかで判定し、マッチ位置+baseline_text長以降を返す。完全一致不要にする。",
           "status": "pending"
         },
         {
           "id": 2,
-          "title": "_get_response()の最終返却値からbaseline_textプレフィックスを除去",
-          "description": "返却値にウォームアップ応答が含まれないようにし、パーサーがクリーンな翻訳結果を受け取れるようにする。",
+          "title": "on_chunkの初期呼び出しガード追加",
+          "description": "baseline_text設定時、_get_response()内でon_chunkを呼ぶ前にbaseline_textとの類似度チェックを追加。baseline_textのみ or baseline_text+少量のテキストの場合はon_chunkをスキップ。",
           "status": "pending"
         },
         {
           "id": 3,
-          "title": "安定性テキストの比較ロジックもプレフィックス除去後で処理",
-          "description": "stable_count判定やhas_content判定もウォームアップ応答を含まないテキストで行う。",
+          "title": "ストリーミングプレビューにスケルトンUI/翻訳中インジケータを追加",
+          "description": "warmup済みチャットからの翻訳時、最初の有意なテキストが到着するまで「翻訳中...」スケルトンアニメーションを表示。text_panel.pyのstreaming-preview部分にCSS+ロジック追加。on_streaming_preview_label_createdで初期スケルトン表示。",
           "status": "pending"
         },
         {
           "id": 4,
-          "title": "実環境検証：翻訳結果の正常表示とストリーミング確認",
-          "description": "on_chunkにウォームアップ応答が流れないこと、パーサーがstyle comparison結果を正しく解析できること、UIに翻訳結果が表示されることを確認。",
+          "title": "translate_single/sync系メソッドからon_chunkにbaseline_text情報を伝達",
+          "description": "on_chunkコールバック側でガード判定するため、baseline_textの存在をフラグとして伝える仕組み。_get_response内のクロージャで実現可能。",
+          "status": "pending"
+        },
+        {
+          "id": 5,
+          "title": "実環境検証：一瞬表示が解消されていることを確認",
+          "description": "ウォームアップ応答がストリーミングプレビューに一切表示されないこと、スケルトンUIから翻訳テキストへスムーズに遷移することを確認。",
           "status": "pending"
         }
       ]
@@ -616,8 +650,8 @@
   ],
   "metadata": {
     "projectName": "YakuLingo M365 Copilot Translation Fix",
-    "totalTasks": 29,
+    "totalTasks": 30,
     "createdAt": "2026-03-31",
-    "version": "2.2"
+    "version": "2.3"
   }
 }

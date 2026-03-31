@@ -10085,7 +10085,14 @@ class CopilotHandler:
                 trigger on_chunk or be treated as new content.
         """
         def _strip_baseline(text: str) -> str:
-            """Remove baseline_text prefix from DOM-extracted text."""
+            """Remove baseline_text from DOM-extracted text.
+
+            Handles three cases:
+            1. text starts with baseline_text (normal response polling)
+            2. text starts with whitespace + baseline_text
+            3. baseline_text appears after a CoT (Chain-of-Thought) prefix
+               e.g. "CoT text\\n\\nbaseline_text\\n\\ntranslation"
+            """
             if not baseline_text or not text:
                 return text
             if text.startswith(baseline_text):
@@ -10095,6 +10102,10 @@ class CopilotHandler:
             baseline_stripped = baseline_text.lstrip()
             if baseline_stripped and stripped.startswith(baseline_stripped):
                 return stripped[len(baseline_stripped):].lstrip("\n")
+            # Handle CoT prefix: baseline_text appears mid-text
+            idx = text.find(baseline_text)
+            if idx > 0:
+                return text[idx + len(baseline_text):].lstrip("\n")
             return text
 
         error_types = _get_playwright_errors()

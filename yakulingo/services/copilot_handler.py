@@ -1078,8 +1078,8 @@ class CopilotHandler:
 
     # Configuration constants
     DEFAULT_CDP_PORT = 9333  # Dedicated port for translator
-    EDGE_STARTUP_MAX_ATTEMPTS = 150  # Maximum iterations to wait for Edge startup
-    EDGE_STARTUP_CHECK_INTERVAL = 0.1  # Seconds between startup checks (total: 15 seconds)
+    EDGE_STARTUP_MAX_ATTEMPTS = 50  # Maximum iterations to wait for Edge startup
+    EDGE_STARTUP_CHECK_INTERVAL = 0.1  # Seconds between startup checks (total: 5 seconds)
     # Edge taskbar suppression during startup can fail on cold boots where the window
     # is created late or Edge recreates the top-level window after initialization.
     # Keep re-applying for a while to ensure the taskbar entry stays hidden.
@@ -1194,6 +1194,9 @@ class CopilotHandler:
         '.fai-SendButton [data-testid="stop-button"]',
     )
     STOP_BUTTON_SELECTOR_COMBINED = ", ".join(STOP_BUTTON_SELECTORS)
+    SEND_POST_VERIFY_STABILIZE_SEC = 0.15
+    LATE_VERIFY_MAX_SEC = 1.0
+    LATE_VERIFY_INTERVAL_SEC = 0.05
 
     # New chat button selectors
     NEW_CHAT_BUTTON_SELECTOR = (
@@ -6441,11 +6444,12 @@ class CopilotHandler:
             # Copilotドメインにいて、かつ /chat パスにいる場合 → ログイン完了
             # URL例: https://m365.cloud.microsoft/chat/?auth=2
             if "/chat" in current_url and _is_copilot_url(current_url):
+                # URL alone can be true during redirect; require the chat input to be present.
                 if chat_input_present:
                     logger.info("On Copilot chat page - ready (chat input detected)")
-                else:
-                    logger.info("On Copilot chat page - ready (chat input pending render)")
-                return self._record_state(ConnectionState.READY)
+                    return self._record_state(ConnectionState.READY)
+                logger.info("On Copilot /chat but UI not ready yet - loading")
+                return self._record_state(ConnectionState.LOADING)
 
             # 現在のページが /chat でない場合、他のページも確認
             # ログイン後に別タブでCopilotが開かれることがある
@@ -9262,7 +9266,7 @@ class CopilotHandler:
                         send_success = True
                         # Wait for Copilot's internal state to stabilize before proceeding
                         # This prevents "応答を処理中です" message from DOM operations during response generation
-                        time.sleep(0.3)
+                        time.sleep(self.SEND_POST_VERIFY_STABILIZE_SEC)
                         break
                     else:
                         # Debug: Dump page state for troubleshooting
@@ -9291,10 +9295,7 @@ class CopilotHandler:
                             late_verify_start = time.monotonic()
                             late_verified = False
                             late_reason = ""
-                            LATE_VERIFY_MAX = 1.5
-                            LATE_VERIFY_INTERVAL = 0.05
-
-                            while not late_verified and (time.monotonic() - late_verify_start) < LATE_VERIFY_MAX:
+                            while not late_verified and (time.monotonic() - late_verify_start) < self.LATE_VERIFY_MAX_SEC:
                                 try:
                                     current_input = self._page.query_selector(input_selector)
                                     remaining_text = current_input.inner_text().strip() if current_input else ""
@@ -9322,14 +9323,14 @@ class CopilotHandler:
                                 except Exception:
                                     pass
 
-                                time.sleep(LATE_VERIFY_INTERVAL)
+                                time.sleep(self.LATE_VERIFY_INTERVAL_SEC)
 
                             if late_verified:
                                 elapsed = time.monotonic() - late_verify_start
                                 logger.info("[SEND] Message sent (attempt %d, %s, verified in %.2fs)",
                                             send_attempt + 1, late_reason, elapsed)
                                 send_success = True
-                                time.sleep(0.3)
+                                time.sleep(self.SEND_POST_VERIFY_STABILIZE_SEC)
                                 break
 
                         if send_attempt < MAX_SEND_RETRIES - 1:

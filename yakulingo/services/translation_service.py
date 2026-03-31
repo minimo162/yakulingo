@@ -111,6 +111,16 @@ _RE_CJK_IDEOGRAPH = re.compile(r'[\u3400-\u4DBF\u4E00-\u9FFF]')
 _RE_LATIN_ALPHA = re.compile(r'[A-Za-z]')
 _RE_HANGUL = re.compile(r'[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]')
 
+SHORT_TEXT_COMPARE_CHAR_THRESHOLD = 50
+SHORT_TEXT_COMPARE_EXTRA_INSTRUCTION = (
+    "SHORT INPUT MODE: Keep each Explanation to one short Japanese bullet or '-' only. "
+    "Do not repeat the English translation in the explanation."
+)
+STYLE_COMPARISON_RETRY_INSTRUCTION = (
+    "CRITICAL: Rewrite [standard] and [concise] Translation sections in English only "
+    "(no Japanese scripts or Japanese punctuation). Keep the exact output format."
+)
+
 
 def _looks_untranslated_to_en(text: str) -> bool:
     """Return True when the 'English' translation looks mostly Japanese."""
@@ -138,6 +148,38 @@ def _looks_untranslated_to_en(text: str) -> bool:
     if jp_total >= 50 and jp_ratio >= 0.15:
         return True
     return False
+
+
+def _should_use_short_text_compare_prompt(text: str) -> bool:
+    """Return True when a short input should use the lightweight compare path."""
+    condensed_text = re.sub(r'\s+', '', text)
+    return bool(condensed_text) and len(condensed_text) <= SHORT_TEXT_COMPARE_CHAR_THRESHOLD
+
+
+def _should_retry_style_comparison_result(options: list["TranslationOption"]) -> bool:
+    """Retry only when high-value styles still look untranslated."""
+    untranslated_styles = {
+        option.style
+        for option in options
+        if option.style and _looks_untranslated_to_en(option.text)
+    }
+    if not untranslated_styles:
+        return False
+    if "standard" in untranslated_styles or "concise" in untranslated_styles:
+        return True
+    return len(untranslated_styles) >= 2
+
+
+def _looks_like_labeled_translation_response(raw_result: str) -> bool:
+    """Return True when the response resembles a translation/explanation block."""
+    if not raw_result:
+        return False
+    return bool(
+        _RE_TRANSLATION_TEXT.search(raw_result)
+        or _RE_EXPLANATION.search(raw_result)
+        or _RE_TRANSLATION_HEADING_LINE.search(raw_result)
+        or _RE_EXPLANATION_HEADING_LINE.search(raw_result)
+    )
 
 
 def _insert_extra_instruction(prompt: str, extra_instruction: str) -> str:
@@ -603,6 +645,7 @@ from yakulingo.services.copilot_handler import CopilotHandler, TranslationCancel
 from yakulingo.services.prompt_builder import (
     PromptBuilder,
     REFERENCE_INSTRUCTION,
+    DEFAULT_TEXT_TO_EN_COMPARE_TEMPLATE,
     DEFAULT_TEXT_TO_JP_TEMPLATE,
 )
 from yakulingo.processors.base import FileProcessor
@@ -2014,11 +2057,14 @@ class TranslationService:
 
         combined_error: Optional[str] = None
         wants_combined = set(style_list) == set(TEXT_STYLE_ORDER) and len(style_list) > 1
+        compare_attempted = False
+        allow_style_fallback = not wants_combined
 
         if wants_combined:
             template = self.prompt_builder.get_text_compare_template()
             if template:
                 try:
+                    compare_attempted = True
                     self._cancel_event.clear()
 
                     if reference_files:
@@ -2030,11 +2076,21 @@ class TranslationService:
 
                     self.prompt_builder.reload_translation_rules()
                     translation_rules = self.prompt_builder.get_translation_rules(output_language)
+                    use_short_prompt = _should_use_short_text_compare_prompt(text)
+                    template_matches_default = template.strip() == DEFAULT_TEXT_TO_EN_COMPARE_TEMPLATE.strip()
+                    if use_short_prompt:
+                        logger.debug(
+                            "Using lightweight style comparison prompt for short text (default_template=%s, chars=%d)",
+                            template_matches_default,
+                            len(re.sub(r'\s+', '', text)),
+                        )
 
                     def build_compare_prompt(extra_instruction: Optional[str] = None) -> str:
                         prompt = template.replace("{translation_rules}", translation_rules)
                         prompt = prompt.replace("{reference_section}", reference_section)
                         prompt = prompt.replace("{input_text}", text)
+                        if use_short_prompt:
+                            prompt = _insert_extra_instruction(prompt, SHORT_TEXT_COMPARE_EXTRA_INSTRUCTION)
                         if extra_instruction:
                             prompt = _insert_extra_instruction(prompt, extra_instruction)
                         return prompt
@@ -2046,12 +2102,12 @@ class TranslationService:
                         len(files_to_attach) if files_to_attach else 0,
                     )
                     raw_result = self._translate_single_with_cancel(text, prompt, files_to_attach, on_chunk)
+                    if not raw_result or not raw_result.strip():
+                        combined_error = "Copilotから応答がありませんでした。Edgeブラウザを確認してください。"
+                        raw_result = ""
                     parsed_options = self._parse_style_comparison_result(raw_result)
-                    if parsed_options and any(_looks_untranslated_to_en(option.text) for option in parsed_options):
-                        retry_prompt = build_compare_prompt(
-                            "CRITICAL: Rewrite all Translation sections in English only (no Japanese scripts or Japanese punctuation). "
-                            "Keep Explanation in Japanese and keep the exact output format."
-                        )
+                    if parsed_options and _should_retry_style_comparison_result(parsed_options):
+                        retry_prompt = build_compare_prompt(STYLE_COMPARISON_RETRY_INSTRUCTION)
                         retry_raw_result = self._translate_single_with_cancel(text, retry_prompt, files_to_attach, None)
                         retry_parsed_options = self._parse_style_comparison_result(retry_raw_result)
                         if retry_parsed_options:
@@ -2059,14 +2115,15 @@ class TranslationService:
                             raw_result = retry_raw_result
 
                     if not parsed_options:
-                        parsed_single = self._parse_single_translation_result(raw_result)
+                        parsed_single = (
+                            self._parse_single_translation_result(raw_result)
+                            if _looks_like_labeled_translation_response(raw_result)
+                            else []
+                        )
                         if parsed_single:
                             option = parsed_single[0]
                             if _looks_untranslated_to_en(option.text):
-                                retry_prompt = build_compare_prompt(
-                                    "CRITICAL: Rewrite all Translation sections in English only (no Japanese scripts or Japanese punctuation). "
-                                    "Keep Explanation in Japanese and keep the exact output format."
-                                )
+                                retry_prompt = build_compare_prompt(STYLE_COMPARISON_RETRY_INSTRUCTION)
                                 retry_raw_result = self._translate_single_with_cancel(text, retry_prompt, files_to_attach, None)
                                 retry_parsed_options = self._parse_style_comparison_result(retry_raw_result)
                                 if retry_parsed_options:
@@ -2139,6 +2196,17 @@ class TranslationService:
                     combined_error = str(e)
             else:
                 combined_error = "Missing style comparison template"
+                allow_style_fallback = True
+
+        if wants_combined and compare_attempted and combined_error and not allow_style_fallback:
+            logger.warning("Style comparison failed without per-style fallback: %s", combined_error)
+            return TextTranslationResult(
+                source_text=text,
+                source_char_count=len(text),
+                output_language=output_language,
+                detected_language=detected_language,
+                error_message=combined_error,
+            )
 
         options: list[TranslationOption] = []
         last_error: Optional[str] = combined_error
@@ -2491,6 +2559,40 @@ class TranslationService:
             options.append(option)
 
         logger.debug("Style comparison parser produced %d option(s)", len(options))
+
+        return options
+
+    def parse_streaming_style_comparison_result(self, raw_result: str) -> list[TranslationOption]:
+        """Parse completed style sections from a partial streaming response."""
+        options: list[TranslationOption] = []
+        raw_result = _strip_input_markers(raw_result)
+        matches = list(_RE_STYLE_SECTION.finditer(raw_result))
+        if not matches:
+            return options
+
+        for index, match in enumerate(matches):
+            style = _normalize_style_label(match.group(1))
+            if not style:
+                continue
+
+            next_match = matches[index + 1] if index + 1 < len(matches) else None
+            start = match.end()
+            end = next_match.start() if next_match else len(raw_result)
+            section = raw_result[start:end].strip()
+            if not section:
+                continue
+
+            # During streaming, skip the trailing section until an explanation heading appears.
+            if next_match is None and not _RE_EXPLANATION.search(section):
+                continue
+
+            parsed = self._parse_single_translation_result(section)
+            if not parsed:
+                continue
+
+            option = parsed[0]
+            option.style = style
+            options.append(option)
 
         return options
 

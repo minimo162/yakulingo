@@ -240,31 +240,26 @@ DEFAULT_TEXT_TO_EN_TEMPLATE = """## テキスト翻訳リクエスト
 """
 
 DEFAULT_TEXT_TO_EN_COMPARE_TEMPLATE = """## Text Translation Request (Style Comparison)
-Translate the following Japanese text into English in three styles: standard, concise, minimal.
+Translate the Japanese input into English in three styles: standard, concise, minimal.
 
-### Common rules
-- Preserve line breaks, tabs, and paragraph structure.
+### Rules
+- Write each Translation in English only. Do not leave Japanese script or Japanese punctuation in Translation.
+- Write each Explanation in Japanese only, briefly (1 short bullet or 1-2 short sentences).
+- Translate only the text inside the input markers.
 - If the input is already English, keep it as is.
-- Follow the translation rules below.
-- Translate ONLY the text between the input markers.
-- Do NOT translate or paraphrase any other part of this prompt.
-- Do NOT output the marker lines `===INPUT_TEXT===` or `===END_INPUT_TEXT===`.
+- Preserve line breaks and tabs when meaningful.
+- Translate or romanize Japanese-only names, company types, place names, and units.
+- Follow {translation_rules} for units and notation.
 
-### Style rules
+### Styles
 [standard]
 - Natural, business-ready English.
-- Use articles (a/an/the) appropriately.
-- Use common business abbreviations when suitable (YoY, QoQ, CAGR).
 
 [concise]
-- Make it concise; avoid wordiness.
-- Prefer common abbreviations (info, FYI, ASAP, etc.).
-- Simplify phrases (e.g., "in order to" -> "to", "due to the fact that" -> "because").
+- Shorter wording; use common abbreviations when helpful.
 
 [minimal]
-- Minimum words; suitable for headings/subject lines/tables.
-- Articles can be omitted.
-- Maximize abbreviations.
+- Minimum words for headings/tables; articles may be omitted.
 - Allowed symbols: & / vs. % # w/ w/o @ +
 
 ### Output format (exact)
@@ -280,10 +275,8 @@ Explanation:
 Translation:
 Explanation:
 
-- Do not output anything else.
-- Explain in Japanese with the same level of detail as an individual translation. Do not be overly brief.
-- In each Explanation, describe how the source expressions were rendered and any key term mappings.
-- Do not include headings or labels such as "翻訳のポイント:" in the output.
+- In Explanation, mention only the highest-value wording choice, nuance, or difference from [standard].
+- Do not ask follow-up questions or output extra headings/text.
 
 {translation_rules}
 

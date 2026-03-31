@@ -152,6 +152,25 @@ Explanation:
     assert options[2].text == "Revenue +12% YoY"
 
 
+def test_parse_streaming_style_comparison_result_returns_completed_sections_only() -> None:
+    service = TranslationService(copilot=DummyCopilotHandler(), config=AppSettings())
+    raw_result = """[standard]
+Translation:
+Revenue rose 12% year over year.
+Explanation:
+- 標準
+
+[concise]
+Translation:
+Revenue up 12% YoY.
+"""
+
+    options = service.parse_streaming_style_comparison_result(raw_result)
+
+    assert [option.style for option in options] == ["standard"]
+    assert options[0].text == "Revenue rose 12% year over year."
+
+
 def test_parse_single_translation_result_accepts_heading_only_labels() -> None:
     service = TranslationService(copilot=DummyCopilotHandler(), config=AppSettings())
     raw_result = """### Translation

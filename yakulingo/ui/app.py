@@ -3898,10 +3898,17 @@ class YakuLingoApp:
 
             def on_chunk(partial_text: str) -> None:
                 nonlocal last_preview_update
+                partial_result = self._build_streaming_style_preview_result(
+                    text,
+                    partial_text,
+                    detected_language,
+                    effective_detected_language,
+                )
                 buffer.publish(
                     {
                         "state": {
                             "text_streaming_preview": partial_text,
+                            "text_result": partial_result,
                         }
                     }
                 )
@@ -4016,6 +4023,12 @@ class YakuLingoApp:
             def on_chunk(partial_text: str) -> None:
                 nonlocal last_preview_update
                 self.state.text_streaming_preview = partial_text
+                self.state.text_result = self._build_streaming_style_preview_result(
+                    text,
+                    partial_text,
+                    detected_language,
+                    effective_detected_language,
+                )
                 now = time.monotonic()
                 if now - last_preview_update < preview_update_interval_seconds:
                     return
@@ -7994,6 +8007,31 @@ class YakuLingoApp:
         """Store reference to streaming preview label for incremental updates."""
         self._streaming_preview_label = label
 
+    def _build_streaming_style_preview_result(
+        self,
+        source_text: str,
+        partial_text: str,
+        detected_language: Optional[str],
+        effective_detected_language: str,
+    ) -> Optional[TextTranslationResult]:
+        """Build a partial multi-style result from a streaming Copilot response."""
+        if effective_detected_language != "日本語":
+            return None
+        if not self.translation_service:
+            return None
+
+        options = self.translation_service.parse_streaming_style_comparison_result(partial_text)
+        if not options:
+            return None
+
+        return TextTranslationResult(
+            source_text=source_text,
+            source_char_count=len(source_text),
+            options=options,
+            output_language="en",
+            detected_language=detected_language,
+        )
+
     def _on_textarea_created(self, textarea: UiTextarea):
         """Store reference to text input textarea and set initial focus.
 
@@ -10088,6 +10126,12 @@ class YakuLingoApp:
             def on_chunk(partial_text: str) -> None:
                 nonlocal last_preview_update
                 self.state.text_streaming_preview = partial_text
+                self.state.text_result = self._build_streaming_style_preview_result(
+                    source_text,
+                    partial_text,
+                    detected_language,
+                    effective_detected_language,
+                )
                 now = time.monotonic()
                 if now - last_preview_update < preview_update_interval_seconds:
                     return

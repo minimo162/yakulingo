@@ -56,4 +56,7 @@ def test_startup_tuning_constants_are_updated() -> None:
     assert CopilotHandler.CDP_CONNECT_RETRY_MAX_INTERVAL == 1.5
     assert CopilotHandler.CONTEXT_RETRY_COUNT == 5
     assert CopilotHandler.CONTEXT_RETRY_INTERVAL == 0.2
+    assert CopilotHandler.SEND_POST_VERIFY_STABILIZE_SEC == 0.15
+    assert CopilotHandler.LATE_VERIFY_MAX_SEC == 1.0
+    assert CopilotHandler.LATE_VERIFY_INTERVAL_SEC == 0.05
     assert RESIDENT_STARTUP_PROMPT_READY_TIMEOUT_SEC == 60

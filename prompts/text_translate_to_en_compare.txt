@@ -1,32 +1,24 @@
 ﻿## Text Translation Request (Style Comparison)
-Translate the Japanese text into English in three styles: standard, concise, minimal.
+Translate the Japanese input into English in three styles: standard, concise, minimal.
 
 ### Rules
-- IMPORTANT: In each section, the "Translation:" content must be written in English only.
-  - Do NOT include Japanese scripts (hiragana/katakana/kanji) or Japanese punctuation (、。) in any Translation.
-  - If any Japanese appears in a Translation, rewrite it until it contains no Japanese characters.
-- IMPORTANT: The "Explanation:" content must be written in Japanese only.
-- Translate only the text between the input markers; do not output markers or any other prompt text.
+- Write each Translation in English only. Do not leave Japanese script or Japanese punctuation in Translation.
+- Write each Explanation in Japanese only, briefly (1 short bullet or 1-2 short sentences).
+- Translate only the text inside the input markers.
 - If the input is already English, keep it as is.
-- Preserve line breaks and tabs from the input as much as possible.
-- If the source contains Japanese-only tokens (e.g., names, company types, place names), translate or romanize them; do not leave them in Japanese script.
-- For Japanese-specific units/suffixes, render them in English-friendly notation without Japanese characters (e.g., 円→yen, 万円→k yen; follow {translation_rules} for 兆/億→oku, 万→k, 千→k, etc.).
+- Preserve line breaks and tabs when meaningful.
+- Translate or romanize Japanese-only names, company types, place names, and units.
+- Follow {translation_rules} for units and notation.
 
-### Style rules
+### Styles
 [standard]
 - Natural, business-ready English.
-- Use articles (a/an/the) appropriately.
-- Use common business abbreviations when suitable (YoY, QoQ, CAGR).
 
 [concise]
-- Make it concise; avoid wordiness.
-- Prefer common abbreviations (info, FYI, ASAP, etc.).
-- Simplify phrases (e.g., "in order to" -> "to", "due to the fact that" -> "because").
+- Shorter wording; use common abbreviations when helpful.
 
 [minimal]
-- Minimum words; suitable for headings/subject lines/tables.
-- Articles can be omitted.
-- Maximize abbreviations.
+- Minimum words for headings/tables; articles may be omitted.
 - Allowed symbols: & / vs. % # w/ w/o @ +
 
 ### Output format (exact)
@@ -42,15 +34,8 @@ Explanation:
 Translation:
 Explanation:
 
-- Explanations must be in Japanese and prioritize *useful context beyond the translation itself* so the user can tweak the English if needed.
-- Prefer bullet points starting with "- " (max ~3 items). Focus on the most high-value points only.
-  - Abbreviations / acronyms / proper nouns: if you interpret an item like "CAFÉ", briefly explain what it refers to and why you chose that reading (if ambiguous, mention an alternative).
-  - Business / accounting / technical terms: explain key term mappings (e.g., 引当取崩し→"reversal of provisions") and why that wording fits the context.
-  - Nuance & intent: explain where you inferred intent (e.g., 「罰則ゼロ成立」→ penalties were confirmed to be zero) or chose phrasing to reflect the tone.
-  - Alternatives: include at most 1 alternative only when ambiguity is high; otherwise omit.
-  - For [concise]/[minimal], explain only the most meaningful difference from [standard].
-- Avoid low-value reporting like "I followed the prompt rules/glossary" unless it materially affects the wording or resolves a non-obvious conflict.
-- Output only the sections above; no extra headings like "翻訳のポイント:".
+- In Explanation, mention only the highest-value wording choice, nuance, or difference from [standard].
+- Do not ask follow-up questions or output extra headings/text.
 
 {translation_rules}
 
@@ -58,7 +43,7 @@ Explanation:
 
 ---
 
-### INPUT (translate only this block)
+### INPUT
 ===INPUT_TEXT===
 {input_text}
 ===END_INPUT_TEXT===

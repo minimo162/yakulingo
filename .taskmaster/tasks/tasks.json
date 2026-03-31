@@ -71,8 +71,16 @@
       "priority": "medium",
       "dependencies": [],
       "subtasks": [
-        {"id": 1, "title": "#new-chat-buttonを削除、data-automation-idを追加", "status": "done"},
-        {"id": 2, "title": "start_new_chat()での動作確認", "status": "done"}
+        {
+          "id": 1,
+          "title": "#new-chat-buttonを削除、data-automation-idを追加",
+          "status": "done"
+        },
+        {
+          "id": 2,
+          "title": "start_new_chat()での動作確認",
+          "status": "done"
+        }
       ]
     },
     {
@@ -83,10 +91,26 @@
       "priority": "high",
       "dependencies": [],
       "subtasks": [
-        {"id": 1, "title": "check_copilot_state()の/chat判定をURL-onlyに緩和", "status": "done"},
-        {"id": 2, "title": "RESIDENT_STARTUP_READY_TIMEOUT_SECを3600→120に短縮", "status": "done"},
-        {"id": 3, "title": "デバッグログ追加", "status": "done"},
-        {"id": 4, "title": "起動後「準備完了」に遷移することを確認", "status": "done"}
+        {
+          "id": 1,
+          "title": "check_copilot_state()の/chat判定をURL-onlyに緩和",
+          "status": "done"
+        },
+        {
+          "id": 2,
+          "title": "RESIDENT_STARTUP_READY_TIMEOUT_SECを3600→120に短縮",
+          "status": "done"
+        },
+        {
+          "id": 3,
+          "title": "デバッグログ追加",
+          "status": "done"
+        },
+        {
+          "id": 4,
+          "title": "起動後「準備完了」に遷移することを確認",
+          "status": "done"
+        }
       ]
     },
     {
@@ -97,9 +121,21 @@
       "priority": "high",
       "dependencies": [],
       "subtasks": [
-        {"id": 1, "title": "EDGE_STARTUP_CHECK_INTERVALを0.25s→0.1sに変更", "status": "done"},
-        {"id": 2, "title": "EDGE_STARTUP_MAX_ATTEMPTSを80→50に変更", "status": "done"},
-        {"id": 3, "title": "Edge起動時間の改善を確認", "status": "done"}
+        {
+          "id": 1,
+          "title": "EDGE_STARTUP_CHECK_INTERVALを0.25s→0.1sに変更",
+          "status": "done"
+        },
+        {
+          "id": 2,
+          "title": "EDGE_STARTUP_MAX_ATTEMPTSを80→50に変更",
+          "status": "done"
+        },
+        {
+          "id": 3,
+          "title": "Edge起動時間の改善を確認",
+          "status": "done"
+        }
       ]
     },
     {
@@ -110,8 +146,16 @@
       "priority": "medium",
       "dependencies": [],
       "subtasks": [
-        {"id": 1, "title": "SELECTOR_CHAT_INPUT_MAX_STEPSを7→5に変更", "status": "done"},
-        {"id": 2, "title": "chat ready検出時間の改善を確認", "status": "done"}
+        {
+          "id": 1,
+          "title": "SELECTOR_CHAT_INPUT_MAX_STEPSを7→5に変更",
+          "status": "done"
+        },
+        {
+          "id": 2,
+          "title": "chat ready検出時間の改善を確認",
+          "status": "done"
+        }
       ]
     },
     {
@@ -122,9 +166,21 @@
       "priority": "medium",
       "dependencies": [],
       "subtasks": [
-        {"id": 1, "title": "cdp_retry_intervalの初期値を0.5→0.2に変更", "status": "done"},
-        {"id": 2, "title": "バックオフ上限1.5sを追加", "status": "done"},
-        {"id": 3, "title": "CDP接続時間の改善を確認", "status": "done"}
+        {
+          "id": 1,
+          "title": "cdp_retry_intervalの初期値を0.5→0.2に変更",
+          "status": "done"
+        },
+        {
+          "id": 2,
+          "title": "バックオフ上限1.5sを追加",
+          "status": "done"
+        },
+        {
+          "id": 3,
+          "title": "CDP接続時間の改善を確認",
+          "status": "done"
+        }
       ]
     },
     {
@@ -135,8 +191,16 @@
       "priority": "low",
       "dependencies": [],
       "subtasks": [
-        {"id": 1, "title": "CONTEXT_RETRY_COUNTを10→5に、INTERVALを0.3→0.2に変更", "status": "done"},
-        {"id": 2, "title": "Context取得時間の改善を確認", "status": "done"}
+        {
+          "id": 1,
+          "title": "CONTEXT_RETRY_COUNTを10→5に、INTERVALを0.3→0.2に変更",
+          "status": "done"
+        },
+        {
+          "id": 2,
+          "title": "Context取得時間の改善を確認",
+          "status": "done"
+        }
       ]
     },
     {
@@ -147,15 +211,197 @@
       "priority": "medium",
       "dependencies": [10],
       "subtasks": [
-        {"id": 1, "title": "RESIDENT_STARTUP_PROMPT_READY_TIMEOUT_SECを300→60に変更", "status": "done"},
-        {"id": 2, "title": "タイムアウト時のフォールバック動作を確認", "status": "done"}
+        {
+          "id": 1,
+          "title": "RESIDENT_STARTUP_PROMPT_READY_TIMEOUT_SECを300→60に変更",
+          "status": "done"
+        },
+        {
+          "id": 2,
+          "title": "タイムアウト時のフォールバック動作を確認",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "title": "check_copilot_state()のチャット入力チェック復元",
+      "description": "/chatページでチャット入力の有無に関わらずREADYを返していた誤変更を修正。入力欄がない場合はLOADINGを返すよう復元。",
+      "status": "done",
+      "priority": "high",
+      "dependencies": [10],
+      "subtasks": []
+    },
+    {
+      "id": 17,
+      "title": "送信後安定化sleepの短縮",
+      "description": "copilot_handler.py の送信後待機を 0.3s から 0.15s に短縮。",
+      "status": "done",
+      "priority": "low",
+      "dependencies": [],
+      "subtasks": [
+        {
+          "id": 1,
+          "title": "送信確認後の sleep を 0.15s に変更",
+          "status": "done"
+        },
+        {
+          "id": 2,
+          "title": "late verify 後の sleep を 0.15s に変更",
+          "status": "done"
+        },
+        {
+          "id": 3,
+          "title": "翻訳送信後に不要な処理中メッセージが混入しないことを確認",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "title": "Late verifyタイムアウトの短縮",
+      "description": "copilot_handler.py の late verify タイムアウトを 1.5 秒から 1.0 秒に短縮。",
+      "status": "done",
+      "priority": "low",
+      "dependencies": [],
+      "subtasks": [
+        {
+          "id": 1,
+          "title": "LATE_VERIFY_MAX を 1.0 秒に変更",
+          "status": "done"
+        },
+        {
+          "id": 2,
+          "title": "Enter送信確認の安定性を確認",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "title": "3スタイル比較プロンプトの解説簡素化",
+      "description": "Explanation 要求を 1-2 文相当に簡素化し、出力トークン数を削減する。",
+      "status": "done",
+      "priority": "high",
+      "dependencies": [],
+      "subtasks": [
+        {
+          "id": 1,
+          "title": "DEFAULT_TEXT_TO_EN_COMPARE_TEMPLATE の解説指示を簡素化",
+          "status": "done"
+        },
+        {
+          "id": 2,
+          "title": "text_translate_to_en_compare.txt との互換性を維持",
+          "status": "done"
+        },
+        {
+          "id": 3,
+          "title": "翻訳品質と解説の有用性を確認",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "title": "3スタイル比較プロンプトの圧縮",
+      "description": "比較プロンプトの重複指示を統合し、冗長な行を削減する。",
+      "status": "done",
+      "priority": "high",
+      "dependencies": [19],
+      "subtasks": [
+        {
+          "id": 1,
+          "title": "テンプレートの重複・冗長指示を統合",
+          "status": "done"
+        },
+        {
+          "id": 2,
+          "title": "圧縮後も 3 スタイル出力を維持",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "title": "短文翻訳の軽量パス導入",
+      "description": "入力 50 文字以下では軽量な追加指示を注入し、解説を最小化する。",
+      "status": "done",
+      "priority": "high",
+      "dependencies": [19, 20],
+      "subtasks": [
+        {
+          "id": 1,
+          "title": "短文判定の閾値を 50 文字に設定",
+          "status": "done"
+        },
+        {
+          "id": 2,
+          "title": "translate_text_with_style_comparison に短文分岐を追加",
+          "status": "done"
+        },
+        {
+          "id": 3,
+          "title": "短文で軽量指示が注入されることを確認",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "title": "翻訳リトライの抑制",
+      "description": "_looks_untranslated_to_en の再試行条件と 3 スタイル個別フォールバックを厳格化する。",
+      "status": "done",
+      "priority": "medium",
+      "dependencies": [],
+      "subtasks": [
+        {
+          "id": 1,
+          "title": "standard / concise を優先したリトライ条件に変更",
+          "status": "done"
+        },
+        {
+          "id": 2,
+          "title": "比較パース失敗時の per-style フォールバックを抑制",
+          "status": "done"
+        },
+        {
+          "id": 3,
+          "title": "パース失敗時の早期エラー返却を追加",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "title": "ストリーミング表示の段階的パース",
+      "description": "ストリーミング中の比較結果を段階的にパースし、完成済みスタイルから即表示する。",
+      "status": "done",
+      "priority": "medium",
+      "dependencies": [19, 20],
+      "subtasks": [
+        {
+          "id": 1,
+          "title": "on_chunk で部分パース可能なロジックを実装",
+          "status": "done"
+        },
+        {
+          "id": 2,
+          "title": "UI 状態に部分結果を流し込む対応を追加",
+          "status": "done"
+        },
+        {
+          "id": 3,
+          "title": "未完成セクションを除外するフォールバックを追加",
+          "status": "done"
+        }
       ]
     }
   ],
   "metadata": {
     "projectName": "YakuLingo M365 Copilot Translation Fix",
-    "totalTasks": 15,
+    "totalTasks": 23,
     "createdAt": "2026-03-31",
-    "version": "1.4"
+    "version": "1.6"
   }
 }

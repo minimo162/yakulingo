@@ -3124,8 +3124,8 @@ class CopilotHandler:
 
     @property
     def is_gpt_mode_set(self) -> bool:
-        """Return True if GPT mode was confirmed/set in this session."""
-        return self._gpt_mode_set
+        """Return True unconditionally — GPT mode auto-selection is deprecated."""
+        return True
 
     def wait_for_gpt_mode_setup(self, timeout_seconds: float = 20.0, poll_interval: float = 0.1) -> bool:
         """Return immediately because GPT mode auto-selection is disabled."""

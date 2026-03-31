@@ -3278,16 +3278,19 @@ class CopilotHandler:
     def _cancel_background_warmup(self) -> None:
         """Signal any in-progress background warmup to stop.
 
-        Sets the cancel event. The warmup's _get_response will be interrupted
-        naturally when start_new_chat() navigates away, but this provides a
-        clean signal for early exit.
+        Sets the cancel event so _warmup_impl() can exit early at its
+        cancellation checkpoints.
 
-        Only resets _warmup_chat_ready if warmup is still in progress.
-        If warmup already completed, the chat is ready and should stay ready.
+        If warmup already completed (_warmup_chat_ready is True), the clean
+        chat is preserved for the upcoming translation — do NOT reset it.
         """
+        if self._warmup_chat_ready:
+            # Warmup finished successfully; clean chat ready for reuse.
+            # Don't touch the flag — translation will consume it.
+            logger.debug("Background warmup already completed; chat ready for reuse")
+            return
         if self._warmup_in_progress:
-            logger.debug("Cancelling background warmup")
-            self._warmup_chat_ready = False
+            logger.debug("Cancelling background warmup (still in progress)")
             self._cancel_warmup.set()
 
     def _warmup_impl(self) -> bool:

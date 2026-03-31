@@ -574,16 +574,50 @@
         {
           "id": 5,
           "title": "実環境検証：同一チャットでの動作確認",
-          "description": "2026-03-31検証完了。baseline=89chars、warmup_chat_ready=True、Reusing warmed-up chat session確認。ウォームアップと翻訳が同一チャットで実行されることをログで確認済み。",
+          "description": "2026-03-31検証完了。チャット再利用は成功（baseline=89chars, warmup_chat_ready=True）。ただしbaseline_text方式に欠陥発見：DOM全テキストからプレフィックス除去が必要。Issue 8 / Task 29で対応。",
           "status": "done"
+        }
+      ]
+    },
+    {
+      "id": 29,
+      "title": "baseline_textプレフィックス除去によるストリーミング漏れ・パース失敗修正",
+      "description": "baseline_text方式はlast_textの初期値設定のみで、翻訳テキスト追加後のDOM全テキスト（warmup+translation）がon_chunkに流れる問題と、_get_response()の返却値にウォームアップ応答が含まれパーサーが失敗する問題がある。_get_response()内でbaseline_textプレフィックスをcurrent_textおよび最終返却値から除去する。",
+      "status": "pending",
+      "priority": "critical",
+      "dependencies": [28],
+      "subtasks": [
+        {
+          "id": 1,
+          "title": "_get_response()のポーリングループでbaseline_textプレフィックス除去",
+          "description": "current_textがbaseline_textで始まる場合、プレフィックスを除去してからon_chunkに渡す。last_textの比較も除去後のテキストで行う。",
+          "status": "pending"
+        },
+        {
+          "id": 2,
+          "title": "_get_response()の最終返却値からbaseline_textプレフィックスを除去",
+          "description": "返却値にウォームアップ応答が含まれないようにし、パーサーがクリーンな翻訳結果を受け取れるようにする。",
+          "status": "pending"
+        },
+        {
+          "id": 3,
+          "title": "安定性テキストの比較ロジックもプレフィックス除去後で処理",
+          "description": "stable_count判定やhas_content判定もウォームアップ応答を含まないテキストで行う。",
+          "status": "pending"
+        },
+        {
+          "id": 4,
+          "title": "実環境検証：翻訳結果の正常表示とストリーミング確認",
+          "description": "on_chunkにウォームアップ応答が流れないこと、パーサーがstyle comparison結果を正しく解析できること、UIに翻訳結果が表示されることを確認。",
+          "status": "pending"
         }
       ]
     }
   ],
   "metadata": {
     "projectName": "YakuLingo M365 Copilot Translation Fix",
-    "totalTasks": 28,
+    "totalTasks": 29,
     "createdAt": "2026-03-31",
-    "version": "2.1"
+    "version": "2.2"
   }
 }

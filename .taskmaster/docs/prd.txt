@@ -439,14 +439,59 @@ on_chunk(warmup応答テキスト) → UIストリーミングプレビューに
 
 **D. start_new_chat後すぐ翻訳** → 試行後却下（Bと同様の問題）
 
-**E. （採用）baseline_text方式**:
+**E. baseline_text方式（初期版）** → 不完全、修正必要
    - `_warmup_impl()` でウォームアップ応答テキストを `_warmup_baseline_text` に保存
    - `_get_response()` に `baseline_text` パラメータを追加
-   - `last_text = baseline_text` で初期化することで、ウォームアップ応答を
-     「既読」として扱い、`on_chunk` に流れないようにする
-   - ウォームアップと翻訳が同一チャットで実行されるため、プライミングコンテキスト維持
-   - 2026-03-31 検証済み: baseline=89 chars, warmup_chat_ready=True,
-     "Reusing warmed-up chat session" ログ確認
+   - `last_text = baseline_text` で初期化 → 初回ポーリングでは漏れを防止
+   - **問題**: DOMの `_get_latest_streaming_text()` はウォームアップ応答+翻訳応答を
+     連結した全テキストを返す。翻訳テキストが追加されると
+     `"warmup+translation" != "warmup"` で `on_chunk` が発火し、ウォームアップ
+     テキスト込みでUIにストリーミングされる
+   - **さらに**: `_get_response()` の最終返却値にもウォームアップ応答テキストが含まれる
+     ため、パーサー (`_parse_style_comparison_result`) が期待するフォーマット
+     (standard/concise/minimal セクション) と一致せず
+     "Failed to parse style comparison result" エラーとなる
+
+### Issue 8: baseline_text方式の不完全性 — ストリーミング漏れとパース失敗
+
+**症状:**
+1. ウォームアップ応答がUIにストリーミング表示される（baseline_textでブロックできない）
+2. "Failed to parse style comparison result" エラーで翻訳結果を表示できない
+
+**根本原因:**
+DOMのテキスト抽出 (`_get_latest_streaming_text()` → `_get_latest_response_text_fast()`)
+は同一チャット内の全応答テキストを連結して返す。baseline_text方式は `last_text` の
+初期値をウォームアップ応答に設定するだけなので、翻訳テキストが追加されると
+全体テキストが `last_text` と異なり、ウォームアップ応答ごと `on_chunk` に流れる。
+
+```
+ウォームアップ応答: "はい、翻訳のお手伝いをします。" (baseline_text)
+  ↓
+翻訳プロンプト送信 → Copilotが応答開始
+  ↓
+DOM全テキスト: "はい、翻訳のお手伝いをします。\n\n[standard]\n訳文: ..."
+  ↓
+current_text != last_text("はい、翻訳のお手伝いをします。") → True
+  ↓
+on_chunk("はい、翻訳のお手伝いをします。\n\n[standard]\n訳文: ...") → UI漏れ
+  ↓
+_get_response()最終返却値にもウォームアップ応答が含まれる
+  ↓
+パーサーが不正なプレフィックスのせいでスタイルセクションを正しく抽出できない
+  ↓
+"Failed to parse style comparison result"
+```
+
+**修正方針:**
+
+`_get_response()` 内で `baseline_text` が設定されている場合、DOMから取得した
+`current_text` からウォームアップ応答プレフィックスを除去（ストリップ）する:
+
+1. ポーリングループ内で `current_text` が `baseline_text` で始まる場合、
+   プレフィックスを除去してから `on_chunk` に渡す
+2. 最終返却値からも同様にプレフィックスを除去する
+3. これにより `on_chunk` には翻訳テキストのみが流れ、パーサーにも
+   クリーンな翻訳結果のみが渡される
 
 ## Goals
 1. Diagnose the exact point of failure in the translation → display pipeline

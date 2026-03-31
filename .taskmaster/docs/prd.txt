@@ -1,0 +1,121 @@
+# YakuLingo — M365 Copilot Translation App: Translation Result Display Fix
+
+## Overview
+YakuLingo is a bidirectional translation application built on M365 Copilot.
+It translates Japanese to English (with multiple style options) and other
+languages to Japanese (single result with explanation). Translation is
+performed via M365 Copilot chat UI automated through Edge WebDriver (Playwright).
+
+## Problem Statement
+Two issues prevent translation from completing:
+
+### Issue 1: GPT Mode Selection Freeze
+Before each translation, `ensure_gpt_mode_required()` attempts to automate
+the Copilot GPT mode switcher UI (#gptModeSwitcher) to select "GPT-5.2
+Think Deeper". This step freezes the app — likely because the Copilot UI
+has changed and the selectors no longer match, causing Playwright to wait
+indefinitely (up to 45s timeout per attempt with retries).
+
+**Affected locations:**
+- `copilot_handler.py:~7978` — `ensure_gpt_mode_required()` call in translate flow
+- `copilot_handler.py:~8239` — same call in single-translate flow
+- `copilot_handler.py:3236-3370` — `ensure_gpt_mode()` / `ensure_gpt_mode_required()`
+- `copilot_handler.py:3566+` — `_ensure_gpt_mode_impl()` (Playwright UI automation)
+
+**Fix:** Remove or skip the GPT mode selection step entirely. The user will
+manually select the desired GPT mode in the Copilot UI before translating.
+
+### Issue 2: Translation Results Not Displayed
+Translation results are not displayed in the app UI. Instead, only the
+placeholder text "翻訳結果がここに表示されます" is shown. This may be a
+downstream consequence of Issue 1 (translation never completes), or an
+independent issue in the result capture/parse/display pipeline.
+
+## Architecture Summary
+
+### Data Flow
+```
+User Input (text or file)
+  → AppState (state.py)
+    → TranslationService (translation_service.py)
+      → CopilotHandler (copilot_handler.py) → M365 Copilot via Edge/Playwright
+        → Raw response text
+      → Response parsing → TextTranslationResult with .options[]
+    → AppState.text_result = result
+  → UI refresh → text_panel.py renders result
+```
+
+### Key Files
+- `app.py` (628 KB) — Main application logic, state management, translation orchestration
+- `yakulingo/ui/state.py` — AppState dataclass
+- `yakulingo/ui/components/text_panel.py` — Text translation result panel
+- `yakulingo/ui/components/file_panel.py` — File translation result panel
+- `yakulingo/services/translation_service.py` — Translation orchestration, result parsing
+- `yakulingo/services/copilot_handler.py` (505 KB) — M365 Copilot browser automation
+- `yakulingo/models/types.py` — Data types (TextTranslationResult, TranslationOption)
+
+### UI Display Condition
+The result panel in `text_panel.py:645` renders results only when:
+```python
+if state.text_result and state.text_result.options:
+```
+If either is falsy, the empty placeholder "翻訳結果がここに表示されます" is shown.
+
+## Suspected Root Causes (to investigate)
+
+### 1. GPT Mode Selection Freeze (CONFIRMED)
+- `ensure_gpt_mode_required()` blocks the translation flow
+- Copilot UI selectors (#gptModeSwitcher etc.) may no longer match
+- 45s timeout + retries cause apparent freeze
+- **Resolution: Remove/skip GPT mode selection entirely**
+
+### 2. Copilot Response Not Captured
+- `copilot_handler.py:_get_response()` (~line 8272) may return empty
+- Copilot error patterns may be triggered (COPILOT_ERROR_PATTERNS)
+- Connection/timeout issues with Edge WebDriver
+
+### 3. Response Parsing Failure
+- `translation_service.py:_parse_style_comparison_result()` (multi-style for English)
+- `translation_service.py:_parse_single_translation_result()` (single for Japanese)
+- If parsing fails, `result.options` will be an empty list
+
+### 4. UI State Not Updated
+- `app.py:~10134-10136` — result assignment to `state.text_result`
+- `_refresh_result_panel()` not triggered
+- Client context lost during `asyncio.to_thread()`
+
+### 5. CSS/Layout Visibility
+- `.has-results` class not applied (app.py:~7461-7470)
+- Result panel hidden by CSS rule (styles.css:2436-2475)
+
+## Goals
+1. Diagnose the exact point of failure in the translation → display pipeline
+2. Fix the root cause so translation results are displayed correctly
+3. Ensure both text translation and file translation display results
+4. Maintain existing functionality (glossary, bilingual output, style options)
+
+## Non-Goals
+- Changing the Copilot-based translation engine
+- Redesigning the UI
+- Adding new features
+
+## Key Data Types
+```python
+TextTranslationResult:
+    source_text: str
+    options: list[TranslationOption]  # Must be non-empty for display
+    output_language: str              # "en" or "jp"
+    detected_language: str
+    error_message: Optional[str]
+
+TranslationOption:
+    text: str          # Translated text
+    explanation: str   # Explanation of translation choice
+    style: str         # "standard", "concise", "minimal"
+```
+
+## Success Criteria
+- After a text translation request, the result panel shows the translated text
+- For JP→EN: Three style options (standard, concise, minimal) are displayed
+- For other→JP: Single translation with explanation is displayed
+- Error states show meaningful error messages, not the empty placeholder

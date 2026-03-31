@@ -2745,14 +2745,6 @@ class YakuLingoApp:
                         except Exception:
                             pass
 
-                        copilot = getattr(self, "_copilot", None)
-                        if copilot is not None and not copilot.is_gpt_mode_set:
-                            try:
-                                logger.info("Hotkey translation waiting for GPT mode setup")
-                                copilot.wait_for_gpt_mode_setup(25.0)
-                            except Exception as e:
-                                logger.debug("Hotkey GPT mode wait failed: %s", e)
-
                         if is_path_selection:
                             self._translate_files_hotkey_background_sync(
                                 file_paths,
@@ -3001,15 +2993,6 @@ class YakuLingoApp:
                         self.state.text_view_state = TextViewState.RESULT
                     self._refresh_ui_after_hotkey_translation(trace_id)
                 return
-
-            # If GPT mode setup is still running, wait briefly before starting translation.
-            copilot = getattr(self, "_copilot", None)
-            if copilot is not None and not copilot.is_gpt_mode_set:
-                try:
-                    logger.info("Hotkey translation waiting for GPT mode setup")
-                    await asyncio.to_thread(copilot.wait_for_gpt_mode_setup, 25.0)
-                except Exception as e:
-                    logger.debug("Hotkey GPT mode wait failed: %s", e)
 
             if is_path_selection:
                 if not file_paths:
@@ -6425,10 +6408,10 @@ class YakuLingoApp:
             await self.start_edge_and_connect()
 
     def _is_gpt_mode_setup_in_progress(self) -> bool:
-        return self._gpt_mode_setup_task is not None and not self._gpt_mode_setup_task.done()
+        return False
 
     async def _ensure_gpt_mode_setup(self) -> None:
-        """Ensure GPT mode setup has finished (set or attempts exhausted)."""
+        """Legacy no-op: GPT mode is now selected manually in Copilot."""
         if self._shutdown_requested:
             return
 
@@ -6436,31 +6419,17 @@ class YakuLingoApp:
         if copilot is None or not copilot.is_connected:
             return
 
-        if self._gpt_mode_setup_task is None or self._gpt_mode_setup_task.done():
-            self._gpt_mode_setup_task = asyncio.create_task(self._run_gpt_mode_setup())
-            self._refresh_status()
-
-        try:
-            await self._gpt_mode_setup_task
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            logger.debug("GPT mode setup task failed: %s", e)
+        self._gpt_mode_setup_task = None
+        self.state.copilot_ready = True
+        self.state.connection_state = ConnectionState.CONNECTED
+        logger.debug(
+            "Skipping GPT mode auto-setup in UI; manual Copilot mode selection is expected"
+        )
+        self._refresh_status()
+        self._refresh_translate_button_state()
 
     async def _run_gpt_mode_setup(self) -> None:
-        copilot = self._copilot
-        if copilot is None or not copilot.is_connected:
-            return
-        try:
-            await asyncio.to_thread(copilot.wait_for_gpt_mode_setup, 25.0)
-        except Exception as e:
-            logger.debug("GPT mode setup failed: %s", e)
-        finally:
-            if self._shutdown_requested:
-                return
-            # Refresh status/button after GPT mode attempt completes (prevents stale "準備中...").
-            self._refresh_status()
-            self._refresh_translate_button_state()
+        await self._ensure_gpt_mode_setup()
 
     async def start_edge_and_connect(self):
         """Start Edge and connect to browser in background (non-blocking).
@@ -6790,9 +6759,6 @@ class YakuLingoApp:
                         with self._client:
                             self._refresh_status()
 
-                    # Reset GPT mode flag on re-login (session was reset, mode setting is lost)
-                    # This ensures ensure_gpt_mode() will actually run
-                    self.copilot.reset_gpt_mode_state()
                     await self._ensure_gpt_mode_setup()
 
                     if not self._shutdown_requested:
@@ -8379,22 +8345,6 @@ class YakuLingoApp:
             error = copilot.last_connection_error or ""
             is_connected = copilot.is_connected  # cached flag; validated by check_copilot_state below
 
-            # While GPT mode is switching, avoid calling check_copilot_state with a short timeout.
-            # The Playwright thread is busy and status checks can time out, leaving the UI stuck.
-            if self._is_gpt_mode_setup_in_progress():
-                self.state.copilot_ready = False
-                self.state.connection_state = ConnectionState.CONNECTING
-                tooltip = '準備中: GPTモードを切り替えています'
-                with ui.element('div').classes('status-indicator connecting').props(
-                    f'role="status" aria-live="polite" aria-label="{tooltip}"'
-                ) as status_indicator:
-                    ui.element('div').classes('status-dot connecting').props('aria-hidden="true"')
-                    with ui.column().classes('gap-0'):
-                        ui.label('準備中...').classes('text-xs')
-                        ui.label('GPTモードを切り替えています').classes('text-2xs opacity-80')
-                status_indicator.tooltip(tooltip)
-                return
-
             copilot_state: str | None = None
             state_check_failed = False
             if copilot.is_connecting:
@@ -8448,18 +8398,13 @@ class YakuLingoApp:
                 self.state.copilot_ready = True
                 self.state.connection_state = ConnectionState.CONNECTED
                 tooltip = '準備完了: 翻訳できます'
-                if not copilot.is_gpt_mode_set:
-                    tooltip = '準備完了: 翻訳できます（GPTモード未設定）'
                 with ui.element('div').classes('status-indicator connected').props(
                     f'role="status" aria-live="polite" aria-label="{tooltip}"'
                 ) as status_indicator:
                     ui.element('div').classes('status-dot connected').props('aria-hidden="true"')
                     with ui.column().classes('gap-0'):
                         ui.label('準備完了').classes('text-xs')
-                        if copilot.is_gpt_mode_set:
-                            ui.label('翻訳できます').classes('text-2xs opacity-80')
-                        else:
-                            ui.label('翻訳できます（GPTモード未設定）').classes('text-2xs opacity-80')
+                        ui.label('翻訳できます').classes('text-2xs opacity-80')
                 status_indicator.tooltip(tooltip)
                 return
 
@@ -9381,26 +9326,8 @@ class YakuLingoApp:
             self._ensure_copilot_window_monitor()
             return True
 
-        # If we are connected but "not ready", it is often because GPT mode is still
-        # switching (Playwright thread busy) and the status UI has not updated yet.
-        # Avoid triggering reconnect loops; wait for GPT mode setup to complete first.
         if copilot.is_connected and edge_window_open:
-            if self._is_gpt_mode_setup_in_progress():
-                try:
-                    await asyncio.wait_for(self._gpt_mode_setup_task, timeout=30.0)  # type: ignore[arg-type]
-                except asyncio.TimeoutError:
-                    if self._client:
-                        with self._client:
-                            ui.notify(
-                                '準備中です（GPTモード切替中）...',
-                                type='info',
-                                position='bottom-right',
-                                timeout=2000
-                            )
-                    return False
-            else:
-                await self._ensure_gpt_mode_setup()
-
+            await self._ensure_gpt_mode_setup()
             if self.state.copilot_ready and self.copilot.is_connected:
                 self._ensure_copilot_window_monitor()
                 return True
@@ -12315,11 +12242,6 @@ def run_app(
                     )
                     if _early_connection_result_ref is not None:
                         _early_connection_result_ref.value = result
-                    if result:
-                        try:
-                            _early_copilot.wait_for_gpt_mode_setup(25.0)
-                        except Exception as e:
-                            logger.debug("Early GPT mode setup failed: %s", e)
                     logger.info("[TIMING] Early Copilot connect (background): %.2fs, success=%s",
                                time.perf_counter() - _t_early, result)
                 except Exception as e:

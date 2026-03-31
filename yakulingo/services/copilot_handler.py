@@ -3093,7 +3093,7 @@ class CopilotHandler:
             return False
 
     def reset_gpt_mode_state(self) -> None:
-        """Reset GPT mode tracking (e.g., after re-login)."""
+        """Reset legacy GPT mode tracking state."""
         self._gpt_mode_set = False
         self._clear_gpt_mode_retry_state()
 
@@ -3103,74 +3103,13 @@ class CopilotHandler:
         return self._gpt_mode_set
 
     def wait_for_gpt_mode_setup(self, timeout_seconds: float = 20.0, poll_interval: float = 0.1) -> bool:
-        """Block until GPT mode setup finishes (set or attempts exhausted).
-
-        This is intended for the UI layer to wait until GPT mode switching is finished
-        before enabling translation actions. For performance and determinism, this method
-        runs a single blocking attempt on the Playwright thread (up to the given timeout)
-        when no attempt is already in progress. If another attempt is already running,
-        it polls until completion.
-
-        Args:
-            timeout_seconds: Maximum time to wait for the setup process to finish.
-            poll_interval: Polling interval while waiting.
-
-        Returns:
-            True if GPT mode is set, False otherwise (including timeout).
-        """
-        if timeout_seconds <= 0:
-            return self._gpt_mode_set
-
-        if self._gpt_mode_set:
-            return True
-
-        # If another attempt is already running, just wait for it.
-        deadline = time.monotonic() + timeout_seconds
-        with self._gpt_mode_retry_lock:
-            in_progress = self._gpt_mode_attempt_in_progress
-        if in_progress:
-            while time.monotonic() < deadline:
-                if self._gpt_mode_set:
-                    return True
-                with self._gpt_mode_retry_lock:
-                    in_progress = self._gpt_mode_attempt_in_progress
-                if not in_progress:
-                    return self._gpt_mode_set
-                time.sleep(max(poll_interval, 0.05))
-            return self._gpt_mode_set
-
-        # No attempt is running; perform a single blocking attempt with the remaining timeout.
-        wait_timeout_ms = int(max(0.1, min(timeout_seconds, self.GPT_MODE_BUTTON_WAIT_MS / 1000.0)) * 1000)
-        timer = None
-        with self._gpt_mode_retry_lock:
-            timer = self._gpt_mode_retry_timer
-            self._gpt_mode_retry_timer = None
-            self._gpt_mode_attempt_in_progress = True
-            self._gpt_mode_retry_index = 0
-
-        if timer:
-            try:
-                timer.cancel()
-            except Exception:
-                pass
-
-        try:
-            # Add a small cushion on the executor wait to cover non-selector work.
-            execute_timeout = max(10.0, timeout_seconds + 5.0)
-            _playwright_executor.execute(
-                self._ensure_gpt_mode_impl,
-                wait_timeout_ms,
-                timeout=execute_timeout,
-            )
-        except TimeoutError:
-            logger.debug("GPT mode setup timed out (executor)")
-        except Exception as e:
-            logger.debug("GPT mode setup failed (blocking): %s", e)
-        finally:
-            # Clear attempt state even when the call errors/times out.
-            self._clear_gpt_mode_retry_state()
-
-        return self._gpt_mode_set
+        """Return immediately because GPT mode auto-selection is disabled."""
+        del timeout_seconds, poll_interval
+        self._clear_gpt_mode_retry_state()
+        logger.debug(
+            "Skipping GPT mode auto-setup wait; manual Copilot mode selection is expected"
+        )
+        return True
 
     def _clear_gpt_mode_retry_state(self) -> None:
         timer = None
@@ -3234,149 +3173,20 @@ class CopilotHandler:
         self._schedule_gpt_mode_retry(delay)
 
     def ensure_gpt_mode(self) -> None:
-        """Thread-safe wrapper to set GPT mode (GPT-5.2; Think Deeper preferred).
-
-        Called from UI layer (app.py) after initial connection.
-        Should only be called once per session to respect user's manual changes.
-
-        This method delegates to the Playwright thread executor to ensure
-        all Playwright operations run in the correct thread.
-        """
-        # Skip if already set (early connection already did this)
-        if self._gpt_mode_set:
-            logger.debug("Skipping ensure_gpt_mode: already set in this session")
-            return
-
-        if not self._page:
-            logger.debug("Skipping ensure_gpt_mode: no page available")
-            return
-
-        # When called from the Playwright worker thread (e.g., during translation),
-        # we must ensure GPT mode is set *before* sending prompts. The non-blocking
-        # retry/timer approach can race and let translation start in the default mode.
-        # In that case, run a blocking attempt inline with the full wait timeout.
-        in_playwright_thread = False
-        try:
-            in_playwright_thread = (
-                _playwright_executor._thread is not None
-                and threading.current_thread().ident == _playwright_executor._thread.ident
-            )
-        except Exception:
-            in_playwright_thread = False
-
-        if in_playwright_thread:
-            timer = None
-            with self._gpt_mode_retry_lock:
-                timer = self._gpt_mode_retry_timer
-                self._gpt_mode_retry_timer = None
-                self._gpt_mode_attempt_in_progress = True
-                self._gpt_mode_retry_index = 0
-            if timer:
-                try:
-                    timer.cancel()
-                except Exception:
-                    pass
-            try:
-                # Avoid long blocking waits during translation; use the fast timeout.
-                self._ensure_gpt_mode_impl(self.GPT_MODE_BUTTON_WAIT_FAST_MS)
-            except Exception as e:
-                logger.debug("Failed to set GPT mode (blocking): %s", e)
-            finally:
-                self._clear_gpt_mode_retry_state()
-            return
-
-        with self._gpt_mode_retry_lock:
-            if self._gpt_mode_attempt_in_progress:
-                logger.debug("Skipping ensure_gpt_mode: attempt already in progress")
-                return
-            self._gpt_mode_attempt_in_progress = True
-            self._gpt_mode_retry_index = 0
-            timer = self._gpt_mode_retry_timer
-            self._gpt_mode_retry_timer = None
-
-        if timer:
-            timer.cancel()
-
-        try:
-            result = _playwright_executor.execute(
-                self._ensure_gpt_mode_impl,
-                self.GPT_MODE_BUTTON_WAIT_FAST_MS
-            )
-        except Exception as e:
-            logger.debug("Failed to set GPT mode: %s", e)
-            self._clear_gpt_mode_retry_state()
-            return
-
-        if result in ("set", "already"):
-            self._clear_gpt_mode_retry_state()
-            return
-        if result == "target_not_found":
-            self._clear_gpt_mode_retry_state()
-            return
-
-        if not self.GPT_MODE_RETRY_DELAYS:
-            self._clear_gpt_mode_retry_state()
-            return
-
-        with self._gpt_mode_retry_lock:
-            delay = self.GPT_MODE_RETRY_DELAYS[0]
-            self._gpt_mode_retry_index = 1
-
-        logger.debug("GPT mode not ready (result=%s); retrying in %.1fs", result, delay)
-        self._schedule_gpt_mode_retry(delay)
-
-    def ensure_gpt_mode_required(self, timeout_seconds: float | None = None) -> bool:
-        """Ensure GPT mode is set before translation (required path).
-
-        Returns:
-            True if GPT mode is set, False otherwise.
-        """
-        if self._gpt_mode_set:
-            return True
-        if not self._page:
-            return False
-
-        timeout_seconds = (
-            self.GPT_MODE_REQUIRED_TIMEOUT_SECONDS
-            if timeout_seconds is None
-            else max(0.1, timeout_seconds)
+        """Skip GPT mode auto-selection and keep the user's manual choice intact."""
+        self._clear_gpt_mode_retry_state()
+        logger.debug(
+            "Skipping GPT mode auto-selection; manual Copilot mode selection is expected"
         )
 
-        in_playwright_thread = False
-        try:
-            in_playwright_thread = (
-                _playwright_executor._thread is not None
-                and threading.current_thread().ident == _playwright_executor._thread.ident
-            )
-        except Exception:
-            in_playwright_thread = False
-
-        if in_playwright_thread:
-            wait_timeout_ms = int(timeout_seconds * 1000)
-            timer = None
-            with self._gpt_mode_retry_lock:
-                timer = self._gpt_mode_retry_timer
-                self._gpt_mode_retry_timer = None
-                self._gpt_mode_attempt_in_progress = True
-                self._gpt_mode_retry_index = 0
-            if timer:
-                try:
-                    timer.cancel()
-                except Exception:
-                    pass
-            try:
-                self._ensure_gpt_mode_impl(wait_timeout_ms)
-            except Exception as e:
-                logger.debug("GPT mode required attempt failed (blocking): %s", e)
-            finally:
-                self._clear_gpt_mode_retry_state()
-            return self._gpt_mode_set
-
-        try:
-            return self.wait_for_gpt_mode_setup(timeout_seconds)
-        except Exception as e:
-            logger.debug("GPT mode required attempt failed: %s", e)
-            return self._gpt_mode_set
+    def ensure_gpt_mode_required(self, timeout_seconds: float | None = None) -> bool:
+        """Return success immediately because GPT mode auto-selection is disabled."""
+        del timeout_seconds
+        self._clear_gpt_mode_retry_state()
+        logger.debug(
+            "Skipping GPT mode required check; manual Copilot mode selection is expected"
+        )
+        return True
 
     def _get_gpt_mode_target_candidates(self) -> tuple[str, ...]:
         return tuple(candidate for candidate in self.GPT_MODE_TARGETS if candidate)
@@ -7974,12 +7784,6 @@ class CopilotHandler:
                 raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
             raise RuntimeError("Copilotページにアクセスできませんでした。")
 
-        # GPT mode is required for translation; fail fast if we cannot set it.
-        if not self.ensure_gpt_mode_required():
-            raise RuntimeError(
-                "GPT mode is required for translation. Please open Copilot and select GPT-5.2 Think Deeper."
-            )
-
         # Check for cancellation before starting translation
         if self._is_cancelled():
             logger.info("Translation cancelled before starting")
@@ -8234,12 +8038,6 @@ class CopilotHandler:
             if self.last_connection_error == self.ERROR_LOGIN_REQUIRED:
                 raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
             raise RuntimeError("Copilotページにアクセスできませんでした。")
-
-        # GPT mode is required for translation; fail fast if we cannot set it.
-        if not self.ensure_gpt_mode_required():
-            raise RuntimeError(
-                "GPT mode is required for translation. Please open Copilot and select GPT-5.2 Think Deeper."
-            )
 
         # Check for cancellation before starting translation
         if self._is_cancelled():

@@ -8189,7 +8189,15 @@ class CopilotHandler:
         # Cancel background warmup BEFORE entering the executor queue.
         # If warmup is running in the Playwright thread, _translate_single_impl
         # would be blocked in the queue and its internal cancel call would never fire.
+        logger.info(
+            "[WARMUP_DEBUG] translate_single: warmup_chat_ready=%s, warmup_in_progress=%s",
+            self._warmup_chat_ready, self._warmup_in_progress,
+        )
         self._cancel_background_warmup()
+        logger.info(
+            "[WARMUP_DEBUG] translate_single after cancel: warmup_chat_ready=%s",
+            self._warmup_chat_ready,
+        )
         return _playwright_executor.execute(
             self._translate_single_impl, text, prompt, reference_files, on_chunk, timeout,
             timeout=executor_timeout,

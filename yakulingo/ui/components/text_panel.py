@@ -666,6 +666,8 @@ def create_text_result_panel(
                     state.text_compare_base_style,
                     actions_disabled=actions_disabled,
                 )
+        elif state.text_result and state.text_result.error_message and not state.text_translating:
+            _render_error_result_state(state.text_result.error_message, on_retry)
         elif not state.text_translating:
             # Empty state - show placeholder (spinner already shown in translation status section)
             _render_empty_result_state()
@@ -851,6 +853,23 @@ def _render_empty_result_state():
     with ui.element('div').classes('empty-result-state'):
         ui.icon('translate').classes('text-4xl text-muted opacity-30')
         ui.label('翻訳結果がここに表示されます').classes('text-sm text-muted opacity-50')
+
+
+def _render_error_result_state(
+    error_message: str,
+    on_retry: Optional[Callable[[], None]] = None,
+) -> None:
+    """Render translation error state instead of the empty placeholder."""
+    with ui.element('div').classes('result-error-state'):
+        with ui.row().classes('items-start gap-3 no-wrap'):
+            ui.icon('error').classes('result-error-icon')
+            with ui.column().classes('gap-1 flex-1 min-w-0'):
+                ui.label('翻訳結果を表示できませんでした').classes('result-error-title')
+                ui.label(error_message).classes('result-error-message')
+        if on_retry:
+            ui.button('再翻訳', icon='refresh', on_click=on_retry).props('flat no-caps size=sm').classes(
+                'result-error-action'
+            )
 
 
 def _render_loading(detected_language: Optional[str] = None):

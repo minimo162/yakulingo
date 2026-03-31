@@ -7203,6 +7203,37 @@ class YakuLingoApp:
 
         self._run_in_ui_context(_apply, "Result panel refresh")
 
+    def _apply_text_translation_result(
+        self,
+        result: Optional[TextTranslationResult],
+        source_text: str,
+        *,
+        split_translation: bool = False,
+    ) -> str:
+        """Store a text translation result and return an error message if it failed."""
+        from yakulingo.ui.state import TextViewState
+
+        if result is None:
+            self.state.text_result = None
+            return "Unknown error"
+
+        if result.options:
+            if split_translation:
+                result.metadata = result.metadata or {}
+                result.metadata["split_translation"] = True
+            self.state.text_result = result
+            self.state.text_view_state = TextViewState.RESULT
+            self._add_to_history(result, source_text)
+            self.state.source_text = ""
+            return ""
+
+        if not result.error_message:
+            result.error_message = "翻訳結果が取得できませんでした"
+
+        self.state.text_result = result
+        self.state.text_view_state = TextViewState.RESULT
+        return result.error_message
+
     def _scroll_result_panel_to_bottom(
         self,
         client: NiceGUIClient,
@@ -9934,16 +9965,11 @@ class YakuLingoApp:
             elapsed_time = time.monotonic() - start_time
             self.state.text_translation_elapsed_time = elapsed_time
 
-            if result and result.options:
-                from yakulingo.ui.state import TextViewState
-                result.metadata = result.metadata or {}
-                result.metadata["split_translation"] = True
-                self.state.text_result = result
-                self.state.text_view_state = TextViewState.RESULT
-                self._add_to_history(result, source_text)
-                self.state.source_text = ""
-            else:
-                error_message = result.error_message if result else "Unknown error"
+            error_message = self._apply_text_translation_result(
+                result,
+                source_text,
+                split_translation=True,
+            )
 
         except Exception as e:
             logger.exception("Split translation error [%s]: %s", trace_id, e)
@@ -10131,14 +10157,7 @@ class YakuLingoApp:
                 status_value,
             )
 
-            if result and result.options:
-                from yakulingo.ui.state import TextViewState
-                self.state.text_result = result
-                self.state.text_view_state = TextViewState.RESULT
-                self._add_to_history(result, source_text)  # Save original source before clearing
-                self.state.source_text = ""  # Clear input for new translations
-            else:
-                error_message = result.error_message if result else 'Unknown error'
+            error_message = self._apply_text_translation_result(result, source_text)
 
         except TranslationCancelledError:
             logger.info("Translation [%s] cancelled by user", trace_id)

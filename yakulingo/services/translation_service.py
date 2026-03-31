@@ -28,7 +28,10 @@ TEXT_STYLE_ORDER: tuple[str, str, str] = ('standard', 'concise', 'minimal')
 # Pre-compiled regex patterns for performance
 # Support both half-width (:) and full-width (：) colons, and markdown bold (**訳文:**)
 _RE_MULTI_OPTION = re.compile(r'\[(\d+)\]\s*\**訳文\**[:：]\s*(.+?)\s*\**解説\**[:：]\s*(.+?)(?=\[\d+\]|$)', re.DOTALL)
-_RE_STYLE_SECTION = re.compile(r'^\s*\[\s*(standard|concise|minimal)\s*\]\s*$', re.IGNORECASE | re.MULTILINE)
+_RE_STYLE_SECTION = re.compile(
+    r'^\s*(?:[#>*-]+\s*)?(?:\*\*)?\[\s*(standard|concise|minimal)\s*\](?:\*\*)?\s*:?\s*$',
+    re.IGNORECASE | re.MULTILINE,
+)
 
 # Translation text pattern - supports multiple formats:
 # - Japanese: 訳文 (colon optional), 翻訳 (colon REQUIRED to avoid "翻訳してください" match)

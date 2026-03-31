@@ -10087,26 +10087,55 @@ class CopilotHandler:
         def _strip_baseline(text: str) -> str:
             """Remove baseline_text from DOM-extracted text.
 
-            Handles three cases:
-            1. text starts with baseline_text (normal response polling)
-            2. text starts with whitespace + baseline_text
-            3. baseline_text appears after a CoT (Chain-of-Thought) prefix
-               e.g. "CoT text\\n\\nbaseline_text\\n\\ntranslation"
+            Uses partial matching (first 20 chars) to handle cases where
+            Copilot re-renders text with slightly different formatting.
             """
             if not baseline_text or not text:
                 return text
+            # Case 1: exact prefix
             if text.startswith(baseline_text):
                 return text[len(baseline_text):].lstrip("\n")
-            # Handle case where DOM text has extra whitespace
+            # Case 2: whitespace-normalized prefix
             stripped = text.lstrip()
             baseline_stripped = baseline_text.lstrip()
             if baseline_stripped and stripped.startswith(baseline_stripped):
                 return stripped[len(baseline_stripped):].lstrip("\n")
-            # Handle CoT prefix: baseline_text appears mid-text
-            idx = text.find(baseline_text)
-            if idx > 0:
-                return text[idx + len(baseline_text):].lstrip("\n")
+            # Case 3: partial match — use first 20 chars as anchor
+            anchor = baseline_text[:20].strip()
+            if anchor and anchor in text:
+                # Find where baseline_text region ends
+                idx = text.find(anchor)
+                # Try to match as much of baseline_text as possible from idx
+                end = idx
+                for i in range(len(baseline_text), 0, -1):
+                    candidate = baseline_text[:i].strip()
+                    if candidate and text[idx:].startswith(candidate):
+                        end = idx + len(candidate)
+                        break
+                if end > idx:
+                    return text[end:].lstrip("\n")
             return text
+
+        def _is_baseline_only(text: str) -> bool:
+            """Check if text is just the warmup response (possibly with CoT prefix).
+
+            Returns True if the text after stripping baseline is empty or
+            whitespace-only, meaning no translation content has arrived yet.
+            """
+            if not baseline_text or not text:
+                return False
+            # If strip_baseline produces empty/whitespace, it's baseline-only
+            stripped = _strip_baseline(text)
+            if not stripped or not stripped.strip():
+                return True
+            # Check if text is very similar to baseline (within minor formatting diff)
+            if len(text.strip()) <= len(baseline_text) * 1.2:
+                # Use startswith on normalized versions
+                norm_text = " ".join(text.split())
+                norm_base = " ".join(baseline_text.split())
+                if norm_text == norm_base or norm_text.startswith(norm_base):
+                    return True
+            return False
 
         error_types = _get_playwright_errors()
         PlaywrightError = error_types['Error']
@@ -10230,10 +10259,11 @@ class CopilotHandler:
                             if not has_content:
                                 has_content = True
                                 first_content_time = first_content_time or time.monotonic()
-                            try:
-                                on_chunk(current_text)
-                            except Exception as e:
-                                logger.debug("Streaming callback error: %s", e)
+                            if not _is_baseline_only(raw_text):
+                                try:
+                                    on_chunk(current_text)
+                                except Exception as e:
+                                    logger.debug("Streaming callback error: %s", e)
                             if not streaming_logged:
                                 logger.debug(
                                     "Streaming update received from Copilot (length=%d)",
@@ -10347,7 +10377,7 @@ class CopilotHandler:
                                            poll_iteration, text_len, text_preview, remaining)
                                 last_log_time = time.monotonic()
                             # Notify streaming callback with partial text
-                            if on_chunk:
+                            if on_chunk and not _is_baseline_only(raw_text):
                                 try:
                                     on_chunk(current_text)
                                 except Exception as e:

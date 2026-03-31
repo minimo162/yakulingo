@@ -1078,8 +1078,8 @@ class CopilotHandler:
 
     # Configuration constants
     DEFAULT_CDP_PORT = 9333  # Dedicated port for translator
-    EDGE_STARTUP_MAX_ATTEMPTS = 50  # Maximum iterations to wait for Edge startup
-    EDGE_STARTUP_CHECK_INTERVAL = 0.1  # Seconds between startup checks (total: 5 seconds)
+    EDGE_STARTUP_MAX_ATTEMPTS = 150  # Maximum iterations to wait for Edge startup
+    EDGE_STARTUP_CHECK_INTERVAL = 0.1  # Seconds between startup checks (total: 15 seconds)
     # Edge taskbar suppression during startup can fail on cold boots where the window
     # is created late or Edge recreates the top-level window after initialization.
     # Keep re-applying for a while to ensure the taskbar entry stays hidden.

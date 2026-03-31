@@ -424,32 +424,29 @@ on_chunk(warmup応答テキスト) → UIストリーミングプレビューに
    - `_streaming_preview_label.set_text(partial_text)` でUIを更新
    - ウォームアップ応答テキストがUIに漏れる
 
-**修正方針:**
+**修正方針（検討経緯と採用結果）:**
 
-**A. ウォームアップ後に応答マーカーを記録**:
-   - `_warmup_impl()` 完了時に、DOMの応答要素数またはウォームアップ応答テキストを
-     `_warmup_response_marker` として保存
-   - 翻訳の `_get_response()` 開始時にこのマーカーを使い、ウォームアップ応答を
-     フィルタリング（スキップ）する
+**A. ウォームアップ後に応答マーカーを記録** → 不採用
+   - DOM要素数ベースのマーカーは信頼性に不安
 
-**B. ウォームアップ後に `start_new_chat(click_only=False)` で応答クリア**:
-   - ウォームアップ応答取得後に再度 `start_new_chat()` を呼んで応答をクリアする
-   - ただしこれは「チャット再利用」の意義を半減させる
-   - 利点: Copilotセッションは温まったまま（同一セッション内の新チャット）
+**B. ウォームアップ後に `start_new_chat()` で応答クリア** → 試行後却下
+   - 実装して検証したが、新チャットを開くことでプライミングコンテキストが失われ、
+     ウォームアップと翻訳が別チャットで実行される問題が発生した
+   - ログ分析で確認: `start_new_chat` がチャットBを作成し、プライミングはチャットAに残る
 
-**C. （推奨）ウォームアップ応答のDOM要素数を記録し、翻訳時にスキップ**:
-   - `_warmup_impl()` 完了後にDOMの応答要素数を `_warmup_response_count` に保存
-   - `_get_response()` で応答抽出時に、`_warmup_response_count` 以前の要素を無視
-   - `_get_latest_response_text()` / `_get_latest_streaming_text()` に
-     offset パラメータを追加
+**C. DOM要素数オフセット方式** → 不採用
+   - DOM構造への依存が大きく脆弱
 
-**D. （最もシンプル）ウォームアップ後にstop→新チャット→翻訳の3ステップ**:
-   - warmup完了後すぐに `start_new_chat(click_only=True)` で新チャットを開始
-     （応答クリアは不要、新チャットボタンクリックだけで新セッション開始）
-   - これにより翻訳時のDOMはクリーンな状態
-   - warmupの効果（Copilotバックエンドの温め）は新チャットでも維持される
-     （同一ブラウザセッション内）
-   - `_warmup_chat_ready` フラグの意味を「DOMがクリーンで即座に翻訳送信可能」に変更
+**D. start_new_chat後すぐ翻訳** → 試行後却下（Bと同様の問題）
+
+**E. （採用）baseline_text方式**:
+   - `_warmup_impl()` でウォームアップ応答テキストを `_warmup_baseline_text` に保存
+   - `_get_response()` に `baseline_text` パラメータを追加
+   - `last_text = baseline_text` で初期化することで、ウォームアップ応答を
+     「既読」として扱い、`on_chunk` に流れないようにする
+   - ウォームアップと翻訳が同一チャットで実行されるため、プライミングコンテキスト維持
+   - 2026-03-31 検証済み: baseline=89 chars, warmup_chat_ready=True,
+     "Reusing warmed-up chat session" ログ確認
 
 ## Goals
 1. Diagnose the exact point of failure in the translation → display pipeline

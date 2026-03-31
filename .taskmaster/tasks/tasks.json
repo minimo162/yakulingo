@@ -541,34 +541,40 @@
     },
     {
       "id": 28,
-      "title": "ウォームアップ応答のUI漏れ修正",
-      "description": "Phase Cでウォームアップ済みチャットを再利用する際、ウォームアップ応答がDOMに残っているため、翻訳の_get_response()がそれを拾ってUIにストリーミング表示してしまう。ウォームアップ完了後に新チャットを開いてDOMをクリーンにし、翻訳はそのクリーンなチャットに直接送信する。",
+      "title": "ウォームアップ応答のUI漏れ修正（baseline_text方式）",
+      "description": "Phase Cでウォームアップ済みチャットを再利用する際、ウォームアップ応答がDOMに残っているため翻訳の_get_response()がそれを拾ってUIにストリーミング表示してしまう問題。当初start_new_chat()でDOMクリアを試みたが、プライミングコンテキストが失われ別チャットになる問題が発生。最終的にbaseline_text方式を採用：ウォームアップ応答テキストを記録し、_get_response()のlast_text初期値として使うことで「既読」扱いにする。",
       "status": "done",
       "priority": "critical",
       "dependencies": [27],
       "subtasks": [
         {
           "id": 1,
-          "title": "_warmup_impl()の応答取得後にstart_new_chat(click_only=True)を追加",
-          "description": "warmup応答をDOMからクリア。_warmup_chat_readyはこの新チャット開始後にTrueにセット。Copilotバックエンドは同一セッション内なので温まったまま。",
+          "title": "_warmup_baseline_textフィールドを__init__に追加",
+          "description": "ウォームアップ応答テキストを保存するためのインスタンス変数。初期値は空文字列。",
           "status": "done"
         },
         {
           "id": 2,
-          "title": "_warmup_chat_readyの意味を「DOMクリーン＆即送信可能」に再定義",
-          "description": "フラグがTrueの時、DOMにはウォームアップ応答が存在せず、翻訳プロンプトを直接送信できる状態であることを保証する。",
+          "title": "_warmup_impl()でウォームアップ応答をbaseline_textとして記録",
+          "description": "start_new_chat()によるDOMクリアを削除し、代わりにwarmup_response.strip()を_warmup_baseline_textに保存。同一チャットを維持しプライミングコンテキストを保持。",
           "status": "done"
         },
         {
           "id": 3,
-          "title": "翻訳時の_get_response()がウォームアップ応答を拾わないことを確認",
-          "description": "新チャット後のDOMには応答要素がないため、_get_latest_streaming_text()は翻訳応答のみを返す。",
+          "title": "_get_response()にbaseline_textパラメータを追加",
+          "description": "last_text = baseline_textで初期化し、ウォームアップ応答テキストを「既読」として扱う。on_chunkに流れず、新しいコンテンツのみがストリーミングされる。",
           "status": "done"
         },
         {
           "id": 4,
-          "title": "on_chunkコールバックにウォームアップ応答が流れないことを確認",
-          "description": "UIストリーミングプレビューに翻訳結果のみが表示されることを検証。",
+          "title": "_translate_single_impl()と_translate_sync_impl()でbaseline_textを渡す",
+          "description": "warmup_chat_ready=True時にresponse_baseline=self._warmup_baseline_textを取得し、_get_response(baseline_text=response_baseline)として渡す。使用後にフラグとbaselineをクリア。",
+          "status": "done"
+        },
+        {
+          "id": 5,
+          "title": "実環境検証：同一チャットでの動作確認",
+          "description": "2026-03-31検証完了。baseline=89chars、warmup_chat_ready=True、Reusing warmed-up chat session確認。ウォームアップと翻訳が同一チャットで実行されることをログで確認済み。",
           "status": "done"
         }
       ]

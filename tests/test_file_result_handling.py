@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from yakulingo.models.types import TranslationResult, TranslationStatus
+from yakulingo.models.types import TextTranslationResult, TranslationResult, TranslationStatus
 from yakulingo.ui.app import HotkeyFileOutputSummary, YakuLingoApp
+from yakulingo.ui.state import AppState
 from yakulingo.ui.components.file_panel import _result_output_files
 
 
@@ -32,3 +33,30 @@ def test_result_output_files_accepts_hotkey_summary() -> None:
         (Path("/tmp/a.xlsx"), "main"),
         (Path("/tmp/a_glossary.csv"), "glossary"),
     ]
+
+
+def test_has_text_result_panel_content_is_true_while_translating() -> None:
+    app = YakuLingoApp.__new__(YakuLingoApp)
+    app.state = AppState(text_translating=True)
+
+    assert app._has_text_result_panel_content() is True
+
+
+def test_has_text_result_panel_content_is_true_with_result() -> None:
+    app = YakuLingoApp.__new__(YakuLingoApp)
+    app.state = AppState(
+        text_result=TextTranslationResult(
+            source_text="hello",
+            source_char_count=5,
+            output_language="jp",
+        )
+    )
+
+    assert app._has_text_result_panel_content() is True
+
+
+def test_has_text_result_panel_content_is_false_without_translation_state() -> None:
+    app = YakuLingoApp.__new__(YakuLingoApp)
+    app.state = AppState()
+
+    assert app._has_text_result_panel_content() is False

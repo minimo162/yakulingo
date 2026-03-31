@@ -7244,8 +7244,21 @@ class YakuLingoApp:
         from yakulingo.ui.state import TextViewState
 
         if result is None:
+            logger.debug(
+                "[TEXT_RESULT] No result object to apply (source_len=%d, split=%s)",
+                len(source_text),
+                split_translation,
+            )
             self.state.text_result = None
             return "Unknown error"
+
+        logger.debug(
+            "[TEXT_RESULT] Applying result: options=%d, error=%r, output_language=%s, split=%s",
+            len(result.options),
+            result.error_message,
+            result.output_language,
+            split_translation,
+        )
 
         if result.options:
             if split_translation:
@@ -7255,6 +7268,11 @@ class YakuLingoApp:
             self.state.text_view_state = TextViewState.RESULT
             self._add_to_history(result, source_text)
             self.state.source_text = ""
+            logger.debug(
+                "[TEXT_RESULT] Stored successful result (options=%d, first_text_len=%d)",
+                len(result.options),
+                len(result.options[0].text) if result.options and result.options[0].text else 0,
+            )
             return ""
 
         if not result.error_message:
@@ -7262,7 +7280,12 @@ class YakuLingoApp:
 
         self.state.text_result = result
         self.state.text_view_state = TextViewState.RESULT
+        logger.debug("[TEXT_RESULT] Stored failed result with error=%r", result.error_message)
         return result.error_message
+
+    def _has_text_result_panel_content(self) -> bool:
+        """Return True when text mode should show the result-panel layout."""
+        return bool(self.state.text_translating or self.state.text_result)
 
     def _scroll_result_panel_to_bottom(
         self,
@@ -7519,7 +7542,7 @@ class YakuLingoApp:
         if self._main_area_element:
             # Remove dynamic classes first, then add current ones
             is_file_mode = self._is_file_panel_active()
-            has_results = self.state.text_result or self.state.text_translating
+            has_results = self._has_text_result_panel_content()
 
             # Debug logging for layout state changes
             logger.debug(
@@ -10204,6 +10227,13 @@ class YakuLingoApp:
 
         # Restore client context for UI operations after asyncio.to_thread
         ui_refresh_start = time.monotonic()
+        logger.debug(
+            "[TEXT_RESULT] Translation [%s] before final refresh: error=%r, options=%d, has_panel_content=%s",
+            trace_id,
+            error_message,
+            len(self.state.text_result.options) if self.state.text_result and self.state.text_result.options else 0,
+            self._has_text_result_panel_content(),
+        )
         logger.debug("[LAYOUT] Translation [%s] starting UI refresh (text_result=%s, text_translating=%s)",
                      trace_id, bool(self.state.text_result), self.state.text_translating)
         with client:

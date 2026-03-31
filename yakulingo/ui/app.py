@@ -12295,6 +12295,18 @@ def run_app(
                         _early_connection_result_ref.value = result
                     logger.info("[TIMING] Early Copilot connect (background): %.2fs, success=%s",
                                time.perf_counter() - _t_early, result)
+
+                    # Warmup: send a greeting to pre-warm Copilot session
+                    if result and not shutdown_event.is_set():
+                        try:
+                            _settings = AppSettings.load(get_default_settings_path())
+                            if _settings.warmup_on_connect:
+                                _t_warmup = time.perf_counter()
+                                _early_copilot.warmup()
+                                logger.info("[TIMING] Early Copilot warmup (background): %.2fs",
+                                           time.perf_counter() - _t_warmup)
+                        except Exception as warmup_err:
+                            logger.debug("Early Copilot warmup failed (non-fatal): %s", warmup_err)
                 except Exception as e:
                     logger.debug("Early Copilot connection failed: %s", e)
                     if _early_connection_result_ref is not None:

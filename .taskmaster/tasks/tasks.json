@@ -13,7 +13,9 @@
       "title": "翻訳結果パース処理の検証",
       "status": "done",
       "priority": "high",
-      "dependencies": [1],
+      "dependencies": [
+        1
+      ],
       "subtasks": []
     },
     {
@@ -21,7 +23,9 @@
       "title": "UI状態更新フローの検証",
       "status": "done",
       "priority": "high",
-      "dependencies": [2],
+      "dependencies": [
+        2
+      ],
       "subtasks": []
     },
     {
@@ -29,7 +33,9 @@
       "title": "結果パネルの表示条件とCSS検証",
       "status": "done",
       "priority": "medium",
-      "dependencies": [3],
+      "dependencies": [
+        3
+      ],
       "subtasks": []
     },
     {
@@ -37,7 +43,12 @@
       "title": "根本原因の修正",
       "status": "done",
       "priority": "high",
-      "dependencies": [1, 2, 3, 4],
+      "dependencies": [
+        1,
+        2,
+        3,
+        4
+      ],
       "subtasks": []
     },
     {
@@ -45,7 +56,9 @@
       "title": "エラーハンドリングの改善",
       "status": "done",
       "priority": "medium",
-      "dependencies": [5],
+      "dependencies": [
+        5
+      ],
       "subtasks": []
     },
     {
@@ -53,7 +66,9 @@
       "title": "ファイル翻訳の結果表示確認",
       "status": "done",
       "priority": "medium",
-      "dependencies": [5],
+      "dependencies": [
+        5
+      ],
       "subtasks": []
     },
     {
@@ -209,7 +224,9 @@
       "description": "RESIDENT_STARTUP_PROMPT_READY_TIMEOUT_SEC 300→60秒。",
       "status": "done",
       "priority": "medium",
-      "dependencies": [10],
+      "dependencies": [
+        10
+      ],
       "subtasks": [
         {
           "id": 1,
@@ -229,7 +246,9 @@
       "description": "/chatページでチャット入力の有無に関わらずREADYを返していた誤変更を修正。入力欄がない場合はLOADINGを返すよう復元。",
       "status": "done",
       "priority": "high",
-      "dependencies": [10],
+      "dependencies": [
+        10
+      ],
       "subtasks": []
     },
     {
@@ -308,7 +327,9 @@
       "description": "比較プロンプトの重複指示を統合し、冗長な行を削減する。",
       "status": "done",
       "priority": "high",
-      "dependencies": [19],
+      "dependencies": [
+        19
+      ],
       "subtasks": [
         {
           "id": 1,
@@ -328,7 +349,10 @@
       "description": "入力 50 文字以下では軽量な追加指示を注入し、解説を最小化する。",
       "status": "done",
       "priority": "high",
-      "dependencies": [19, 20],
+      "dependencies": [
+        19,
+        20
+      ],
       "subtasks": [
         {
           "id": 1,
@@ -378,7 +402,10 @@
       "description": "ストリーミング中の比較結果を段階的にパースし、完成済みスタイルから即表示する。",
       "status": "done",
       "priority": "medium",
-      "dependencies": [19, 20],
+      "dependencies": [
+        19,
+        20
+      ],
       "subtasks": [
         {
           "id": 1,
@@ -396,12 +423,127 @@
           "status": "done"
         }
       ]
+    },
+    {
+      "id": 24,
+      "title": "起動時ウォームアップ（Phase A）",
+      "description": "connect()成功後にバックグラウンドでCopilotへウォームアップメッセージを送信し、初回翻訳のレイテンシを削減する。",
+      "status": "done",
+      "priority": "high",
+      "dependencies": [],
+      "subtasks": [
+        {
+          "id": 1,
+          "title": "CopilotHandlerにwarmup()/_warmup_impl()メソッドを追加",
+          "status": "done"
+        },
+        {
+          "id": 2,
+          "title": "AppSettingsにwarmup_on_connect設定を追加",
+          "status": "done"
+        },
+        {
+          "id": 3,
+          "title": "_early_connect()でconnect()成功後にwarmup()を呼び出し",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "title": "ウォームアップメッセージの翻訳特化",
+      "description": "ウォームアップメッセージを「こんにちは」から翻訳タスクに特化したプライミングメッセージに変更する。例: 「あなたは翻訳のスペシャリストです。これから私の翻訳指示に従ってください。」",
+      "status": "done",
+      "priority": "medium",
+      "dependencies": [24],
+      "subtasks": [
+        {
+          "id": 1,
+          "title": "WARMUP_MESSAGEの内容を翻訳プライミング用に変更",
+          "status": "done"
+        },
+        {
+          "id": 2,
+          "title": "Copilotの応答がプライミング後に翻訳品質に影響するか検証",
+          "status": "pending"
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "title": "翻訳間ウォームアップ（Phase B）",
+      "description": "翻訳完了後に自動的に新チャット＋ウォームアップメッセージを送信し、次回翻訳のレイテンシを削減する。",
+      "status": "done",
+      "priority": "high",
+      "dependencies": [24, 25],
+      "subtasks": [
+        {
+          "id": 1,
+          "title": "translate_single_impl完了後にウォームアップを非同期起動",
+          "status": "done"
+        },
+        {
+          "id": 2,
+          "title": "ウォームアップ中に次の翻訳が来た場合のキャンセル処理を実装",
+          "status": "done"
+        },
+        {
+          "id": 3,
+          "title": "translate_sync_impl開始時にウォームアップキャンセルを追加",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "title": "ウォームアップ済みチャットの再利用（Phase C）",
+      "description": "翻訳時にウォームアップ済みチャットをそのまま再利用する。現状はstart_new_chat()でセッションがリセットされウォームアップが無駄になっている。ウォームアップ完了後は新チャットを開かず翻訳プロンプトを直接送信し、翻訳完了後に新チャット＋ウォームアップを実行する。",
+      "status": "done",
+      "priority": "high",
+      "dependencies": [24, 25, 26],
+      "subtasks": [
+        {
+          "id": 1,
+          "title": "_warmup_chat_readyフラグをCopilotHandlerに追加",
+          "description": "_warmup_impl()正常完了時にTrue、start_new_chat()呼び出し時にFalse",
+          "status": "done"
+        },
+        {
+          "id": 2,
+          "title": "_translate_single_implで_warmup_chat_ready=Trueならstart_new_chat()をスキップ",
+          "description": "ウォームアップ済みチャットをそのまま使い、フラグをFalseにリセット",
+          "status": "done"
+        },
+        {
+          "id": 3,
+          "title": "_translate_sync_implで_warmup_chat_ready=Trueなら初回バッチのstart_new_chat()をスキップ",
+          "description": "2回目以降のバッチは従来通り（同一チャット内連続送信）",
+          "status": "done"
+        },
+        {
+          "id": 4,
+          "title": "キャンセル時のフラグリセット処理",
+          "description": "_cancel_background_warmup()で_warmup_chat_ready=Falseにリセット。ウォームアップ未完了なら従来通りstart_new_chat()",
+          "status": "done"
+        },
+        {
+          "id": 5,
+          "title": "翻訳完了後のウォームアップ順序を修正",
+          "description": "_start_background_warmup()内で新チャット→プライミング→応答取得の順序が正しいことを確認",
+          "status": "done"
+        },
+        {
+          "id": 6,
+          "title": "Phase C統合テスト：起動→初回翻訳→2回目翻訳のフロー検証",
+          "status": "done"
+        }
+      ]
     }
   ],
   "metadata": {
     "projectName": "YakuLingo M365 Copilot Translation Fix",
-    "totalTasks": 23,
+    "totalTasks": 27,
     "createdAt": "2026-03-31",
-    "version": "1.6"
+    "version": "1.9"
   }
 }

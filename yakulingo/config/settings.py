@@ -323,6 +323,7 @@ class AppSettings:
     # "minimized": 最小化して非表示
     # "foreground": 前面に表示
     browser_display_mode: str = "minimized"
+    warmup_on_connect: bool = True          # 起動時にCopilotへ挨拶を送りセッションをウォームアップ
     # Login overlay guard (Edge foreground/overlay A/B guard)
     login_overlay_guard: dict[str, object] = field(
         default_factory=lambda: {"enabled": False, "remove_after_version": None}

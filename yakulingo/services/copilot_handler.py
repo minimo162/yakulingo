@@ -1118,6 +1118,10 @@ class CopilotHandler:
     THREAD_JOIN_TIMEOUT_SECONDS = 5      # 5 seconds for thread cleanup
     EXECUTOR_TIMEOUT_BUFFER_SECONDS = 60 # Extra time for executor vs response timeout
 
+    # Warmup settings
+    WARMUP_MESSAGE = "あなたは翻訳のスペシャリストです。これから私の翻訳指示に従ってください。"  # Translation-priming warmup message
+    WARMUP_RESPONSE_TIMEOUT = 60          # Seconds to wait for warmup response
+
     # =========================================================================
     # Edge Window Settings - Minimum size when bringing window to foreground
     # =========================================================================
@@ -1437,6 +1441,12 @@ class CopilotHandler:
         self._ui_window_sync_refcount = 0
         self._ui_window_sync_stop_event: threading.Event | None = None
         self._ui_window_sync_thread: threading.Thread | None = None
+        # Phase B: Inter-translation background warmup state
+        self._warmup_in_progress = False
+        self._cancel_warmup = threading.Event()
+        self._background_warmup_thread: threading.Thread | None = None
+        # Phase C: Track whether warmup chat is ready for reuse
+        self._warmup_chat_ready = False
 
     @property
     def is_connected(self) -> bool:
@@ -3201,6 +3211,135 @@ class CopilotHandler:
             "Skipping GPT mode required check; manual Copilot mode selection is expected"
         )
         return True
+
+    # =========================================================================
+    # Warmup — send a greeting to Copilot to pre-warm the session
+    # =========================================================================
+
+    def warmup(self) -> bool:
+        """Send a simple greeting to Copilot to warm up the session.
+
+        This reduces first-translation latency by exercising the full
+        send→receive pipeline (UI interaction, network, Copilot backend)
+        before the user's actual translation request arrives.
+
+        Returns True if warmup completed successfully, False otherwise.
+        Safe to call from any thread — delegates to Playwright thread.
+        """
+        logger.info("Starting Copilot warmup")
+        try:
+            executor_timeout = self.WARMUP_RESPONSE_TIMEOUT + self.EXECUTOR_TIMEOUT_BUFFER_SECONDS
+            result = _playwright_executor.execute(
+                self._warmup_impl,
+                timeout=executor_timeout,
+            )
+            return result
+        except Exception as e:
+            logger.warning("Warmup failed (non-fatal): %s", e)
+            return False
+
+    def _start_background_warmup(self) -> None:
+        """Schedule a background warmup after translation completes.
+
+        Starts a new chat and sends the warmup message in a daemon thread
+        so the next translation finds a pre-warmed session.
+        Non-blocking -- returns immediately.
+        """
+        try:
+            from yakulingo.config.settings import AppSettings, get_default_settings_path
+            settings = AppSettings.load(get_default_settings_path())
+            if not settings.warmup_on_connect:
+                logger.debug("Background warmup skipped: warmup_on_connect is disabled")
+                return
+        except Exception:
+            logger.debug("Background warmup skipped: could not read settings")
+            return
+
+        if self._warmup_in_progress:
+            logger.debug("Background warmup skipped: already in progress")
+            return
+
+        def _bg_warmup():
+            try:
+                self._warmup_in_progress = True
+                self._cancel_warmup.clear()
+                logger.info("Background warmup starting (Phase B)")
+                self.warmup()
+                logger.info("Background warmup completed (Phase B)")
+            except Exception as e:
+                logger.debug("Background warmup failed (non-fatal): %s", e)
+            finally:
+                self._warmup_in_progress = False
+
+        t = threading.Thread(target=_bg_warmup, daemon=True, name="bg-warmup")
+        self._background_warmup_thread = t
+        t.start()
+
+    def _cancel_background_warmup(self) -> None:
+        """Signal any in-progress background warmup to stop.
+
+        Sets the cancel event. The warmup's _get_response will be interrupted
+        naturally when start_new_chat() navigates away, but this provides a
+        clean signal for early exit.
+        """
+        self._warmup_chat_ready = False
+        if self._warmup_in_progress:
+            logger.debug("Cancelling background warmup")
+            self._cancel_warmup.set()
+
+    def _warmup_impl(self) -> bool:
+        """Implementation of warmup() that runs in the Playwright thread.
+
+        Flow:
+        1. Ensure Copilot page is ready
+        2. Start a new chat
+        3. Send a simple greeting
+        4. Wait for the response (discard it)
+        """
+        warmup_start = time.monotonic()
+        try:
+            if not self._connected or not self._is_page_valid():
+                logger.debug("Warmup skipped: not connected or page invalid")
+                return False
+
+            if not self._ensure_copilot_page():
+                logger.debug("Warmup skipped: could not ensure Copilot page")
+                return False
+
+            # Start new chat for warmup
+            self.start_new_chat(click_only=True)
+
+            # Check if warmup was cancelled (Phase B cancellation)
+            if self._cancel_warmup.is_set():
+                logger.debug("Warmup cancelled before sending message")
+                self._warmup_chat_ready = False
+                return False
+
+            # Send greeting
+            self._send_message(self.WARMUP_MESSAGE)
+
+            # Minimize browser
+            self._send_to_background_impl(self._page)
+
+            # Check if warmup was cancelled before waiting for response
+            if self._cancel_warmup.is_set():
+                logger.debug("Warmup cancelled before waiting for response")
+                self._warmup_chat_ready = False
+                return False
+
+            # Wait for response (discard it)
+            self._get_response(timeout=self.WARMUP_RESPONSE_TIMEOUT)
+
+            self._warmup_chat_ready = True
+            elapsed = time.monotonic() - warmup_start
+            logger.info("[TIMING] Copilot warmup completed: %.2fs (chat ready for reuse)", elapsed)
+            return True
+
+        except Exception as e:
+            self._warmup_chat_ready = False
+            elapsed = time.monotonic() - warmup_start
+            logger.warning("[TIMING] Copilot warmup failed after %.2fs: %s", elapsed, e)
+            return False
 
     def _get_gpt_mode_target_candidates(self) -> tuple[str, ...]:
         return tuple(candidate for candidate in self.GPT_MODE_TARGETS if candidate)
@@ -7818,14 +7957,24 @@ class CopilotHandler:
                 logger.info("Translation cancelled before attempt %d", attempt + 1)
                 raise TranslationCancelledError("Translation cancelled by user")
 
-            # Start a new chat to clear previous context (prevents using old responses)
-            # OPTIMIZED: Use click_only=True for parallelization with prompt input
-            # The new chat button click doesn't reset the input field, so we can
-            # safely proceed to send_message immediately while click executes async
-            self.start_new_chat(
-                skip_clear_wait=skip_clear_wait if attempt == 0 else True,
-                click_only=True
-            )
+            # Phase C: Reuse warmed-up chat on first attempt if available
+            if attempt == 0 and self._warmup_chat_ready:
+                logger.info("Reusing warmed-up chat session for batch translation (skipping start_new_chat)")
+                self._warmup_chat_ready = False
+                if self._warmup_in_progress:
+                    self._cancel_warmup.set()
+            else:
+                # Cancel any in-progress background warmup before starting new chat
+                self._cancel_background_warmup()
+
+                # Start a new chat to clear previous context (prevents using old responses)
+                # OPTIMIZED: Use click_only=True for parallelization with prompt input
+                # The new chat button click doesn't reset the input field, so we can
+                # safely proceed to send_message immediately while click executes async
+                self.start_new_chat(
+                    skip_clear_wait=skip_clear_wait if attempt == 0 else True,
+                    click_only=True
+                )
 
             # Minimize browser after start_new_chat to prevent window flash
             self._send_to_background_impl(self._page)
@@ -8073,13 +8222,24 @@ class CopilotHandler:
                 logger.info("Translation cancelled before attempt %d (single)", attempt + 1)
                 raise TranslationCancelledError("Translation cancelled by user")
 
-            # Start a new chat to clear previous context
-            # OPTIMIZED: Use click_only=True for parallelization with prompt input
-            # The new chat button click doesn't reset the input field, so we can
-            # safely proceed to send_message immediately while click executes async
-            new_chat_start = time.monotonic()
-            self.start_new_chat(click_only=True)
-            logger.info("[TIMING] start_new_chat (click_only): %.2fs", time.monotonic() - new_chat_start)
+            # Phase C: Reuse warmed-up chat if available, otherwise start new chat
+            if self._warmup_chat_ready:
+                logger.info("Reusing warmed-up chat session (skipping start_new_chat)")
+                self._warmup_chat_ready = False
+                # Cancel warmup tracking state without resetting chat_ready (already False)
+                if self._warmup_in_progress:
+                    self._cancel_warmup.set()
+            else:
+                # Cancel any in-progress background warmup before starting new chat
+                self._cancel_background_warmup()
+
+                # Start a new chat to clear previous context
+                # OPTIMIZED: Use click_only=True for parallelization with prompt input
+                # The new chat button click doesn't reset the input field, so we can
+                # safely proceed to send_message immediately while click executes async
+                new_chat_start = time.monotonic()
+                self.start_new_chat(click_only=True)
+                logger.info("[TIMING] start_new_chat (click_only): %.2fs", time.monotonic() - new_chat_start)
 
             # Minimize browser after start_new_chat to prevent window flash
             self._send_to_background_impl(self._page)
@@ -8236,6 +8396,9 @@ class CopilotHandler:
             # Removing this prevents the browser from stealing focus after translation.
 
             result = _strip_reference_citations(result, reference_files)
+
+            # Phase B: Schedule background warmup for next translation
+            self._start_background_warmup()
 
             return result.strip()
 

@@ -1113,10 +1113,14 @@ def _render_phase_stepper(
 
 
 def _complete_card(
-    result: Optional[TranslationResult],
+    result: Optional[object],
     file_info: Optional[FileInfo],
 ):
     """Success card with output file list and open actions"""
+    output_files = _result_output_files(result)
+    issue_block_ids = getattr(result, 'issue_block_ids', []) if result else []
+    mismatched_batch_count = getattr(result, 'mismatched_batch_count', 0) if result else 0
+
     with ui.card().classes('file-card success w-full max-w-md mx-auto'):
         with ui.column().classes('items-center gap-4 py-2 w-full'):
             # Animated checkmark
@@ -1125,13 +1129,13 @@ def _complete_card(
 
             ui.label('翻訳完了').classes('success-text')
 
-            if result and (result.issue_block_ids or result.mismatched_batch_count):
+            if result and (issue_block_ids or mismatched_batch_count):
                 _issue_card(result, file_info)
 
             # Output files list
-            if result and result.output_files:
+            if output_files:
                 with ui.column().classes('w-full gap-2 mt-2'):
-                    for file_path, description in result.output_files:
+                    for file_path, description in output_files:
                         _output_file_row(file_path, description)
 
             if result:
@@ -1191,11 +1195,12 @@ def _issue_card(
 
 
 def _file_action_footer(
-    result: TranslationResult,
+    result: object,
 ) -> None:
-    target_path = result.output_path
-    if not target_path and result.output_files:
-        target_path = result.output_files[0][0]
+    target_path = getattr(result, 'output_path', None)
+    output_files = _result_output_files(result)
+    if not target_path and output_files:
+        target_path = output_files[0][0]
 
     if not target_path or not target_path.exists():
         return
@@ -1236,6 +1241,23 @@ def _output_file_row(file_path: Path, description: str):
             with ui.column().classes('flex-grow gap-0 min-w-0'):
                 ui.label(file_path.name).classes('text-sm font-medium truncate')
                 ui.label(description).classes('text-xs text-on-surface-variant')
+
+
+def _result_output_files(result: Optional[object]) -> list[tuple[Path, str]]:
+    """Normalize output files for both TranslationResult and summary objects."""
+    if result is None:
+        return []
+    output_files = getattr(result, 'output_files', None)
+    if not output_files:
+        return []
+    normalized: list[tuple[Path, str]] = []
+    for entry in output_files:
+        if not isinstance(entry, tuple) or len(entry) != 2:
+            continue
+        file_path, description = entry
+        if isinstance(file_path, Path) and isinstance(description, str):
+            normalized.append((file_path, description))
+    return normalized
 
 
 def _error_card(error_message: str):

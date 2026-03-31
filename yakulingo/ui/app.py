@@ -7203,6 +7203,36 @@ class YakuLingoApp:
 
         self._run_in_ui_context(_apply, "Result panel refresh")
 
+    @staticmethod
+    def _get_result_output_files(result: object | None) -> list[tuple[Path, str]]:
+        """Return normalized output files from file translation results."""
+        if result is None:
+            return []
+        output_files = getattr(result, "output_files", None)
+        if not output_files:
+            return []
+        normalized: list[tuple[Path, str]] = []
+        for entry in output_files:
+            if not isinstance(entry, tuple) or len(entry) != 2:
+                continue
+            file_path, description = entry
+            if isinstance(file_path, Path) and isinstance(description, str):
+                normalized.append((file_path, description))
+        return normalized
+
+    @classmethod
+    def _get_primary_output_path(cls, result: object | None) -> Optional[Path]:
+        """Pick the primary output path from output_path or output_files."""
+        if result is None:
+            return None
+        output_path = getattr(result, "output_path", None)
+        if isinstance(output_path, Path):
+            return output_path
+        output_files = cls._get_result_output_files(result)
+        if output_files:
+            return output_files[0][0]
+        return None
+
     def _apply_text_translation_result(
         self,
         result: Optional[TextTranslationResult],
@@ -11596,8 +11626,9 @@ class YakuLingoApp:
                         queue_item.status_label = "失敗"
                         queue_item.error_message = error_message
             elif result:
-                if result.status == TranslationStatus.COMPLETED and result.output_path:
-                    self.state.output_file = result.output_path
+                primary_output = self._get_primary_output_path(result)
+                if result.status == TranslationStatus.COMPLETED and primary_output:
+                    self.state.output_file = primary_output
                     self.state.translation_result = result
                     self.state.file_state = FileState.COMPLETE
                     if queue_item:

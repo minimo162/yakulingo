@@ -1209,8 +1209,8 @@ FILE_LANGUAGE_DETECTION_TIMEOUT_SEC = 8.0  # Avoid hanging file-language detecti
 FILE_TRANSLATION_UI_VISIBILITY_HOLD_SEC = 600.0  # 翻訳完了直後のUI自動非表示を抑止
 DEFAULT_TEXT_STYLE = "concise"
 RESIDENT_HEARTBEAT_INTERVAL_SEC = 300  # Update startup.log even when UI is closed
-RESIDENT_STARTUP_READY_TIMEOUT_SEC = 3600  # Allow manual login during resident startup
-RESIDENT_STARTUP_PROMPT_READY_TIMEOUT_SEC = 300  # Wait for Copilot input/send readiness after connect
+RESIDENT_STARTUP_READY_TIMEOUT_SEC = 120  # Avoid blocking startup for an hour when state detection is stale
+RESIDENT_STARTUP_PROMPT_READY_TIMEOUT_SEC = 60  # Defer longer prompt waits until first translation if startup is slow
 RESIDENT_STARTUP_POLL_INTERVAL_SEC = 2
 RESIDENT_STARTUP_LAYOUT_RETRY_ATTEMPTS = 40
 RESIDENT_STARTUP_LAYOUT_RETRY_DELAY_SEC = 0.25
@@ -2014,18 +2014,25 @@ class YakuLingoApp:
         from yakulingo.services.copilot_handler import ConnectionState as CopilotConnectionState
 
         deadline = time.time() + timeout_sec
+        last_state = None
         while time.time() < deadline and not self._shutdown_requested:
             try:
                 state = await asyncio.to_thread(self.copilot.check_copilot_state, 5)
             except Exception as e:
                 logger.debug("Resident startup: state check failed: %s", e)
                 state = None
+            last_state = state
 
             if state == CopilotConnectionState.READY:
                 return True
 
             await asyncio.sleep(RESIDENT_STARTUP_POLL_INTERVAL_SEC)
 
+        logger.warning(
+            "Resident startup: Copilot readiness wait timed out after %ss (last_state=%s)",
+            timeout_sec,
+            last_state,
+        )
         return False
 
     async def _get_resident_startup_status(self) -> dict[str, object]:

@@ -3,234 +3,159 @@
     {
       "id": 1,
       "title": "Copilot応答取得の検証",
-      "description": "copilot_handler.pyの_get_response()メソッドがCopilotからの応答を正しく取得しているか検証する。空レスポンス、エラーパターン検出、タイムアウトの各ケースを確認する。",
       "status": "done",
       "priority": "high",
       "dependencies": [],
-      "details": "copilot_handler.py の _translate_single_impl() (~line 8151) → _get_response() (~line 8272) の戻り値を確認。COPILOT_ERROR_PATTERNS (~line 8284) に一致して空扱いになっていないか、is_empty_response (~line 8285) が true になっていないかを調査。デバッグログを追加して実際の応答内容を確認する。",
-      "testStrategy": "デバッグログを追加し、実際にCopilotへ翻訳リクエストを送信して応答の内容をログで確認する。",
-      "subtasks": [
-        {
-          "id": 1,
-          "title": "_get_response()の戻り値にログ出力を追加",
-          "status": "done"
-        },
-        {
-          "id": 2,
-          "title": "COPILOT_ERROR_PATTERNSの一致状況を確認",
-          "status": "done"
-        },
-        {
-          "id": 3,
-          "title": "Edge WebDriver接続の安定性を確認",
-          "status": "done"
-        }
-      ]
+      "subtasks": []
     },
     {
       "id": 2,
       "title": "翻訳結果パース処理の検証",
-      "description": "translation_service.pyの結果パース処理がCopilot応答を正しくTextTranslationResult.optionsに変換しているか検証する。",
       "status": "done",
       "priority": "high",
       "dependencies": [1],
-      "details": "translation_service.py の _parse_style_comparison_result() (英語向け複数スタイル) と _parse_single_translation_result() (日本語向け単一結果) の両方を検証。Copilotの応答フォーマットが変更されてパースが失敗している可能性がある。パース前後のデータをログ出力して確認。",
-      "testStrategy": "タスク1で取得した実際のCopilot応答をパース関数に通し、options配列が正しく生成されるか確認する。",
-      "subtasks": [
-        {
-          "id": 1,
-          "title": "_parse_style_comparison_result()のパース結果を確認",
-          "status": "done"
-        },
-        {
-          "id": 2,
-          "title": "_parse_single_translation_result()のパース結果を確認",
-          "status": "done"
-        },
-        {
-          "id": 3,
-          "title": "Copilot応答フォーマットの変更有無を特定",
-          "status": "done"
-        }
-      ]
+      "subtasks": []
     },
     {
       "id": 3,
       "title": "UI状態更新フローの検証",
-      "description": "app.pyでの翻訳結果のstate更新とUI再描画が正しく動作しているか検証する。",
       "status": "done",
       "priority": "high",
       "dependencies": [2],
-      "details": "app.py の _translate_text() (~line 10105-10140) で state.text_result への代入、_refresh_result_panel() の呼び出し、asyncio.to_thread() 内でのクライアントコンテキスト維持を確認。NiceGUIの非同期更新が正しく動作しているか検証する。",
-      "testStrategy": "state.text_resultへの代入前後にログを追加し、resultオブジェクトの内容(options数、各optionのtext長)を確認する。",
-      "subtasks": [
-        {
-          "id": 1,
-          "title": "state.text_resultへの代入タイミングと値を確認",
-          "status": "done"
-        },
-        {
-          "id": 2,
-          "title": "_refresh_result_panel()の呼び出しを確認",
-          "status": "done"
-        },
-        {
-          "id": 3,
-          "title": "asyncio.to_thread()でのコンテキスト維持を確認",
-          "status": "done"
-        }
-      ]
+      "subtasks": []
     },
     {
       "id": 4,
       "title": "結果パネルの表示条件とCSS検証",
-      "description": "text_panel.pyの表示条件分岐とCSSによるパネル可視性が正しく機能しているか検証する。",
       "status": "done",
       "priority": "medium",
       "dependencies": [3],
-      "details": "text_panel.py:645 の条件分岐 `if state.text_result and state.text_result.options` の評価結果を確認。_render_results_to_jp() と _render_results_to_en() の呼び出し状況を確認。CSS の .has-results クラス付与 (app.py:~7461-7470) と styles.css:2436-2475 のルールを検証。",
-      "testStrategy": "ブラウザDevToolsでDOM要素の表示状態とCSSクラスを確認。条件分岐にログを追加して実際にどの分岐が実行されているか確認する。",
-      "subtasks": [
-        {
-          "id": 1,
-          "title": "text_panel.pyの条件分岐にデバッグログ追加",
-          "status": "done"
-        },
-        {
-          "id": 2,
-          "title": ".has-resultsクラスの付与状況を確認",
-          "status": "done"
-        },
-        {
-          "id": 3,
-          "title": "結果パネルのCSS表示ルールを検証",
-          "status": "done"
-        }
-      ]
+      "subtasks": []
     },
     {
       "id": 5,
       "title": "根本原因の修正",
-      "description": "タスク1-4の調査結果に基づき、翻訳結果が表示されない根本原因を修正する。",
       "status": "done",
       "priority": "high",
       "dependencies": [1, 2, 3, 4],
-      "details": "調査で特定された根本原因に応じて修正を実施する。想定される修正パターン: (A) Copilot応答取得ロジックの修正、(B) パースロジックのCopilot応答フォーマット変更対応、(C) UI状態更新の非同期処理修正、(D) CSS/レイアウト修正。",
-      "testStrategy": "修正後に実際のテキスト翻訳(JP→EN、EN→JP)を実行し、結果パネルに翻訳結果が表示されることを確認する。",
-      "subtasks": [
-        {
-          "id": 1,
-          "title": "根本原因に対する修正を実装",
-          "status": "done"
-        },
-        {
-          "id": 2,
-          "title": "JP→EN翻訳で3スタイルが表示されることを確認",
-          "status": "done"
-        },
-        {
-          "id": 3,
-          "title": "EN→JP翻訳で単一結果と説明が表示されることを確認",
-          "status": "done"
-        }
-      ]
+      "subtasks": []
     },
     {
       "id": 6,
       "title": "エラーハンドリングの改善",
-      "description": "翻訳失敗時にプレースホルダーではなく意味のあるエラーメッセージを表示するようにする。",
       "status": "done",
       "priority": "medium",
       "dependencies": [5],
-      "details": "現状、翻訳が失敗すると空のプレースホルダーが表示されるだけでユーザーには何が起きたかわからない。TextTranslationResult.error_messageが設定されている場合に、結果パネルにエラー内容を表示する。Copilot接続エラー、タイムアウト、パース失敗など各エラーケースで適切なメッセージを表示する。",
-      "testStrategy": "意図的にエラーを発生させ(Copilot未接続、タイムアウト等)、エラーメッセージが結果パネルに表示されることを確認する。",
-      "subtasks": [
-        {
-          "id": 1,
-          "title": "error_messageが設定されている場合の表示UIを追加",
-          "status": "done"
-        },
-        {
-          "id": 2,
-          "title": "各エラーケースで適切なメッセージが設定されることを確認",
-          "status": "done"
-        },
-        {
-          "id": 3,
-          "title": "エラー表示のスタイリングを実装",
-          "status": "done"
-        }
-      ]
+      "subtasks": []
     },
     {
       "id": 7,
       "title": "ファイル翻訳の結果表示確認",
-      "description": "テキスト翻訳だけでなくファイル翻訳(Excel, Word, PowerPoint, PDF, Text)の結果表示も正しく動作しているか確認する。",
       "status": "done",
       "priority": "medium",
       "dependencies": [5],
-      "details": "file_panel.pyでのファイル翻訳結果表示フローを確認。state.translation_result.output_filesが正しく設定され、ダウンロードボタンが表示されるか検証する。テキスト翻訳と同じ根本原因であれば修正済みのはずだが、ファイル翻訳固有のパスに問題がないか確認。",
-      "testStrategy": "各ファイル形式(Excel, Word等)で翻訳を実行し、出力ファイル一覧とダウンロードボタンが表示されることを確認する。",
-      "subtasks": [
-        {
-          "id": 1,
-          "title": "ファイル翻訳の結果表示フローを確認",
-          "status": "done"
-        },
-        {
-          "id": 2,
-          "title": "出力ファイル一覧の表示を確認",
-          "status": "done"
-        },
-        {
-          "id": 3,
-          "title": "ダウンロードボタンの動作を確認",
-          "status": "done"
-        }
-      ]
+      "subtasks": []
     },
     {
       "id": 8,
       "title": "GPTモード自動選択ステップの削除",
-      "description": "翻訳フロー内のensure_gpt_mode_required()呼び出しを削除し、GPTモード自動選択によるフリーズを解消する。ユーザーが手動でGPTモードを選択する前提とする。",
       "status": "done",
       "priority": "high",
       "dependencies": [],
-      "details": "copilot_handler.pyの翻訳実行フロー内で呼ばれるensure_gpt_mode_required()がCopilot UIのGPTモード切替ボタン(#gptModeSwitcher)を自動操作しようとするが、UIの変更によりセレクタが一致せず45秒+リトライでフリーズする。この自動選択ステップを翻訳フローから除去する。\n\n対象箇所:\n- copilot_handler.py:~7978 — translate flow内のensure_gpt_mode_required()呼び出し\n- copilot_handler.py:~8239 — single-translate flow内の同呼び出し\n- 初期接続時のensure_gpt_mode()呼び出し(~line 3161, 3205)も確認\n- reset_gpt_mode_state()の呼び出し箇所(~line 2717, 2812, 7735)も確認",
-      "testStrategy": "GPTモード選択ステップを削除後、翻訳を実行してフリーズせずにCopilotへリクエストが送信されることを確認する。ユーザーが手動でGPTモードを選択済みの状態でテストする。",
+      "subtasks": []
+    },
+    {
+      "id": 9,
+      "title": "新しいチャットボタンのセレクタ更新",
+      "status": "done",
+      "priority": "medium",
+      "dependencies": [],
       "subtasks": [
-        {
-          "id": 1,
-          "title": "translate flow内のensure_gpt_mode_required()呼び出しを削除(~line 7978)",
-          "status": "done"
-        },
-        {
-          "id": 2,
-          "title": "single-translate flow内のensure_gpt_mode_required()呼び出しを削除(~line 8239)",
-          "status": "done"
-        },
-        {
-          "id": 3,
-          "title": "初期接続時のensure_gpt_mode()呼び出しを削除/スキップ",
-          "status": "done"
-        },
-        {
-          "id": 4,
-          "title": "GPTモード関連の不要なstate管理(reset_gpt_mode_state等)を整理",
-          "status": "done"
-        },
-        {
-          "id": 5,
-          "title": "フリーズなしで翻訳が実行されることを確認",
-          "status": "done"
-        }
+        {"id": 1, "title": "#new-chat-buttonを削除、data-automation-idを追加", "status": "done"},
+        {"id": 2, "title": "start_new_chat()での動作確認", "status": "done"}
+      ]
+    },
+    {
+      "id": 10,
+      "title": "起動時「準備中...」フリーズの修正",
+      "description": "check_copilot_state()の/chat判定をURL-onlyに緩和、タイムアウト3600→120秒に短縮。",
+      "status": "done",
+      "priority": "high",
+      "dependencies": [],
+      "subtasks": [
+        {"id": 1, "title": "check_copilot_state()の/chat判定をURL-onlyに緩和", "status": "done"},
+        {"id": 2, "title": "RESIDENT_STARTUP_READY_TIMEOUT_SECを3600→120に短縮", "status": "done"},
+        {"id": 3, "title": "デバッグログ追加", "status": "done"},
+        {"id": 4, "title": "起動後「準備完了」に遷移することを確認", "status": "done"}
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Edge起動ポーリングの高速化",
+      "description": "EDGE_STARTUP_CHECK_INTERVAL 0.25→0.1s、MAX_ATTEMPTS 80→50 (最大20秒→5秒)。",
+      "status": "done",
+      "priority": "high",
+      "dependencies": [],
+      "subtasks": [
+        {"id": 1, "title": "EDGE_STARTUP_CHECK_INTERVALを0.25s→0.1sに変更", "status": "done"},
+        {"id": 2, "title": "EDGE_STARTUP_MAX_ATTEMPTSを80→50に変更", "status": "done"},
+        {"id": 3, "title": "Edge起動時間の改善を確認", "status": "done"}
+      ]
+    },
+    {
+      "id": 12,
+      "title": "チャットUI待ち（_wait_for_chat_ready）の短縮",
+      "description": "SELECTOR_CHAT_INPUT_MAX_STEPS 7→5 (最大13秒→9秒)。",
+      "status": "done",
+      "priority": "medium",
+      "dependencies": [],
+      "subtasks": [
+        {"id": 1, "title": "SELECTOR_CHAT_INPUT_MAX_STEPSを7→5に変更", "status": "done"},
+        {"id": 2, "title": "chat ready検出時間の改善を確認", "status": "done"}
+      ]
+    },
+    {
+      "id": 13,
+      "title": "CDP接続リトライの高速化",
+      "description": "初期間隔 0.5→0.2s、バックオフ上限1.5s追加 (最大6.5秒→4秒)。",
+      "status": "done",
+      "priority": "medium",
+      "dependencies": [],
+      "subtasks": [
+        {"id": 1, "title": "cdp_retry_intervalの初期値を0.5→0.2に変更", "status": "done"},
+        {"id": 2, "title": "バックオフ上限1.5sを追加", "status": "done"},
+        {"id": 3, "title": "CDP接続時間の改善を確認", "status": "done"}
+      ]
+    },
+    {
+      "id": 14,
+      "title": "Context取得リトライの高速化",
+      "description": "CONTEXT_RETRY_COUNT 10→5、INTERVAL 0.3→0.2s (最大3秒→1秒)。",
+      "status": "done",
+      "priority": "low",
+      "dependencies": [],
+      "subtasks": [
+        {"id": 1, "title": "CONTEXT_RETRY_COUNTを10→5に、INTERVALを0.3→0.2に変更", "status": "done"},
+        {"id": 2, "title": "Context取得時間の改善を確認", "status": "done"}
+      ]
+    },
+    {
+      "id": 15,
+      "title": "Prompt Ready待ちタイムアウトの短縮",
+      "description": "RESIDENT_STARTUP_PROMPT_READY_TIMEOUT_SEC 300→60秒。",
+      "status": "done",
+      "priority": "medium",
+      "dependencies": [10],
+      "subtasks": [
+        {"id": 1, "title": "RESIDENT_STARTUP_PROMPT_READY_TIMEOUT_SECを300→60に変更", "status": "done"},
+        {"id": 2, "title": "タイムアウト時のフォールバック動作を確認", "status": "done"}
       ]
     }
   ],
   "metadata": {
     "projectName": "YakuLingo M365 Copilot Translation Fix",
-    "totalTasks": 8,
+    "totalTasks": 15,
     "createdAt": "2026-03-31",
-    "version": "1.1"
+    "version": "1.4"
   }
 }

@@ -1078,8 +1078,8 @@ class CopilotHandler:
 
     # Configuration constants
     DEFAULT_CDP_PORT = 9333  # Dedicated port for translator
-    EDGE_STARTUP_MAX_ATTEMPTS = 80  # Maximum iterations to wait for Edge startup
-    EDGE_STARTUP_CHECK_INTERVAL = 0.25  # Seconds between startup checks (total: 20 seconds)
+    EDGE_STARTUP_MAX_ATTEMPTS = 50  # Maximum iterations to wait for Edge startup
+    EDGE_STARTUP_CHECK_INTERVAL = 0.1  # Seconds between startup checks (total: 5 seconds)
     # Edge taskbar suppression during startup can fail on cold boots where the window
     # is created late or Edge recreates the top-level window after initialization.
     # Keep re-applying for a while to ensure the taskbar entry stays hidden.
@@ -1105,7 +1105,7 @@ class CopilotHandler:
     # Selector wait timeouts (milliseconds) - for Playwright wait_for_selector()
     SELECTOR_CHAT_INPUT_FIRST_STEP_TIMEOUT_MS = 1000  # 1 second for first step (fast path for logged-in users)
     SELECTOR_CHAT_INPUT_STEP_TIMEOUT_MS = 2000  # 2 seconds per subsequent step for early login detection
-    SELECTOR_CHAT_INPUT_MAX_STEPS = 7        # Max steps (1s + 2s*6 = 13s total)
+    SELECTOR_CHAT_INPUT_MAX_STEPS = 5        # Max steps (1s + 2s*4 = 9s total)
     SELECTOR_RESPONSE_TIMEOUT_MS = 10000     # 10 seconds for response element to appear
     SELECTOR_LOGIN_CHECK_TIMEOUT_MS = 2000   # 2 seconds for login state checks
     SELECTOR_QUICK_CHECK_TIMEOUT_MS = 500    # 0.5 seconds for instant checks
@@ -1196,7 +1196,11 @@ class CopilotHandler:
     STOP_BUTTON_SELECTOR_COMBINED = ", ".join(STOP_BUTTON_SELECTORS)
 
     # New chat button selectors
-    NEW_CHAT_BUTTON_SELECTOR = '#new-chat-button, [data-testid="newChatButton"], button[aria-label="新しいチャット"]'
+    NEW_CHAT_BUTTON_SELECTOR = (
+        '[data-testid="newChatButton"], '
+        '[data-automation-id="newChatButton"], '
+        'button[aria-label="新しいチャット"]'
+    )
 
     # File upload selectors
     PLUS_MENU_BUTTON_SELECTOR = '[data-testid="PlusMenuButton"]'
@@ -1330,6 +1334,10 @@ class CopilotHandler:
     RESPONSE_POLL_STABLE = 0.03  # Interval during stability checking (fastest)
     # Guard against stop button selectors getting stuck while response text is stable.
     STOP_BUTTON_STALE_SECONDS = 20.0
+    CDP_CONNECT_MAX_RETRIES = 5
+    CDP_CONNECT_RETRY_INITIAL_INTERVAL = 0.2  # seconds
+    CDP_CONNECT_RETRY_BACKOFF = 1.5
+    CDP_CONNECT_RETRY_MAX_INTERVAL = 1.5  # seconds
 
     # Page validity check during polling (detect login expiration)
     PAGE_VALIDITY_CHECK_INTERVAL = 5.0  # Check page validity every 5 seconds
@@ -2658,8 +2666,8 @@ class CopilotHandler:
             # Step 2: Connect to browser via Playwright CDP
             # Retry logic for transient 401 errors when Edge DevTools server isn't fully ready
             _t_cdp = _time.perf_counter()
-            max_cdp_retries = 5
-            cdp_retry_interval = 0.5  # seconds
+            max_cdp_retries = self.CDP_CONNECT_MAX_RETRIES
+            cdp_retry_interval = self.CDP_CONNECT_RETRY_INITIAL_INTERVAL
             last_cdp_error = None
 
             for cdp_attempt in range(max_cdp_retries):
@@ -2680,7 +2688,10 @@ class CopilotHandler:
                                 cdp_attempt + 1, max_cdp_retries, cdp_retry_interval, error_msg[:100]
                             )
                             _time.sleep(cdp_retry_interval)
-                            cdp_retry_interval *= 1.5  # Exponential backoff
+                            cdp_retry_interval = min(
+                                cdp_retry_interval * self.CDP_CONNECT_RETRY_BACKOFF,
+                                self.CDP_CONNECT_RETRY_MAX_INTERVAL,
+                            )
                             continue
                     # Non-retryable error or max retries reached
                     raise
@@ -2870,8 +2881,8 @@ class CopilotHandler:
         self.edge_process = None
 
     # Context retrieval settings
-    CONTEXT_RETRY_COUNT = 10  # Number of retries to find existing context
-    CONTEXT_RETRY_INTERVAL = 0.3  # Seconds between retries (total max wait: 3s)
+    CONTEXT_RETRY_COUNT = 5  # Number of retries to find existing context
+    CONTEXT_RETRY_INTERVAL = 0.2  # Seconds between retries (total max wait: 1s)
 
     def _get_or_create_context(self):
         """Get existing browser context or create a new one.
@@ -6407,7 +6418,19 @@ class CopilotHandler:
                 current_url = page.evaluate("window.location.href")
             except Exception:
                 current_url = page.url
-            logger.info("Checking Copilot state: URL=%s", current_url[:80])
+            chat_input_present = False
+            chat_input_error = None
+            try:
+                chat_input_present = bool(page.query_selector(self.CHAT_INPUT_SELECTOR_EXTENDED))
+            except Exception as selector_error:
+                chat_input_error = repr(selector_error)
+
+            logger.info(
+                "Checking Copilot state: URL=%s, chat_input_present=%s, chat_input_error=%s",
+                current_url[:80],
+                chat_input_present,
+                chat_input_error,
+            )
 
             if self._looks_like_edge_error_page(page, fast_only=True):
                 if self._trigger_edge_reload(page, reason="check_copilot_state"):
@@ -6418,15 +6441,11 @@ class CopilotHandler:
             # Copilotドメインにいて、かつ /chat パスにいる場合 → ログイン完了
             # URL例: https://m365.cloud.microsoft/chat/?auth=2
             if "/chat" in current_url and _is_copilot_url(current_url):
-                # Be conservative: URL alone can be true during redirect; require the chat input to be present.
-                try:
-                    if page.query_selector(self.CHAT_INPUT_SELECTOR_EXTENDED):
-                        logger.info("On Copilot chat page - ready")
-                        return self._record_state(ConnectionState.READY)
-                except Exception:
-                    pass
-                logger.info("On Copilot /chat but UI not ready yet - loading")
-                return self._record_state(ConnectionState.LOADING)
+                if chat_input_present:
+                    logger.info("On Copilot chat page - ready (chat input detected)")
+                else:
+                    logger.info("On Copilot chat page - ready (chat input pending render)")
+                return self._record_state(ConnectionState.READY)
 
             # 現在のページが /chat でない場合、他のページも確認
             # ログイン後に別タブでCopilotが開かれることがある
@@ -10716,7 +10735,7 @@ class CopilotHandler:
 
         try:
             new_chat_total_start = time.monotonic()
-            # 実際のCopilot HTML: <button id="new-chat-button" data-testid="newChatButton" aria-label="新しいチャット">
+            # 実際のCopilot HTML: <button data-testid="newChatButton" data-automation-id="newChatButton" aria-label="新しいチャット">
             query_start = time.monotonic()
             new_chat_btn = self._page.query_selector(self.NEW_CHAT_BUTTON_SELECTOR)
             logger.info("[TIMING] new_chat: query_selector: %.2fs", time.monotonic() - query_start)

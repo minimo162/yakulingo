@@ -10084,6 +10084,19 @@ class CopilotHandler:
                 When set, this text is used as the initial last_text so it won't
                 trigger on_chunk or be treated as new content.
         """
+        def _strip_baseline(text: str) -> str:
+            """Remove baseline_text prefix from DOM-extracted text."""
+            if not baseline_text or not text:
+                return text
+            if text.startswith(baseline_text):
+                return text[len(baseline_text):].lstrip("\n")
+            # Handle case where DOM text has extra whitespace
+            stripped = text.lstrip()
+            baseline_stripped = baseline_text.lstrip()
+            if baseline_stripped and stripped.startswith(baseline_stripped):
+                return stripped[len(baseline_stripped):].lstrip("\n")
+            return text
+
         error_types = _get_playwright_errors()
         PlaywrightError = error_types['Error']
         PlaywrightTimeoutError = error_types['TimeoutError']
@@ -10098,7 +10111,7 @@ class CopilotHandler:
             # during the initial waiting period (stop button appears before response element)
             polling_start_time = time.monotonic()
             timeout_float = float(timeout)
-            last_text = baseline_text
+            last_text = ""
             last_text_change_time = response_start_time
             stable_count = 0
             has_content = False  # Track if we've seen any content
@@ -10195,7 +10208,8 @@ class CopilotHandler:
                     if on_chunk and (now - last_stream_extract_time) >= stream_extract_interval_generating:
                         last_stream_extract_time = now
                         try:
-                            current_text, found_stream = self._get_latest_streaming_text()
+                            raw_text, found_stream = self._get_latest_streaming_text()
+                            current_text = _strip_baseline(raw_text)
                         except Exception:
                             current_text, found_stream = "", False
 
@@ -10217,6 +10231,7 @@ class CopilotHandler:
                                 streaming_logged = True
                     if has_content and last_text and (now - last_text_change_time) >= self.STOP_BUTTON_STALE_SECONDS:
                         stable_text, stable_found = self._get_latest_response_text()
+                        stable_text = _strip_baseline(stable_text)
                         if stable_found and stable_text and stable_text.strip():
                             logger.warning(
                                 "[POLLING] Stop button still visible but response stable for %.1fs; returning.",
@@ -10239,7 +10254,8 @@ class CopilotHandler:
                 # If stop button was visible and just disappeared, Copilot has finished generating.
                 # Return immediately without additional stability checks to reduce lag.
                 if stop_button_ever_seen and has_content and stable_count == 0:
-                    quick_text, quick_found = self._get_latest_response_text()
+                    raw_quick, quick_found = self._get_latest_response_text()
+                    quick_text = _strip_baseline(raw_quick)
                     if quick_found and quick_text and quick_text == last_text:
                         # Text is stable - return immediately (stop button confirms completion)
                         logger.info("[TIMING] response_stabilized: %.2fs (early termination: stop button disappeared, text stable)",
@@ -10263,7 +10279,8 @@ class CopilotHandler:
                     else self.RESPONSE_STABLE_COUNT
                 )
 
-                current_text, found_response = self._get_latest_response_text()
+                raw_text, found_response = self._get_latest_response_text()
+                current_text = _strip_baseline(raw_text)
                 text_len = len(current_text) if current_text else 0
                 text_preview = (current_text[:50] + "...") if current_text and len(current_text) > 50 else current_text
 
@@ -10372,7 +10389,7 @@ class CopilotHandler:
                 logger.error("[POLLING] No content received - possible selector issues. "
                             "Response selectors: %s, Stop button selectors: %s",
                             self.RESPONSE_SELECTORS, self.STOP_BUTTON_SELECTORS)
-            return last_text
+            return last_text  # already stripped via _strip_baseline during polling
 
         except PlaywrightError as e:
             logger.error("Browser error getting response: %s", e)

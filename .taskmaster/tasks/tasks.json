@@ -611,7 +611,7 @@
       "id": 30,
       "title": "ウォームアップ応答の一瞬表示修正 + UI/UX改善",
       "description": "Task 29の_strip_baseline()はテキスト完全一致に依存するため、CopilotのDOM再レンダリングやCoTテキスト付加で一致が崩れウォームアップ応答が一瞬表示される。二重防御として: (A) _strip_baselineの堅牢化、(B) on_chunkの初期呼び出しガード、(C) スケルトンUIによる視覚的隠蔽。",
-      "status": "pending",
+      "status": "done",
       "priority": "critical",
       "dependencies": [29],
       "subtasks": [
@@ -619,25 +619,25 @@
           "id": 1,
           "title": "_strip_baselineを部分一致方式に堅牢化",
           "description": "baseline_textの先頭20文字を含むかで判定し、マッチ位置+baseline_text長以降を返す。完全一致不要にする。",
-          "status": "pending"
+          "status": "done"
         },
         {
           "id": 2,
           "title": "on_chunkの初期呼び出しガード追加",
           "description": "baseline_text設定時、_get_response()内でon_chunkを呼ぶ前にbaseline_textとの類似度チェックを追加。baseline_textのみ or baseline_text+少量のテキストの場合はon_chunkをスキップ。",
-          "status": "pending"
+          "status": "done"
         },
         {
           "id": 3,
           "title": "ストリーミングプレビューにスケルトンUI/翻訳中インジケータを追加",
           "description": "warmup済みチャットからの翻訳時、最初の有意なテキストが到着するまで「翻訳中...」スケルトンアニメーションを表示。text_panel.pyのstreaming-preview部分にCSS+ロジック追加。on_streaming_preview_label_createdで初期スケルトン表示。",
-          "status": "pending"
+          "status": "done"
         },
         {
           "id": 4,
           "title": "translate_single/sync系メソッドからon_chunkにbaseline_text情報を伝達",
           "description": "on_chunkコールバック側でガード判定するため、baseline_textの存在をフラグとして伝える仕組み。_get_response内のクロージャで実現可能。",
-          "status": "pending"
+          "status": "done"
         },
         {
           "id": 5,
@@ -651,7 +651,7 @@
       "id": 31,
       "title": "常駐起動時のEdgeタスクバーアイコン一瞬表示を修正",
       "description": "subprocess.Popenで起動するEdgeのstartupinfoにSW_HIDEが設定されておらず、ウィンドウ作成からタスクバー抑制スレッドの適用までの100-300msの間にタスクバーアイコンが見えてしまう。startupinfoにSTARTF_USESHOWWINDOW+SW_HIDEを設定し、creationflagsにCREATE_NO_WINDOWを追加して初期ウィンドウを非表示にする。",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "dependencies": [],
       "subtasks": [
@@ -659,25 +659,25 @@
           "id": 1,
           "title": "subprocess.STARTUPINFOにSW_HIDEとSTARTF_USESHOWWINDOWを設定",
           "description": "_start_edge_process()のstartupinfo設定を変更。dwFlags |= STARTF_USESHOWWINDOW, wShowWindow = 0 (SW_HIDE)。display_mode=='minimized'の場合のみ適用。",
-          "status": "pending"
+          "status": "done"
         },
         {
           "id": 2,
           "title": "creationflagsにCREATE_NO_WINDOWを追加",
           "description": "Edgeのコンソールウィンドウも非表示にする。ただしEdge自体のGUIレンダリングに影響しないことを確認。CREATE_NO_WINDOWはコンソールのみ対象のため、GUIアプリには影響なし。",
-          "status": "pending"
+          "status": "done"
         },
         {
           "id": 3,
           "title": "既存のタスクバー抑制スレッドとの整合性確認",
           "description": "_start_edge_taskbar_suppression()は安全ネットとして維持。SW_HIDEで起動したEdgeに対してもWS_EX_TOOLWINDOW適用が正常に動作することを確認。",
-          "status": "pending"
+          "status": "done"
         },
         {
           "id": 4,
           "title": "実環境検証：常駐起動時にタスクバーアイコンが表示されないことを確認",
           "description": "コールドブート・ウォームブートの両方で検証。Edgeのタスクバーアイコンが一切ちらつかないことを確認。",
-          "status": "pending"
+          "status": "done"
         }
       ]
     },
@@ -685,7 +685,7 @@
       "id": 32,
       "title": "xlsmファイル翻訳対応",
       "description": "ExcelProcessorはopenpyxl/xlwingsを使用しておりxlsmを読み書き可能。SUPPORTED_FORMATSとprocessorsへの登録追加、openpyxlのkeep_vba=Trueオプションでマクロ保持を確認する。",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "dependencies": [],
       "subtasks": [
@@ -693,31 +693,31 @@
           "id": 1,
           "title": "ExcelProcessor.supported_extensionsに.xlsm追加",
           "description": "processors/excel_processor.pyのsupported_extensionsプロパティに'.xlsm'を追加。",
-          "status": "pending"
+          "status": "done"
         },
         {
           "id": 2,
           "title": "translation_service.pyの_processorsに.xlsm登録",
           "description": "'.xlsm': ExcelProcessor()を_processors dictに追加。",
-          "status": "pending"
+          "status": "done"
         },
         {
           "id": 3,
           "title": "file_panel.pyのSUPPORTED_FORMATS/EXTENSIONSに.xlsm追加",
           "description": "UIのファイルピッカーとドラッグ&ドロップで.xlsmを受け付けるようにする。",
-          "status": "pending"
+          "status": "done"
         },
         {
           "id": 4,
           "title": "openpyxlのkeep_vba=Trueでマクロ保持を確認",
           "description": "ExcelProcessorのapply_translations内でworkbookをopenpyxlで開く際にkeep_vba=Trueを設定し、保存時にマクロが保持されることを確認。xlwings経由の場合は自動的にマクロ保持。",
-          "status": "pending"
+          "status": "done"
         },
         {
           "id": 5,
           "title": "app.pyのファイルバリデーション箇所にも.xlsmを追加",
           "description": "app.py内のグローバルドロップアップロード制限、ファイルキューバリデーション等にも.xlsmを反映。file_panel.pyのSUPPORTED_EXTENSIONSを参照している場合は自動的に反映される。",
-          "status": "pending"
+          "status": "done"
         }
       ]
     },
@@ -725,7 +725,7 @@
       "id": 33,
       "title": "csvファイル翻訳対応（CsvProcessor新規作成）",
       "description": "TxtProcessorをベースにCsvProcessorを新規作成。CSVの各セルをTextBlockとして抽出し、翻訳後に同じ構造でCSVを再構成する。ヘッダー行は翻訳スキップ、エンコーディング自動検出対応。",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "dependencies": [],
       "subtasks": [
@@ -733,30 +733,64 @@
           "id": 1,
           "title": "FileType.CSVをmodels/types.pyに追加",
           "description": "FileType enumに CSV = 'csv' を追加。iconは'table_chart'。",
-          "status": "pending"
+          "status": "done"
         },
         {
           "id": 2,
           "title": "processors/csv_processor.pyを新規作成",
           "description": "FileProcessorを継承したCsvProcessorクラス。get_file_info: 行数・列数をカウント。extract_text_blocks: 各セルをTextBlock(id='row_{r}_col_{c}')として抽出、ヘッダー行スキップ。apply_translations: 翻訳結果を同じCSV構造に書き戻し。エンコーディング自動検出(utf-8, shift_jis, cp932)。",
-          "status": "pending"
+          "status": "done"
         },
         {
           "id": 3,
           "title": "translation_service.pyの_processorsに.csv登録",
           "description": "'.csv': CsvProcessor()を_processors dictに追加。",
-          "status": "pending"
+          "status": "done"
         },
         {
           "id": 4,
           "title": "file_panel.pyのSUPPORTED_FORMATS/EXTENSIONSに.csv追加",
           "description": "UIのファイルピッカーとドラッグ&ドロップで.csvを受け付けるようにする。",
-          "status": "pending"
+          "status": "done"
         },
         {
           "id": 5,
           "title": "app.pyのファイルバリデーション箇所にも.csvを反映",
           "description": "file_panel.pyのSUPPORTED_EXTENSIONSを参照している場合は自動的に反映される。そうでない場合は個別追加。",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "id": 34,
+      "title": "setup.vbs実行時にYakuLingo実行中なら自動終了してから続行",
+      "description": "setup.ps1のInvoke-Setup関数で、YakuLingo.exeプロセス検出時に即座にthrowで失敗する。Pythonプロセス用の既存グレースフルシャットダウンロジック（/api/shutdown→30秒待機→12秒後強制終了）をYakuLingo.exeにも適用し、自動終了してからセットアップを続行する。",
+      "status": "pending",
+      "priority": "high",
+      "dependencies": [],
+      "subtasks": [
+        {
+          "id": 1,
+          "title": "YakuLingo.exe検出時の即座throwを削除",
+          "description": "setup.ps1 line ~1300-1303のGet-Process -Name 'YakuLingo'チェック後のthrowを削除。",
+          "status": "pending"
+        },
+        {
+          "id": 2,
+          "title": "YakuLingo.exeとPythonプロセスの統合検出に変更",
+          "description": "YakuLingo.exeの検出をPythonプロセス検出と統合し、どちらかが見つかった場合にグレースフルシャットダウンフローに入る。",
+          "status": "pending"
+        },
+        {
+          "id": 3,
+          "title": "グレースフルシャットダウンフロー適用",
+          "description": "既存のPythonプロセス用ロジック（/api/shutdown POST→250msポーリング→5秒後リトライ→12秒後force kill→30秒タイムアウト）をYakuLingo.exeにも適用。Stop-ProcessのターゲットにYakuLingo.exeも含める。",
+          "status": "pending"
+        },
+        {
+          "id": 4,
+          "title": "終了待機後のプロセス再確認でYakuLingo.exeも含める",
+          "description": "最終確認でPythonプロセスだけでなくYakuLingo.exeも残っていないことを確認。",
           "status": "pending"
         }
       ]
@@ -764,8 +798,8 @@
   ],
   "metadata": {
     "projectName": "YakuLingo M365 Copilot Translation Fix",
-    "totalTasks": 33,
+    "totalTasks": 34,
     "createdAt": "2026-03-31",
-    "version": "2.5"
+    "version": "2.6"
   }
 }

@@ -680,12 +680,92 @@
           "status": "pending"
         }
       ]
+    },
+    {
+      "id": 32,
+      "title": "xlsmファイル翻訳対応",
+      "description": "ExcelProcessorはopenpyxl/xlwingsを使用しておりxlsmを読み書き可能。SUPPORTED_FORMATSとprocessorsへの登録追加、openpyxlのkeep_vba=Trueオプションでマクロ保持を確認する。",
+      "status": "pending",
+      "priority": "medium",
+      "dependencies": [],
+      "subtasks": [
+        {
+          "id": 1,
+          "title": "ExcelProcessor.supported_extensionsに.xlsm追加",
+          "description": "processors/excel_processor.pyのsupported_extensionsプロパティに'.xlsm'を追加。",
+          "status": "pending"
+        },
+        {
+          "id": 2,
+          "title": "translation_service.pyの_processorsに.xlsm登録",
+          "description": "'.xlsm': ExcelProcessor()を_processors dictに追加。",
+          "status": "pending"
+        },
+        {
+          "id": 3,
+          "title": "file_panel.pyのSUPPORTED_FORMATS/EXTENSIONSに.xlsm追加",
+          "description": "UIのファイルピッカーとドラッグ&ドロップで.xlsmを受け付けるようにする。",
+          "status": "pending"
+        },
+        {
+          "id": 4,
+          "title": "openpyxlのkeep_vba=Trueでマクロ保持を確認",
+          "description": "ExcelProcessorのapply_translations内でworkbookをopenpyxlで開く際にkeep_vba=Trueを設定し、保存時にマクロが保持されることを確認。xlwings経由の場合は自動的にマクロ保持。",
+          "status": "pending"
+        },
+        {
+          "id": 5,
+          "title": "app.pyのファイルバリデーション箇所にも.xlsmを追加",
+          "description": "app.py内のグローバルドロップアップロード制限、ファイルキューバリデーション等にも.xlsmを反映。file_panel.pyのSUPPORTED_EXTENSIONSを参照している場合は自動的に反映される。",
+          "status": "pending"
+        }
+      ]
+    },
+    {
+      "id": 33,
+      "title": "csvファイル翻訳対応（CsvProcessor新規作成）",
+      "description": "TxtProcessorをベースにCsvProcessorを新規作成。CSVの各セルをTextBlockとして抽出し、翻訳後に同じ構造でCSVを再構成する。ヘッダー行は翻訳スキップ、エンコーディング自動検出対応。",
+      "status": "pending",
+      "priority": "medium",
+      "dependencies": [],
+      "subtasks": [
+        {
+          "id": 1,
+          "title": "FileType.CSVをmodels/types.pyに追加",
+          "description": "FileType enumに CSV = 'csv' を追加。iconは'table_chart'。",
+          "status": "pending"
+        },
+        {
+          "id": 2,
+          "title": "processors/csv_processor.pyを新規作成",
+          "description": "FileProcessorを継承したCsvProcessorクラス。get_file_info: 行数・列数をカウント。extract_text_blocks: 各セルをTextBlock(id='row_{r}_col_{c}')として抽出、ヘッダー行スキップ。apply_translations: 翻訳結果を同じCSV構造に書き戻し。エンコーディング自動検出(utf-8, shift_jis, cp932)。",
+          "status": "pending"
+        },
+        {
+          "id": 3,
+          "title": "translation_service.pyの_processorsに.csv登録",
+          "description": "'.csv': CsvProcessor()を_processors dictに追加。",
+          "status": "pending"
+        },
+        {
+          "id": 4,
+          "title": "file_panel.pyのSUPPORTED_FORMATS/EXTENSIONSに.csv追加",
+          "description": "UIのファイルピッカーとドラッグ&ドロップで.csvを受け付けるようにする。",
+          "status": "pending"
+        },
+        {
+          "id": 5,
+          "title": "app.pyのファイルバリデーション箇所にも.csvを反映",
+          "description": "file_panel.pyのSUPPORTED_EXTENSIONSを参照している場合は自動的に反映される。そうでない場合は個別追加。",
+          "status": "pending"
+        }
+      ]
     }
   ],
   "metadata": {
     "projectName": "YakuLingo M365 Copilot Translation Fix",
-    "totalTasks": 31,
+    "totalTasks": 33,
     "createdAt": "2026-03-31",
-    "version": "2.4"
+    "version": "2.5"
   }
 }

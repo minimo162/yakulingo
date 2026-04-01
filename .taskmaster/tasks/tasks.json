@@ -646,12 +646,46 @@
           "status": "pending"
         }
       ]
+    },
+    {
+      "id": 31,
+      "title": "常駐起動時のEdgeタスクバーアイコン一瞬表示を修正",
+      "description": "subprocess.Popenで起動するEdgeのstartupinfoにSW_HIDEが設定されておらず、ウィンドウ作成からタスクバー抑制スレッドの適用までの100-300msの間にタスクバーアイコンが見えてしまう。startupinfoにSTARTF_USESHOWWINDOW+SW_HIDEを設定し、creationflagsにCREATE_NO_WINDOWを追加して初期ウィンドウを非表示にする。",
+      "status": "pending",
+      "priority": "medium",
+      "dependencies": [],
+      "subtasks": [
+        {
+          "id": 1,
+          "title": "subprocess.STARTUPINFOにSW_HIDEとSTARTF_USESHOWWINDOWを設定",
+          "description": "_start_edge_process()のstartupinfo設定を変更。dwFlags |= STARTF_USESHOWWINDOW, wShowWindow = 0 (SW_HIDE)。display_mode=='minimized'の場合のみ適用。",
+          "status": "pending"
+        },
+        {
+          "id": 2,
+          "title": "creationflagsにCREATE_NO_WINDOWを追加",
+          "description": "Edgeのコンソールウィンドウも非表示にする。ただしEdge自体のGUIレンダリングに影響しないことを確認。CREATE_NO_WINDOWはコンソールのみ対象のため、GUIアプリには影響なし。",
+          "status": "pending"
+        },
+        {
+          "id": 3,
+          "title": "既存のタスクバー抑制スレッドとの整合性確認",
+          "description": "_start_edge_taskbar_suppression()は安全ネットとして維持。SW_HIDEで起動したEdgeに対してもWS_EX_TOOLWINDOW適用が正常に動作することを確認。",
+          "status": "pending"
+        },
+        {
+          "id": 4,
+          "title": "実環境検証：常駐起動時にタスクバーアイコンが表示されないことを確認",
+          "description": "コールドブート・ウォームブートの両方で検証。Edgeのタスクバーアイコンが一切ちらつかないことを確認。",
+          "status": "pending"
+        }
+      ]
     }
   ],
   "metadata": {
     "projectName": "YakuLingo M365 Copilot Translation Fix",
-    "totalTasks": 30,
+    "totalTasks": 31,
     "createdAt": "2026-03-31",
-    "version": "2.3"
+    "version": "2.4"
   }
 }

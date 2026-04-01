@@ -765,7 +765,7 @@
       "id": 34,
       "title": "setup.vbs実行時にYakuLingo実行中なら自動終了してから続行",
       "description": "setup.ps1のInvoke-Setup関数で、YakuLingo.exeプロセス検出時に即座にthrowで失敗する。Pythonプロセス用の既存グレースフルシャットダウンロジック（/api/shutdown→30秒待機→12秒後強制終了）をYakuLingo.exeにも適用し、自動終了してからセットアップを続行する。",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "dependencies": [],
       "subtasks": [
@@ -773,25 +773,25 @@
           "id": 1,
           "title": "YakuLingo.exe検出時の即座throwを削除",
           "description": "setup.ps1 line ~1300-1303のGet-Process -Name 'YakuLingo'チェック後のthrowを削除。",
-          "status": "pending"
+          "status": "done"
         },
         {
           "id": 2,
           "title": "YakuLingo.exeとPythonプロセスの統合検出に変更",
           "description": "YakuLingo.exeの検出をPythonプロセス検出と統合し、どちらかが見つかった場合にグレースフルシャットダウンフローに入る。",
-          "status": "pending"
+          "status": "done"
         },
         {
           "id": 3,
           "title": "グレースフルシャットダウンフロー適用",
           "description": "既存のPythonプロセス用ロジック（/api/shutdown POST→250msポーリング→5秒後リトライ→12秒後force kill→30秒タイムアウト）をYakuLingo.exeにも適用。Stop-ProcessのターゲットにYakuLingo.exeも含める。",
-          "status": "pending"
+          "status": "done"
         },
         {
           "id": 4,
           "title": "終了待機後のプロセス再確認でYakuLingo.exeも含める",
           "description": "最終確認でPythonプロセスだけでなくYakuLingo.exeも残っていないことを確認。",
-          "status": "pending"
+          "status": "done"
         }
       ]
     }
@@ -800,6 +800,6 @@
     "projectName": "YakuLingo M365 Copilot Translation Fix",
     "totalTasks": 34,
     "createdAt": "2026-03-31",
-    "version": "2.6"
+    "version": "2.7"
   }
 }

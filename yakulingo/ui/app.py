@@ -1278,6 +1278,7 @@ HOTKEY_BACKGROUND_TRANSLATION_TIMEOUT_SEC = 7200.0
 HOTKEY_SUPPORTED_FILE_SUFFIXES = {
     ".xlsx",
     ".xls",
+    ".xlsm",
     ".docx",
     ".doc",
     ".pptx",
@@ -1285,6 +1286,7 @@ HOTKEY_SUPPORTED_FILE_SUFFIXES = {
     ".pdf",
     ".txt",
     ".msg",
+    ".csv",
 }
 
 
@@ -3196,7 +3198,7 @@ class YakuLingoApp:
 
         def file_type_for_path(path: Path) -> FileType:
             suffix = path.suffix.lower()
-            if suffix in (".xlsx", ".xls"):
+            if suffix in (".xlsx", ".xls", ".xlsm"):
                 return FileType.EXCEL
             if suffix in (".docx", ".doc"):
                 return FileType.WORD
@@ -3206,6 +3208,8 @@ class YakuLingoApp:
                 return FileType.PDF
             if suffix == ".msg":
                 return FileType.EMAIL
+            if suffix == ".csv":
+                return FileType.CSV
             return FileType.TEXT
 
         def minimal_file_info(path: Path) -> FileInfo:
@@ -3425,7 +3429,7 @@ class YakuLingoApp:
 
         def file_type_for_path(path: Path) -> FileType:
             suffix = path.suffix.lower()
-            if suffix in (".xlsx", ".xls"):
+            if suffix in (".xlsx", ".xls", ".xlsm"):
                 return FileType.EXCEL
             if suffix in (".docx", ".doc"):
                 return FileType.WORD
@@ -3435,6 +3439,8 @@ class YakuLingoApp:
                 return FileType.PDF
             if suffix == ".msg":
                 return FileType.EMAIL
+            if suffix == ".csv":
+                return FileType.CSV
             return FileType.TEXT
 
         def minimal_file_info(path: Path) -> FileInfo:

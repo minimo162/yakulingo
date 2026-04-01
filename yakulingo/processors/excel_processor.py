@@ -1,6 +1,6 @@
 # yakulingo/processors/excel_processor.py
 """
-Processor for Excel files (.xlsx, .xls).
+Processor for Excel files (.xlsx, .xls, .xlsm).
 
 Uses xlwings for full Excel functionality (shapes, charts, textboxes).
 Falls back to openpyxl if xlwings/Excel is not available (Linux or no Excel installed).
@@ -1053,7 +1053,7 @@ class ExcelProcessor(FileProcessor):
 
     @property
     def supported_extensions(self) -> list[str]:
-        return ['.xlsx', '.xls']
+        return ['.xlsx', '.xls', '.xlsm']
 
     def get_file_info(self, file_path: Path) -> FileInfo:
         """Get Excel file info.
@@ -1117,7 +1117,12 @@ class ExcelProcessor(FileProcessor):
 
         # Fallback: use openpyxl (read_only) to obtain sheet names
         try:
-            wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+            wb = openpyxl.load_workbook(
+                file_path,
+                read_only=True,
+                data_only=True,
+                keep_vba=(file_path.suffix.lower() == '.xlsm'),
+            )
             try:
                 sheet_count = len(wb.sheetnames)
                 section_details = [
@@ -1745,7 +1750,12 @@ class ExcelProcessor(FileProcessor):
             logger.info("Detected %d formula cells (will be preserved)", formula_count)
 
         # Extract text blocks with calculated values (data_only=True)
-        wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+        wb = openpyxl.load_workbook(
+            file_path,
+            read_only=True,
+            data_only=True,
+            keep_vba=(file_path.suffix.lower() == '.xlsm'),
+        )
 
         # Cache column letters to avoid repeated conversions during large reads
         # Limited to _COLUMN_LETTER_CACHE_SIZE entries to prevent memory bloat on very wide sheets
@@ -2957,7 +2967,10 @@ class ExcelProcessor(FileProcessor):
         - Only processes selected sheets when selected_sections is specified
         """
         font_manager = FontManager(direction, settings)
-        wb = openpyxl.load_workbook(input_path)
+        wb = openpyxl.load_workbook(
+            input_path,
+            keep_vba=(input_path.suffix.lower() == '.xlsm'),
+        )
 
         # Font object cache: (name, size, bold, italic, underline, strike, color_rgb) -> Font
         # openpyxl Font objects are immutable, so we can safely reuse them
@@ -3309,8 +3322,14 @@ class ExcelProcessor(FileProcessor):
         """
         from copy import copy
 
-        original_wb = openpyxl.load_workbook(original_path)
-        translated_wb = openpyxl.load_workbook(translated_path)
+        original_wb = openpyxl.load_workbook(
+            original_path,
+            keep_vba=(original_path.suffix.lower() == '.xlsm'),
+        )
+        translated_wb = openpyxl.load_workbook(
+            translated_path,
+            keep_vba=(translated_path.suffix.lower() == '.xlsm'),
+        )
 
         try:
             # Create a new workbook and remove default sheet

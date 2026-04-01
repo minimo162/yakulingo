@@ -2097,6 +2097,10 @@ class CopilotHandler:
             creationflags = 0
             if sys.platform == "win32":
                 startupinfo = subprocess.STARTUPINFO()
+                if display_mode == "minimized":
+                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                    startupinfo.wShowWindow = 0  # SW_HIDE
+                    creationflags |= 0x08000000  # CREATE_NO_WINDOW
 
             # Build command line arguments based on display mode
             edge_args = [

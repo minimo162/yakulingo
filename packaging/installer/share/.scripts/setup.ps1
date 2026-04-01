@@ -1295,16 +1295,13 @@ function Update-PyVenvConfig {
 # ============================================================
 function Invoke-Setup {
     # ============================================================
-    # Check if YakuLingo is running
+    # Check if YakuLingo is running and shut down gracefully
     # ============================================================
-    $runningProcess = Get-Process -Name "YakuLingo" -ErrorAction SilentlyContinue
-    if ($runningProcess) {
-        throw "YakuLingo is currently running.`n`nPlease close YakuLingo and try again."
-    }
-
-    # Also check for Python processes running from the YakuLingo install directory
-    # This catches cases where YakuLingo.exe has exited but Python is still running
     $expectedSetupPath = if ([string]::IsNullOrEmpty($SetupPath)) { Join-Path $env:LOCALAPPDATA $script:AppName } else { $SetupPath }
+
+    # Detect both YakuLingo.exe and Python processes under the install directory
+    $runningLauncher = Get-Process -Name "YakuLingo" -ErrorAction SilentlyContinue
+    $pythonProcesses = $null
     if (Test-Path $expectedSetupPath) {
         $pythonProcesses = Get-Process -Name "python*" -ErrorAction SilentlyContinue | Where-Object {
             try {
@@ -1318,44 +1315,48 @@ function Invoke-Setup {
                 $false
             }
         }
-        if ($pythonProcesses) {
-            # Try to shut down the resident service gracefully via local API before failing.
-            # This reduces friction when users forgot to run "YakuLingo 終了" before updating.
-            Write-Status -Message "Closing running YakuLingo..." -Progress -Step "Step 1/4: Preparing" -Percent 1
-            try {
-                "Invoke-Setup: Detected running python process under '$expectedSetupPath'." | Out-File -FilePath $debugLog -Append -Encoding UTF8
-            } catch { }
+    }
 
-            $port = 8765
-            $shutdownUrl = "http://127.0.0.1:$port/api/shutdown"
-            $shutdownRequested = $false
-            try {
-                Invoke-WebRequest -UseBasicParsing -Method Post -Uri $shutdownUrl -TimeoutSec 8 -Headers @{ "X-YakuLingo-Exit" = "1" } | Out-Null
-                $shutdownRequested = $true
-                try { "Invoke-Setup: Shutdown requested via $shutdownUrl" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
-            } catch {
-                try { "Invoke-Setup: Shutdown request failed: $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+    if ($runningLauncher -or $pythonProcesses) {
+        Write-Status -Message "YakuLingo を終了しています..." -Progress -Step "Step 1/4: Preparing" -Percent 1
+        try {
+            "Invoke-Setup: Detected running YakuLingo (launcher=$([bool]$runningLauncher), python=$([bool]$pythonProcesses))." | Out-File -FilePath $debugLog -Append -Encoding UTF8
+        } catch { }
+
+        # Step 1: Request graceful shutdown via API
+        $port = 8765
+        $shutdownUrl = "http://127.0.0.1:$port/api/shutdown"
+        $shutdownRequested = $false
+        try {
+            Invoke-WebRequest -UseBasicParsing -Method Post -Uri $shutdownUrl -TimeoutSec 8 -Headers @{ "X-YakuLingo-Exit" = "1" } | Out-Null
+            $shutdownRequested = $true
+            try { "Invoke-Setup: Shutdown requested via $shutdownUrl" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+        } catch {
+            try { "Invoke-Setup: Shutdown request failed: $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+        }
+
+        # Step 2: Wait up to 30 seconds for processes to exit
+        $shutdownRetryRequested = $false
+        $forceKillAttempted = $false
+        $lastStatusSecond = -1
+        $waitStart = Get-Date
+        $deadline = $waitStart.AddSeconds(30)
+        while ((Get-Date) -lt $deadline) {
+            if ($GuiMode) {
+                try { Test-Cancelled } catch { throw }
             }
 
-            # Wait briefly for the process to exit (app schedules a forced exit after 5s).
-            $shutdownRetryRequested = $false
-            $forceKillAttempted = $false
-            $lastStatusSecond = -1
-            $waitStart = Get-Date
-            $deadline = $waitStart.AddSeconds(30)
-            while ((Get-Date) -lt $deadline) {
-                # Keep GUI responsive during wait
-                if ($GuiMode) {
-                    try { Test-Cancelled } catch { throw }
-                }
+            $elapsedSeconds = [int]((Get-Date) - $waitStart).TotalSeconds
+            if ($elapsedSeconds -ne $lastStatusSecond) {
+                $lastStatusSecond = $elapsedSeconds
+                Write-Status -Message "YakuLingo の終了を待機中... (${elapsedSeconds}s)" -Progress -Step "Step 1/4: Preparing" -Percent 1
+            }
 
-                $elapsedSeconds = [int]((Get-Date) - $waitStart).TotalSeconds
-                if ($elapsedSeconds -ne $lastStatusSecond) {
-                    $lastStatusSecond = $elapsedSeconds
-                    Write-Status -Message "Waiting for YakuLingo to exit... (${elapsedSeconds}s)" -Progress -Step "Step 1/4: Preparing" -Percent 1
-                }
-
-                $pythonProcesses = Get-Process -Name "python*" -ErrorAction SilentlyContinue | Where-Object {
+            # Check if all processes have exited
+            $stillRunningLauncher = Get-Process -Name "YakuLingo" -ErrorAction SilentlyContinue
+            $stillRunningPython = $null
+            if (Test-Path $expectedSetupPath) {
+                $stillRunningPython = Get-Process -Name "python*" -ErrorAction SilentlyContinue | Where-Object {
                     try {
                         $processPath = $_.Path
                         if ($processPath) {
@@ -1367,30 +1368,36 @@ function Invoke-Setup {
                         $false
                     }
                 }
-                if (-not $pythonProcesses) {
-                    break
-                }
+            }
+            if (-not $stillRunningLauncher -and -not $stillRunningPython) {
+                break
+            }
 
-                # Retry shutdown once after a short delay (handles cases where the service is busy
-                # or the HTTP endpoint is temporarily unresponsive).
-                if (-not $shutdownRetryRequested) {
-                    if ($elapsedSeconds -ge 5) {
-                        $shutdownRetryRequested = $true
-                        try {
-                            Invoke-WebRequest -UseBasicParsing -Method Post -Uri $shutdownUrl -TimeoutSec 5 -Headers @{ "X-YakuLingo-Exit" = "1" } | Out-Null
-                            $shutdownRequested = $true
-                            try { "Invoke-Setup: Shutdown re-requested via $shutdownUrl" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
-                        } catch {
-                            try { "Invoke-Setup: Shutdown re-request failed: $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
-                        }
+            # Retry shutdown after 5 seconds
+            if (-not $shutdownRetryRequested -and $elapsedSeconds -ge 5) {
+                $shutdownRetryRequested = $true
+                try {
+                    Invoke-WebRequest -UseBasicParsing -Method Post -Uri $shutdownUrl -TimeoutSec 5 -Headers @{ "X-YakuLingo-Exit" = "1" } | Out-Null
+                    $shutdownRequested = $true
+                    try { "Invoke-Setup: Shutdown re-requested via $shutdownUrl" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+                } catch {
+                    try { "Invoke-Setup: Shutdown re-request failed: $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+                }
+            }
+
+            # Force kill after 12 seconds
+            if (-not $forceKillAttempted -and $elapsedSeconds -ge 12) {
+                $forceKillAttempted = $true
+                Write-Status -Message "YakuLingo を強制終了しています..." -Progress -Step "Step 1/4: Preparing" -Percent 1
+                try {
+                    # Kill YakuLingo.exe
+                    $launcherProcs = Get-Process -Name "YakuLingo" -ErrorAction SilentlyContinue
+                    if ($launcherProcs) {
+                        try { "Invoke-Setup: Force stopping YakuLingo.exe: $($launcherProcs.Id -join ',')" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
+                        $launcherProcs | Stop-Process -Force -ErrorAction SilentlyContinue
                     }
-                }
-
-                # Last resort: if the service doesn't exit, forcibly stop processes under the install dir.
-                if (-not $forceKillAttempted -and $elapsedSeconds -ge 12) {
-                    $forceKillAttempted = $true
-                    Write-Status -Message "Force closing YakuLingo..." -Progress -Step "Step 1/4: Preparing" -Percent 1
-                    try {
+                    # Kill Python processes under install dir
+                    if (Test-Path $expectedSetupPath) {
                         $processesToStop = Get-Process -ErrorAction SilentlyContinue | Where-Object {
                             try {
                                 $processPath = $_.Path
@@ -1407,16 +1414,20 @@ function Invoke-Setup {
                             try { "Invoke-Setup: Force stopping processes: $($processesToStop.Id -join ',')" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
                             $processesToStop | Stop-Process -Force -ErrorAction SilentlyContinue
                         }
-                    } catch {
-                        try { "Invoke-Setup: Force stop failed: $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
                     }
+                } catch {
+                    try { "Invoke-Setup: Force stop failed: $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
                 }
-
-                Start-Sleep -Milliseconds 250
             }
 
-            # Final refresh after wait/force-kill attempts
-            $pythonProcesses = Get-Process -Name "python*" -ErrorAction SilentlyContinue | Where-Object {
+            Start-Sleep -Milliseconds 250
+        }
+
+        # Final check: are any processes still running?
+        $stillRunningLauncher = Get-Process -Name "YakuLingo" -ErrorAction SilentlyContinue
+        $stillRunningPython = $null
+        if (Test-Path $expectedSetupPath) {
+            $stillRunningPython = Get-Process -Name "python*" -ErrorAction SilentlyContinue | Where-Object {
                 try {
                     $processPath = $_.Path
                     if ($processPath) {
@@ -1428,14 +1439,14 @@ function Invoke-Setup {
                     $false
                 }
             }
+        }
 
-            if ($pythonProcesses) {
-                $msg = "YakuLingo のプロセスがまだ実行中です。`n`n対処:`n- スタートメニュー > YakuLingo > 「YakuLingo 終了」を実行`n- それでも残る場合は、タスクマネージャーで pythonw.exe / python.exe を終了`n`nその後、もう一度 setup.vbs を実行してください。"
-                if ($shutdownRequested) {
-                    $msg = "YakuLingo が終了できませんでした（自動終了がタイムアウトしました）。`n`n対処:`n- スタートメニュー > YakuLingo > 「YakuLingo 終了」を実行`n- それでも残る場合は、タスクマネージャーで pythonw.exe / python.exe を終了`n`nその後、もう一度 setup.vbs を実行してください。"
-                }
-                throw $msg
+        if ($stillRunningLauncher -or $stillRunningPython) {
+            $msg = "YakuLingo のプロセスがまだ実行中です。`n`n対処:`n- スタートメニュー > YakuLingo > 「YakuLingo 終了」を実行`n- それでも残る場合は、タスクマネージャーで YakuLingo.exe / pythonw.exe / python.exe を終了`n`nその後、もう一度 setup.vbs を実行してください。"
+            if ($shutdownRequested) {
+                $msg = "YakuLingo が終了できませんでした（自動終了がタイムアウトしました）。`n`n対処:`n- スタートメニュー > YakuLingo > 「YakuLingo 終了」を実行`n- それでも残る場合は、タスクマネージャーで YakuLingo.exe / pythonw.exe / python.exe を終了`n`nその後、もう一度 setup.vbs を実行してください。"
             }
+            throw $msg
         }
     }
 

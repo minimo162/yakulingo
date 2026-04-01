@@ -1550,6 +1550,7 @@ class TranslationService:
                     from yakulingo.processors.pptx_processor import PptxProcessor
                     from yakulingo.processors.pdf_processor import PdfProcessor
                     from yakulingo.processors.txt_processor import TxtProcessor
+                    from yakulingo.processors.csv_processor import CsvProcessor
                     from yakulingo.processors.msg_processor import MsgProcessor
 
                     # Note: Legacy formats (.doc, .ppt) are not supported
@@ -1557,11 +1558,13 @@ class TranslationService:
                     self._processors = {
                         '.xlsx': ExcelProcessor(),
                         '.xls': ExcelProcessor(),
+                        '.xlsm': ExcelProcessor(),
                         '.docx': WordProcessor(),
                         '.pptx': PptxProcessor(),
                         '.pdf': PdfProcessor(),
                         '.txt': TxtProcessor(),
                         '.msg': MsgProcessor(),
+                        '.csv': CsvProcessor(),
                     }
         return self._processors
 

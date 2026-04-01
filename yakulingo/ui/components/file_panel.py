@@ -139,7 +139,7 @@ def _attach_copy_handler(button, text: str, message: str) -> None:
     button.on('click', lambda: None, js_handler=_build_copy_js_handler(text))
 
 
-SUPPORTED_FORMATS = ".xlsx,.xls,.docx,.pptx,.pdf,.txt,.msg"
+SUPPORTED_FORMATS = ".xlsx,.xls,.xlsm,.docx,.pptx,.pdf,.txt,.msg,.csv"
 SUPPORTED_EXTENSIONS = {ext.strip() for ext in SUPPORTED_FORMATS.split(',')}
 MAX_DROP_FILE_SIZE_MB = 20
 MAX_DROP_FILE_SIZE_BYTES = MAX_DROP_FILE_SIZE_MB * 1024 * 1024
@@ -152,6 +152,7 @@ FILE_TYPE_ICONS = {
     FileType.PDF: 'picture_as_pdf',
     FileType.TEXT: 'article',
     FileType.EMAIL: 'mail',
+    FileType.CSV: 'table_chart',
 }
 
 # File type CSS classes (defined in styles.py)
@@ -162,6 +163,7 @@ FILE_TYPE_CLASSES = {
     FileType.PDF: 'file-icon-pdf',
     FileType.TEXT: 'file-icon-text',
     FileType.EMAIL: 'file-icon-email',
+    FileType.CSV: 'file-icon-excel',
 }
 
 
@@ -689,6 +691,7 @@ def _get_section_label(file_info: Optional[FileInfo]) -> str:
         FileType.WORD: 'ページ',
         FileType.EMAIL: 'セクション',
         FileType.TEXT: 'セクション',
+        FileType.CSV: '行',
     }
     return label_map.get(file_info.file_type, 'セクション')
 
@@ -1226,6 +1229,7 @@ def _output_file_row(file_path: Path, description: str):
     icon_map = {
         '.xlsx': 'table_chart',
         '.xls': 'table_chart',
+        '.xlsm': 'table_chart',
         '.docx': 'description',
         '.doc': 'description',
         '.pptx': 'slideshow',

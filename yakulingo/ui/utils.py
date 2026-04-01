@@ -683,6 +683,7 @@ def _bring_app_window_to_foreground_by_filename(file_path: Path) -> None:
     app_class_names = {
         '.xlsx': 'XLMAIN',
         '.xls': 'XLMAIN',
+        '.xlsm': 'XLMAIN',
         '.docx': 'OpusApp',
         '.doc': 'OpusApp',
         '.pptx': 'PPTFrameClass',

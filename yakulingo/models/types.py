@@ -17,6 +17,7 @@ class FileType(Enum):
     PDF = "pdf"
     TEXT = "text"
     EMAIL = "email"
+    CSV = "csv"
 
 
 class TranslationStatus(Enum):
@@ -90,6 +91,7 @@ class FileInfo:
             FileType.PDF: "picture_as_pdf",
             FileType.TEXT: "article",
             FileType.EMAIL: "mail",
+            FileType.CSV: "table_chart",
         }
         return icons.get(self.file_type, "description")
 
